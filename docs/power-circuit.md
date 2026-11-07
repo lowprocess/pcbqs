@@ -207,3 +207,47 @@ can slow small matrices; measure on the target machine. GPU matrix-fill support
 does not make the ngspice transient a GPU simulation. The checked mixed-precision
 GPU port-solve experiment is currently a benchmark prototype, not an enabled
 circuit backend.
+
+## Visual configuration and KiCad schematic import
+
+The GUI's **Circuit → Schematic** view edits the simulation model. Select a
+component to change its type, value, parasitics or terminal connections. Switches
+have per-part model overrides and phase-leg/high-side settings; the supply,
+windings and receiver compensation/load have their own inspectors. Blank switch
+parameters inherit the global model. Numbers accept SI notation such as `33n`,
+`24u` and `110m`. Unchanged fields preserve their stored precision.
+
+Use **Add passive**, **Remove**, **Undo/Redo**, **Arrange** and **Fit** to configure
+and navigate the circuit. Search a reference to focus it, or a net name to
+highlight its connections. Dragging changes diagram positions only. **Save
+model** stores the configuration, layout and imported source information in JSON;
+**Model JSON** remains available for advanced settings. Expand **Operating
+settings** for the sweep and global overrides.
+
+**Import KiCad** accepts `.kicad_sch` through the installed `kicad-cli`, or a KiCad
+XML netlist without the CLI. Review the selection before applying it. Existing
+supported passives are selected initially; additions require explicit selection.
+The table compares source and current simulation values and retains hierarchy,
+pin numbers/functions, net names, footprints and fields. Numeric `ESR`/`sim.esr`,
+`ESL`/`sim.esl` and `DCR`/`sim.dcr` fields can supply parasitics; absent fields do
+not erase existing assumptions. DNP/excluded parts remain disabled. Unsupported
+ICs and ambiguous/zero-valued passives are retained as source information rather
+than assigned guessed models.
+
+Existing connections stay unchanged unless **Also update existing terminal
+connections** is selected. New passives use their imported pins. MOSFET pin
+mapping applies only to already configured switches; gate timing remains an
+explicit simulation setting. Recheck the PCB relationship when changing nets
+before using copper extraction. A synchronized parallel primary capacitor bank
+updates `primary_C_F` when edited; a deliberately different reference is retained.
+
+Use the view selector for read-only **KiCad source sheets** or **KiCad component
+data**. Sheet rendering needs `kicad-cli` and Qt SVG support. Exports use temporary
+files; the original schematic is never saved or modified. Source data/layout are
+excluded from the electrical-case cache key. This editor configures the existing
+bridge/receiver solver; control-IC behavior and vendor models remain explicit.
+
+The Qt-free import API is `pcbqs.schematic.read_schematic(path)` (or
+`read_netlist(path)` for XML). `apply_import(config, document, references,
+update_connections=False)` returns a new configuration and leaves its inputs
+unchanged. `python -m pcbqs.schematic source.kicad_sch` prints normalized JSON.

@@ -1,4 +1,4 @@
 """PCB DC/PDN, quasistatic fields and operational circuit analysis."""
 import os as _os
-__version__ = "261107.post1"
+__version__ = "261107.post2"
 _os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")

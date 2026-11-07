@@ -102,7 +102,7 @@ def extract_cached(q,freqs,out,key,log=print):
 def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
     started=time.perf_counter()
     from . import power_bridge,power_spice,wpt
-    physics={k:v for k,v in cfg.items() if k not in ('frequencies_Hz','powers_W','assumptions','name')}
+    physics={k:v for k,v in cfg.items() if k not in ('frequencies_Hz','powers_W','assumptions','name','schematic')}
     h=hashlib.sha256(json.dumps(dict(config=physics,copper=copper,f=f,power=power),sort_keys=True).encode())
     for module in [power_bridge,power_spice,wpt]:h.update(Path(module.__file__).read_bytes())
     for switch in [cfg.get('switch_model',{}),*[s.get('model',{}) for s in cfg.get('switches',[])]]:
