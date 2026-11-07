@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pcbqs"
+dynamic = ["version"]
+description = "PCB power integrity, quasistatic fields and operational circuit analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+dependencies = [
+    "numpy>=1.24", "scipy>=1.10", "shapely>=2.0", "triangle>=20230923",
+    "matplotlib>=3.7", "threadpoolctl>=3.1", "pillow>=9",
+    "emsdev @ https://github.com/lowprocess/emsdev/archive/refs/heads/main.zip",
+]
+
+[project.optional-dependencies]
+core = ["pybind11>=2.10"]
+gpu-cuda12 = ["cupy-cuda12x>=14"]
+gpu-cuda13 = ["cupy-cuda13x>=14"]
+gpu-rocm7 = ["cupy-rocm-7-0>=14"]
+kicad2ems = ["kicad2ems>=261101.post1"]
+test = ["pytest>=7"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pcbqs.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "PROVENANCE.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.exclude-package-data]
+pcbqs = ["*.so", "*.pyd"]

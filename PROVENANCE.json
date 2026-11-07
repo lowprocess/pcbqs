@@ -1,0 +1,128 @@
+{
+  "license": "GPL-3.0-or-later",
+  "policy": "Independent copies; no runtime dependency or automatic synchronization with the origin repositories.",
+  "sources": {
+    "mom25d/src/mom25d/base.py": {
+      "sha256": "a369596195abe431ea5ee2167788c6b430aae4ed0d82e7e8bcf6b1e483bc8cd4",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/geo.py": {
+      "sha256": "d99df7f203a0b5d3f81669347e7a929006d6d6f3ba391c3068f47bcfe0d5b395",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/line.py": {
+      "sha256": "9ff468c019fbd79286a9cb9e78591cf9adeaf609985872317ee0d9460b809260",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/biot.py": {
+      "sha256": "af7f48a8072424ca45fba9b9613659d77aa6bf10ce79e1c18472fa8220a2f3c4",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/farfield.py": {
+      "sha256": "db3fa76848bc6bcb651fce8cba2910b28749e73b906263e12d6f5d8b174fa98c",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/sing.py": {
+      "sha256": "af6edd68c22046713c819ffe4648d6f4ddff2ddce873540b6226a914d6f83def",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/mqs.py": {
+      "sha256": "b13befd099149903fb1f8326d4b81bfa6ceabead92a4d96e5330690a387db584",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/peec.py": {
+      "sha256": "8902a6f93f06fc9b4a9bb90fd4f53e156f1d4b19cc8231b6ef28d737112b4540",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/mqs_cli.py": {
+      "sha256": "a80a73678b6e5fe4348c831d06a75a0c81dc14c33b382989b8a944390b939f39",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/mqs_layout.py": {
+      "sha256": "adffc1026c976b194b97cda95db96cd076c3de2d58e0972390107dc1a27abf4b",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/mqs_ports.py": {
+      "sha256": "a146602d2cfd0dee76ee48a4b43a9d68150b41529a3a09221aa8f8476c6fd5d1",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/power_circuit.py": {
+      "sha256": "b94b138329ba84b30d54a25f06d3262038d364b0a58fa6658093f99b56e325ca",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/power_bridge.py": {
+      "sha256": "9f94b1588186444730437c48129ba345164b790cb98329571588b69a4917cec1",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/power_spice.py": {
+      "sha256": "06cd2ecc779072cbe3fc84c82d396d21fae9508faed9b28eeebd95eba73cfe62",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/power_report.py": {
+      "sha256": "a85d40be7ca67112c8cc306f93ddf4d975ec5b2803a90527cc7db79a52abf0bb",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/power_waveforms.py": {
+      "sha256": "320d89e32d85b578865a5ab0a3e7c1290f81b71feacb24039cb6fc95e83c73ec",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/wpt.py": {
+      "sha256": "936ee7b798df4bda2d11f7fb462d5e49754161073dffdda4680b9933b6ca3596",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/static.py": {
+      "sha256": "9cf90f1606c1ba6d64b8fabce73b3400930f89a016bbd3834a26ecbe535651ee",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/static_backends.py": {
+      "sha256": "5a9486edc5f3e3adad69634122268fc24345f85180e0532bfc04d5a94fa5c9b4",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/static_cupy.py": {
+      "sha256": "02028073ed07cc149233972aa72024815f3d952359803f32fa4fd0a51d4176a7",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/static_cupy_kernels.py": {
+      "sha256": "e1169bbee7be82aba6f7b6aa84674dcdc89eb803f7da3d6187f6ee3cdf30acf5",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/electrostatic.py": {
+      "sha256": "8d8114b2bb4939ae685ae1e7d4f6731e7babcc6a8460e37d701707db76d19de5",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/conductor.py": {
+      "sha256": "1201b3073f89df7618f715a99411c978ec44ce9bb29b0f296f1cb71704bee7e4",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "mom25d/src/mom25d/core/static_kernels.hpp": {
+      "sha256": "ed6be374c8e2aef54e62e4fae14a67fbd3e7a28b5aa8312a138d97bc6c56040c",
+      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
+    },
+    "kicad2ems/src/kicad2ems/parts.py": {
+      "sha256": "0f84c08c9d65e3e9fe075111ac17ff78d2fd8f513e12c6cc3fe9074ef34a8efe",
+      "revision": "1919dbfac42ff7adae41887da6eb3f55345dd3b2"
+    },
+    "kicad2ems/src/kicad2ems/fields/dumps.py": {
+      "sha256": "69b88e9be0ac3b116ae744575ea4f15a72db667a15f4581213bb50890dabbdfc",
+      "revision": "1919dbfac42ff7adae41887da6eb3f55345dd3b2"
+    },
+    "kicad2ems/src/kicad2ems/fields/frames.py": {
+      "sha256": "25ce8576616c7e931d1db44f2d4451ec305bc041cf9830f7f439bba35aecdf56",
+      "revision": "1919dbfac42ff7adae41887da6eb3f55345dd3b2"
+    }
+  },
+  "reference_fixtures": {
+    "spectral-reference.npz": {
+      "sha256": "563a1190cbc355c0911923bf36790828524103a5bea46157803e0fa4a447c37d",
+      "origin": "Pre-split source snapshot and independent full-wave reference, 2026-11-07"
+    },
+    "magnetic-reference.npz": {
+      "sha256": "85325fb72f7cac6330a24a96d83f1793a47525da3f2cf0b3d44a26df8f3e9ac8",
+      "origin": "Pre-split source snapshot and independent full-wave reference, 2026-11-07"
+    },
+    "copper-reference.npz": {
+      "sha256": "aac11060519f5e5d8eed549b5507c865ca0cb82f36ba3d4007b286d737603ee5",
+      "origin": "Pre-split source snapshot and independent full-wave reference, 2026-11-07"
+    }
+  }
+}
