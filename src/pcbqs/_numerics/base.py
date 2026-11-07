@@ -86,4 +86,3 @@ def edge_frames(V):
     L = np.linalg.norm(e, axis=2)
     tau = e / L[..., None]
     return e, L, tau, np.stack([tau[..., 1], -tau[..., 0]], -1)
-

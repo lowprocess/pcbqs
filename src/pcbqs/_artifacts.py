@@ -57,4 +57,3 @@ def write_npz(path, mesh, freqs, data):
     """The counterpart of read_npz: data (nf, nx, ny, nz, 3) complex."""
     np.savez_compressed(path, freqs=np.asarray(freqs, float), data=np.asarray(data, np.complex64),
                         **{a: np.asarray(mesh[a], float) for a in AXES})
-

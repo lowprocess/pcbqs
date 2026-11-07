@@ -60,4 +60,3 @@ def find_runs(geoms, h_of, signal=None, w_max=2.0e-3, min_len=3.0, margin=1.0, t
                     taken.append(poly)
                     runs.append(r)
     return runs
-

@@ -67,4 +67,3 @@ def _offplane_geometry(nodes, tris, outer_levels=0):
         weights = np.tile(_W6, len(ref)) / len(ref)
     P = np.einsum('qk,tkc->tqc', bar, V)
     return V, L, tau, un, Ar, P, weights
-

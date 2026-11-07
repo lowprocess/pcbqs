@@ -59,4 +59,3 @@ def current_deposit(sim, I, x, y, k, per_cell=2.0):
         for c in range(2):
             np.add.at(out[c], (ii[ok], jj[ok]), (mom[..., c].ravel() * wgt)[ok])
     return out[0] / (dx * dy), out[1] / (dx * dy)
-

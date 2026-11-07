@@ -20,4 +20,3 @@ def package(lib):
         return METRIC[m.group(1)]
     m = re.search(r'(?<![\d])(01005|0201|0402|0603|0805|1206|1210|1806|1812|2010|2512)(?![\d])', name)
     return m.group(1) if m else None
-
