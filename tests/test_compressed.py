@@ -136,6 +136,7 @@ def test_batched_layer_images_match_dense_with_tiny_chunks(near):
     expected=potential_moments(q)
     engine=FillEngine(q.nodes,q.tris,q.z_of,near,1,**q._fill_options)
     pairs=_LayeredPairs(q,engine)
+    pairs.native=None      # the NumPy batching under test; `expected` uses the compiled kernel when built
     a,b=np.meshgrid(np.arange(6),np.arange(6),indexing='ij')
     actual=pairs(a.ravel(),b.ravel()).reshape(6,6)
     np.testing.assert_allclose(actual,expected,rtol=2e-13,atol=0.)
@@ -247,3 +248,31 @@ def test_entry_blocks_follow_selected_fill_backend():
     import pcbqs.compressed as compressed
     q=make('hierarchical');q._fill_options=dict(q._fill_options,backend='numpy')
     assert compressed._native(compressed._engine(q)) is None
+
+
+@pytest.mark.parametrize('near',[0.,3.,np.inf])
+@pytest.mark.parametrize('lossy',[False,True])
+def test_native_layered_images_match_numpy_loops(near,lossy,monkeypatch):
+    import pcbqs.compressed as compressed
+    import pcbqs.electrostatic as electrostatic
+    from pcbqs.static_backends import FillEngine
+    q=make('hierarchical',layered=True);q.near=near
+    if lossy:
+        q._dielectric_stack.eps=q._dielectric_stack.eps*(1-.05j);q._dielectric_stack._cache.clear()
+    engine=FillEngine(q.nodes,q.tris,q.z_of,near,q.outer_levels,**q._fill_options)
+    native=compressed._LayeredPairs(q,engine)
+    if native.native is None:
+        pytest.skip('compiled core without layered_pairs')
+    reference=compressed._LayeredPairs(q,engine);reference.native=None
+    rng=np.random.default_rng(2);n=len(q.tris)
+    p,qq=rng.integers(0,n,3000),rng.integers(0,n,3000);p[:50]=qq[:50]
+    a,b=native(p,qq),reference(p,qq)
+    np.testing.assert_allclose(a,b,rtol=1e-12,atol=1e-12*np.abs(b).max())
+    workers=native.native;native.native=(workers[0],workers[1],3)
+    assert np.array_equal(native(p,qq),a)
+    # The dense fill: compiled image kernel against the NumPy rows.
+    M=electrostatic.potential_moments(q)
+    assert q.fill_info['capacitance']['native_images']
+    monkeypatch.setattr(electrostatic,'native_layered',lambda engine:None)
+    R=electrostatic.potential_moments(q)
+    np.testing.assert_allclose(M,R,rtol=1e-12,atol=1e-12*np.abs(R).max())

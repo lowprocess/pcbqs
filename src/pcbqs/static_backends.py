@@ -197,6 +197,32 @@ class OpenMPBackend:
         return self.core.static_pairs(self.data, p, q, d, kind, scalar_only, self.workers)
 
 
+def native_layered(engine, workers=None):
+    """(core, common args, workers) for the compiled layered image kernel, or None.
+
+    Only OpenMP engines use it; NumPy/threaded/device backends keep the host
+    image loops, so an explicit backend choice is respected.
+    """
+    if engine.info['backend'] != 'openmp':
+        return None
+    core = getattr(engine.backend, 'core', None)
+    if core is None or not hasattr(core, 'layered_pairs'):
+        return None
+    g = engine.geometry
+    near = float('inf') if np.isinf(engine.near) else float(engine.near)
+    return core, (engine.backend.data, g.z, g.cent, g.radius, near, int(engine.outer_levels)), \
+        workers or engine.info['workers']
+
+
+def layered_spline_args(images, smooth):
+    """Image distances/coefficients and spline breaks/coefficients for layered_pairs."""
+    d = np.ascontiguousarray([d for d, _ in images], float)
+    c = np.ascontiguousarray([c for _, c in images], complex)
+    if smooth is None:
+        return d, c, np.empty(0), np.empty((4, 0), complex)
+    return d, c, np.ascontiguousarray(smooth.x, float), np.ascontiguousarray(smooth.c, complex)
+
+
 def _cupy_factory(geometry, workers, chunk, device):
     from .static_cupy import CupyBackend
     return CupyBackend(geometry, workers, chunk, device)

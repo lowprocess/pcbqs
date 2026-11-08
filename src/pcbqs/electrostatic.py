@@ -12,7 +12,7 @@ import time
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from .static_backends import FillEngine, bounded_map
+from .static_backends import FillEngine, bounded_map, layered_spline_args, native_layered
 
 
 class DielectricStack:
@@ -111,7 +111,9 @@ def potential_moments(model):
     M = np.zeros((len(v), len(v)), complex)
     rho_max = np.linalg.norm(np.ptp(nodes, axis=0))
     layers = [np.asarray(t) for t in model.layer_tris.values()]
-    batch = engine.pair_batch
+    native = native_layered(engine)
+    # The compiled kernel threads over pairs itself: larger blocks, one at a time.
+    batch, tile_workers = (max(engine.pair_batch, 1 << 20), 1) if native else (engine.pair_batch, engine.tile_workers)
     image_count = 0
     for li, pa in enumerate(layers):
         for pb in layers[li:]:
@@ -138,6 +140,11 @@ def potential_moments(model):
                     pp, qq = rows[r], pb[c]
                 else:
                     pp, qq = np.repeat(rows, len(pb)), np.tile(pb, len(rows))
+                if native is not None:
+                    core, common, workers = native
+                    return pp, qq, core.layered_pairs(*common, np.ascontiguousarray(pp, np.int64),
+                                                      np.ascontiguousarray(qq, np.int64),
+                                                      *layered_spline_args(images, smooth), workers)
                 out = np.empty(len(pp), complex)
                 for start in range(0, len(pp), batch):
                     p, q = pp[start:start+batch], qq[start:start+batch]
@@ -174,8 +181,8 @@ def potential_moments(model):
 
             step = max(1, batch//max(1, len(pb)))
             blocks = [pa[i:i+step] for i in range(0, len(pa), step)]
-            for p, q, values in bounded_map(evaluate_rows, blocks, engine.tile_workers):
+            for p, q, values in bounded_map(evaluate_rows, blocks, tile_workers):
                 M[p, q] = M[q, p] = values
     model.fill_info['capacitance'] = dict(engine.info, image_terms=image_count, scalar_only=True,
-                                         seconds=time.perf_counter()-started)
+                                         native_images=native is not None, seconds=time.perf_counter()-started)
     return M

@@ -54,8 +54,15 @@ entries in place (`fill_info['scheduler'] == 'native'`), so no per-tile host
 work remains. Other backends keep the host tile scheduler (`'host'`).
 The magnetic RWG projection (`fill_info['magnetic']['combine']`) uses a
 native gather when the core is built, otherwise sparse products; it writes
-each symmetric entry once, with no temporaries beyond the output. Layered electrostatics instead parallelizes independent
-rows, with **one native worker per row**, avoiding nested thread pools.
+each symmetric entry once, with no temporaries beyond the output.
+
+Layered electrostatics with the OpenMP backend runs one native image kernel
+per block of observation rows (`fill_info['capacitance']['native_images']`):
+each pair sums the spline of the smooth positive images and integrates every
+close image (and the direct d = 0 terms) analytically, correcting the spline
+at the same quadrature points. Image order is fixed per pair, so results do
+not depend on thread count, and agree with the NumPy image loop to roundoff.
+Other backends keep the NumPy loop, parallel over row blocks.
 Threaded NumPy parallelizes tiles/rows. No global OpenMP or BLAS thread limits
 are changed. BLAS solves and field FFTs retain their separate controls.
 
@@ -129,9 +136,10 @@ medians of three runs, rectangular single-layer meshes:
 | 16,472 | scalar | 6.07 s | 9.56 s | 0.57 s |
 
 A 6,844-triangle two-dielectric layered capacitance fill fell from 152 s to
-19.5 s on CuPy and from 65.5 s to 24.0 s on OpenMP by batching observation rows
-(bitwise-identical results). That path is now host-bound on the NumPy image
-and spline loops rather than device work.
+19.5 s on CuPy and from 65.5 s to 24.0 s (profiled; 17.4 s unprofiled) on OpenMP
+by batching observation rows (bitwise-identical results). The native OpenMP
+image kernel then takes 1.49 s (medians of three, 16 threads), so the CPU path
+is now much faster than the device path for layered stacks.
 
 Dense MQS with the native whole-matrix fill and RWG gather (16 threads):
 

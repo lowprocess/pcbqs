@@ -10,7 +10,7 @@ from scipy.sparse.linalg import LinearOperator
 from scipy.interpolate import CubicSpline
 
 from .hmatrix import HMatrix
-from .static_backends import FillEngine
+from .static_backends import FillEngine, layered_spline_args, native_layered
 from ._numerics.base import RWG, MU0, EPS0
 
 
@@ -106,7 +106,8 @@ class _LayeredPairs:
     """The dense dielectric image/spline integration, evaluated at chosen pairs."""
     def __init__(self,model,engine):
         self.model,self.engine=model,engine;self.cache={}
-        self.info=dict(pair_requests=0,image_interactions=0,integration_calls=0)
+        self.native=native_layered(engine)
+        self.info=dict(pair_requests=0,image_interactions=0,integration_calls=0,native=self.native is not None)
         self.layer=np.empty(len(model.tris),int)
         self.interfaces=[]
         for k,ids in enumerate(model.layer_tris.values()):
@@ -124,7 +125,7 @@ class _LayeredPairs:
                 rho=rho_max*np.linspace(0,1,count)**2;kernel=np.zeros(count,complex)
                 for d,c in positive:kernel+=c/np.hypot(rho,d)
                 smooth=CubicSpline(rho,kernel)
-            self.cache[key]=images,smooth,np.asarray([d for d,_ in images])
+            self.cache[key]=images,smooth,np.asarray([d for d,_ in images]),layered_spline_args(images,smooth)
         return self.cache[key]
 
     def __call__(self,p,q):
@@ -133,7 +134,14 @@ class _LayeredPairs:
         out=np.zeros(len(p),complex);g=self.engine.geometry;m=self.model
         nl=len(self.interfaces);code=self.layer[p]*nl+self.layer[q]
         for k in np.unique(code):
-            ids=np.flatnonzero(code==k);images,smooth,distances=self.images(int(k)//nl,int(k)%nl)
+            ids=np.flatnonzero(code==k);images,smooth,distances,args=self.images(int(k)//nl,int(k)%nl)
+            if self.native is not None:
+                # One compiled call integrates every image of every pair here.
+                core,common,workers=self.native
+                out[ids]=core.layered_pairs(*common,np.ascontiguousarray(p[ids],np.int64),
+                                            np.ascontiguousarray(q[ids],np.int64),*args,workers)
+                self.info['integration_calls']+=1
+                continue
             for start in range(0,len(ids),self.engine.pair_batch):
                 pick=ids[start:start+self.engine.pair_batch];a,b=p[pick],q[pick]
                 rho2=((g.cent[a]-g.cent[b])**2).sum(1)
