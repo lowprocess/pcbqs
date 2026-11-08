@@ -318,8 +318,11 @@ class MQS:
             lo=np.c_[x-rr,y-rr,z0];hi=np.c_[x+rr,y+rr,z1]
             def entry(a,b):
                 aa,bb=np.meshgrid(a,b,indexing='ij')
+                # Segments of one barrel (coaxial, same radius) use the barrel
+                # radius, like its self term: stacked segments then add up
+                # exactly to the whole barrel.
                 sep=np.hypot(x[aa]-x[bb],y[aa]-y[bb])
-                sep=np.where(aa==bb,rr[aa],np.maximum(sep,1e-7))
+                sep=np.where(sep<1e-9,np.maximum(rr[aa],rr[bb]),sep)
                 return filament_mutual(z0[aa],z1[aa],z0[bb],z1[bb],sep)
             L=HMatrix(entry,lo,hi,**self._compression_options)
             self.fill_info['vias']=dict(L.info,matrix_backend='hierarchical')
@@ -330,8 +333,10 @@ class MQS:
             ri = max(rr - self.plating, 0.0)
             R[i] = (z1 - z0) / (self.sigma * np.pi * (rr ** 2 - ri ** 2))
             for j, (x2, y2, r2, z02, z12) in enumerate(self.vseg):
-                s = np.hypot(x - x2, y - y2) if i != j else rr
-                L[i, j] = filament_mutual(z0, z1, z02, z12, max(s, rr if i == j else 1e-7))
+                # Coaxial segments (the same barrel, including i == j) use the
+                # barrel radius, so stacked segments add up to the whole barrel.
+                s = np.hypot(x - x2, y - y2)
+                L[i, j] = filament_mutual(z0, z1, z02, z12, s if s >= 1e-9 else max(rr, r2))
         return diags(R).tocsr(), L
 
     def _loops(self, allow_open=False, return_tree=False):
