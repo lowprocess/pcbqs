@@ -1,0 +1,432 @@
+{
+  "format": "kicad2ems-board",
+  "version": 1,
+  "units": "mm",
+  "source": "peec_skin_demo.py",
+  "outline": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          40.0,
+          0.0
+        ],
+        [
+          40.0,
+          44.0
+        ],
+        [
+          0.0,
+          44.0
+        ],
+        [
+          0.0,
+          0.0
+        ],
+        [
+          40.0,
+          0.0
+        ]
+      ]
+    ]
+  },
+  "copper": {
+    "F.Cu": [
+      {
+        "net": "CAP_TOP",
+        "polygon": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                24.0,
+                4.0
+              ],
+              [
+                24.0,
+                24.0
+              ],
+              [
+                4.0,
+                24.0
+              ],
+              [
+                4.0,
+                4.0
+              ],
+              [
+                24.0,
+                4.0
+              ]
+            ]
+          ]
+        }
+      },
+      {
+        "net": "LOOP",
+        "polygon": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                36.0,
+                32.0
+              ],
+              [
+                36.0,
+                38.0
+              ],
+              [
+                4.0,
+                38.0
+              ],
+              [
+                4.0,
+                32.0
+              ],
+              [
+                36.0,
+                32.0
+              ]
+            ]
+          ]
+        }
+      }
+    ],
+    "B.Cu": [
+      {
+        "net": "CAP_BOTTOM",
+        "polygon": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                24.0,
+                4.0
+              ],
+              [
+                24.0,
+                24.0
+              ],
+              [
+                4.0,
+                24.0
+              ],
+              [
+                4.0,
+                4.0
+              ],
+              [
+                24.0,
+                4.0
+              ]
+            ]
+          ]
+        }
+      },
+      {
+        "net": "LOOP",
+        "polygon": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                36.0,
+                32.0
+              ],
+              [
+                36.0,
+                38.0
+              ],
+              [
+                4.0,
+                38.0
+              ],
+              [
+                4.0,
+                32.0
+              ],
+              [
+                36.0,
+                32.0
+              ]
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "vias": [
+    {
+      "x": 35.5,
+      "y": 32.7,
+      "r": 0.3,
+      "z0": 0.0,
+      "z1": 0.3,
+      "net": "LOOP"
+    },
+    {
+      "x": 35.5,
+      "y": 33.85,
+      "r": 0.3,
+      "z0": 0.0,
+      "z1": 0.3,
+      "net": "LOOP"
+    },
+    {
+      "x": 35.5,
+      "y": 35.0,
+      "r": 0.3,
+      "z0": 0.0,
+      "z1": 0.3,
+      "net": "LOOP"
+    },
+    {
+      "x": 35.5,
+      "y": 36.15,
+      "r": 0.3,
+      "z0": 0.0,
+      "z1": 0.3,
+      "net": "LOOP"
+    },
+    {
+      "x": 35.5,
+      "y": 37.3,
+      "r": 0.3,
+      "z0": 0.0,
+      "z1": 0.3,
+      "net": "LOOP"
+    }
+  ],
+  "ports": [],
+  "parts": [],
+  "prims": {
+    "footprints": [
+      {
+        "ref": "CAP_TOP",
+        "value": "test contact",
+        "props": {},
+        "lib": "pcbqs:Contact",
+        "side": "F",
+        "x": 4.5,
+        "y": 4.5,
+        "rot": 0,
+        "pads": [
+          {
+            "name": "1",
+            "net": "CAP_TOP",
+            "layers": [
+              "F.Cu"
+            ],
+            "xy": [
+              4.5,
+              4.5
+            ],
+            "geom": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    5.0,
+                    4.0
+                  ],
+                  [
+                    5.0,
+                    5.0
+                  ],
+                  [
+                    4.0,
+                    5.0
+                  ],
+                  [
+                    4.0,
+                    4.0
+                  ],
+                  [
+                    5.0,
+                    4.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "ref": "CAP_BOTTOM",
+        "value": "test contact",
+        "props": {},
+        "lib": "pcbqs:Contact",
+        "side": "B",
+        "x": 4.5,
+        "y": 4.5,
+        "rot": 0,
+        "pads": [
+          {
+            "name": "1",
+            "net": "CAP_BOTTOM",
+            "layers": [
+              "B.Cu"
+            ],
+            "xy": [
+              4.5,
+              4.5
+            ],
+            "geom": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    5.0,
+                    4.0
+                  ],
+                  [
+                    5.0,
+                    5.0
+                  ],
+                  [
+                    4.0,
+                    5.0
+                  ],
+                  [
+                    4.0,
+                    4.0
+                  ],
+                  [
+                    5.0,
+                    4.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "ref": "LOOP_TOP",
+        "value": "test contact",
+        "props": {},
+        "lib": "pcbqs:Contact",
+        "side": "F",
+        "x": 4.5,
+        "y": 35.0,
+        "rot": 0,
+        "pads": [
+          {
+            "name": "1",
+            "net": "LOOP",
+            "layers": [
+              "F.Cu"
+            ],
+            "xy": [
+              4.5,
+              35.0
+            ],
+            "geom": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    5.0,
+                    32.0
+                  ],
+                  [
+                    5.0,
+                    38.0
+                  ],
+                  [
+                    4.0,
+                    38.0
+                  ],
+                  [
+                    4.0,
+                    32.0
+                  ],
+                  [
+                    5.0,
+                    32.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "ref": "LOOP_BOTTOM",
+        "value": "test contact",
+        "props": {},
+        "lib": "pcbqs:Contact",
+        "side": "B",
+        "x": 4.5,
+        "y": 35.0,
+        "rot": 0,
+        "pads": [
+          {
+            "name": "1",
+            "net": "LOOP",
+            "layers": [
+              "B.Cu"
+            ],
+            "xy": [
+              4.5,
+              35.0
+            ],
+            "geom": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    5.0,
+                    32.0
+                  ],
+                  [
+                    5.0,
+                    38.0
+                  ],
+                  [
+                    4.0,
+                    38.0
+                  ],
+                  [
+                    4.0,
+                    32.0
+                  ],
+                  [
+                    5.0,
+                    32.0
+                  ]
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "stack": {
+    "copper": [
+      {
+        "name": "B.Cu",
+        "z": 0.0,
+        "t": 0.07
+      },
+      {
+        "name": "F.Cu",
+        "z": 0.3,
+        "t": 0.07
+      }
+    ],
+    "layers": [
+      {
+        "name": "core",
+        "z0": 0.0,
+        "z1": 0.3,
+        "er": 4.0,
+        "tand": 0.002,
+        "kind": "diel"
+      }
+    ],
+    "thickness": 0.3
+  }
+}

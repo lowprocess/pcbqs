@@ -1,0 +1,13 @@
+{
+  "net": "+1V15",
+  "crop_bounds_mm": [
+    190.37,
+    -135.47499999999997,
+    215.37499999999997,
+    -116.02499999999999
+  ],
+  "dmax_mm": 3.0,
+  "dense_triangle_limit": 3000,
+  "error": "RuntimeError: PEEC PDN trial mesh has 25,529 triangles, exceeding the requested 3,000 dense-solver limit",
+  "seconds": 4.016353309999886
+}

@@ -1,0 +1,355 @@
+{
+  "crop_bounds_mm": [
+    190.37,
+    -135.47499999999997,
+    215.37499999999997,
+    -116.02499999999999
+  ],
+  "mesh_runs": [
+    {
+      "coarsen": null,
+      "simplify_mm": 0,
+      "triangles": 25529,
+      "rwg_edges": 30372,
+      "charge_nodes": 20952,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.855354912,
+      "seconds": 2.6394952900000135,
+      "layers": {
+        "B.Cu": 2348,
+        "In8.Cu": 2799,
+        "In7.Cu": 2034,
+        "In6.Cu": 2799,
+        "In5.Cu": 2039,
+        "In4.Cu": 2798,
+        "In3.Cu": 2799,
+        "In2.Cu": 2034,
+        "In1.Cu": 2799,
+        "F.Cu": 3080
+      }
+    },
+    {
+      "coarsen": 2,
+      "simplify_mm": 0,
+      "triangles": 25370,
+      "rwg_edges": 30147,
+      "charge_nodes": 20799,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.5963808,
+      "seconds": 4.325478979999389,
+      "layers": {
+        "B.Cu": 2348,
+        "In8.Cu": 2765,
+        "In7.Cu": 2034,
+        "In6.Cu": 2765,
+        "In5.Cu": 2037,
+        "In4.Cu": 2783,
+        "In3.Cu": 2765,
+        "In2.Cu": 2034,
+        "In1.Cu": 2765,
+        "F.Cu": 3074
+      }
+    },
+    {
+      "coarsen": 4,
+      "simplify_mm": 0,
+      "triangles": 25370,
+      "rwg_edges": 30147,
+      "charge_nodes": 20799,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.5963808,
+      "seconds": 4.0103286199992,
+      "layers": {
+        "B.Cu": 2348,
+        "In8.Cu": 2765,
+        "In7.Cu": 2034,
+        "In6.Cu": 2765,
+        "In5.Cu": 2037,
+        "In4.Cu": 2783,
+        "In3.Cu": 2765,
+        "In2.Cu": 2034,
+        "In1.Cu": 2765,
+        "F.Cu": 3074
+      }
+    },
+    {
+      "coarsen": 8,
+      "simplify_mm": 0,
+      "triangles": 25370,
+      "rwg_edges": 30147,
+      "charge_nodes": 20799,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.5963808,
+      "seconds": 4.008455305000098,
+      "layers": {
+        "B.Cu": 2348,
+        "In8.Cu": 2765,
+        "In7.Cu": 2034,
+        "In6.Cu": 2765,
+        "In5.Cu": 2037,
+        "In4.Cu": 2783,
+        "In3.Cu": 2765,
+        "In2.Cu": 2034,
+        "In1.Cu": 2765,
+        "F.Cu": 3074
+      }
+    },
+    {
+      "coarsen": 4,
+      "simplify_mm": 0.002,
+      "triangles": 25365,
+      "rwg_edges": 30142,
+      "charge_nodes": 20794,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.5882632,
+      "seconds": 4.281294097999307,
+      "layers": {
+        "B.Cu": 2348,
+        "In8.Cu": 2764,
+        "In7.Cu": 2034,
+        "In6.Cu": 2764,
+        "In5.Cu": 2037,
+        "In4.Cu": 2782,
+        "In3.Cu": 2764,
+        "In2.Cu": 2034,
+        "In1.Cu": 2764,
+        "F.Cu": 3074
+      }
+    },
+    {
+      "coarsen": 4,
+      "simplify_mm": 0.005,
+      "triangles": 25104,
+      "rwg_edges": 29878,
+      "charge_nodes": 20579,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 20.166746112,
+      "seconds": 4.3358787819997815,
+      "layers": {
+        "B.Cu": 2329,
+        "In8.Cu": 2753,
+        "In7.Cu": 2034,
+        "In6.Cu": 2753,
+        "In5.Cu": 2037,
+        "In4.Cu": 2710,
+        "In3.Cu": 2753,
+        "In2.Cu": 2034,
+        "In1.Cu": 2753,
+        "F.Cu": 2948
+      }
+    },
+    {
+      "coarsen": 4,
+      "simplify_mm": 0.01,
+      "triangles": 21996,
+      "rwg_edges": 26771,
+      "charge_nodes": 17548,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 15.482368512,
+      "seconds": 5.266900519999581,
+      "layers": {
+        "B.Cu": 1856,
+        "In8.Cu": 2578,
+        "In7.Cu": 1626,
+        "In6.Cu": 2578,
+        "In5.Cu": 1622,
+        "In4.Cu": 2357,
+        "In3.Cu": 2578,
+        "In2.Cu": 1625,
+        "In1.Cu": 2578,
+        "F.Cu": 2598
+      }
+    },
+    {
+      "coarsen": 4,
+      "simplify_mm": 0.025,
+      "triangles": 15406,
+      "rwg_edges": 20177,
+      "charge_nodes": 11127,
+      "via_segments": 459,
+      "terminal_count": 32,
+      "four_moments_GB": 7.595034752,
+      "seconds": 5.545253483999659,
+      "layers": {
+        "B.Cu": 1396,
+        "In8.Cu": 1645,
+        "In7.Cu": 1224,
+        "In6.Cu": 1645,
+        "In5.Cu": 1230,
+        "In4.Cu": 1574,
+        "In3.Cu": 1645,
+        "In2.Cu": 1224,
+        "In1.Cu": 1645,
+        "F.Cu": 2178
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "case": "same_layer_separated",
+      "layer_a": "F.Cu",
+      "layer_b": "F.Cu",
+      "separation_mm": 0.0,
+      "shape": [
+        384,
+        384
+      ],
+      "seconds": 0.09952162399986264,
+      "moments": [
+        {
+          "moment": "M0",
+          "ranks": {
+            "0.001": 3,
+            "0.0001": 5,
+            "1e-06": 8
+          }
+        },
+        {
+          "moment": "Mrx",
+          "ranks": {
+            "0.001": 3,
+            "0.0001": 5,
+            "1e-06": 8
+          }
+        },
+        {
+          "moment": "Mry",
+          "ranks": {
+            "0.001": 3,
+            "0.0001": 5,
+            "1e-06": 8
+          }
+        },
+        {
+          "moment": "Mrr",
+          "ranks": {
+            "0.001": 4,
+            "0.0001": 5,
+            "1e-06": 9
+          }
+        },
+        {
+          "moment": "M0_area_normalized",
+          "ranks": {
+            "0.001": 3,
+            "0.0001": 5,
+            "1e-06": 9
+          }
+        }
+      ]
+    },
+    {
+      "case": "same_layer_touching",
+      "layer_a": "F.Cu",
+      "layer_b": "F.Cu",
+      "separation_mm": 0.0,
+      "shape": [
+        384,
+        384
+      ],
+      "seconds": 0.09337624799991318,
+      "moments": [
+        {
+          "moment": "M0",
+          "ranks": {
+            "0.001": 7,
+            "0.0001": 12,
+            "1e-06": 24
+          }
+        },
+        {
+          "moment": "Mrx",
+          "ranks": {
+            "0.001": 5,
+            "0.0001": 8,
+            "1e-06": 20
+          }
+        },
+        {
+          "moment": "Mry",
+          "ranks": {
+            "0.001": 8,
+            "0.0001": 14,
+            "1e-06": 26
+          }
+        },
+        {
+          "moment": "Mrr",
+          "ranks": {
+            "0.001": 10,
+            "0.0001": 15,
+            "1e-06": 28
+          }
+        },
+        {
+          "moment": "M0_area_normalized",
+          "ranks": {
+            "0.001": 19,
+            "0.0001": 28,
+            "1e-06": 47
+          }
+        }
+      ]
+    },
+    {
+      "case": "overlapping_planes",
+      "layer_a": "F.Cu",
+      "layer_b": "In1.Cu",
+      "separation_mm": 0.12000000000000009,
+      "shape": [
+        384,
+        384
+      ],
+      "seconds": 0.11229110699969169,
+      "moments": [
+        {
+          "moment": "M0",
+          "ranks": {
+            "0.001": 43,
+            "0.0001": 90,
+            "1e-06": 219
+          }
+        },
+        {
+          "moment": "Mrx",
+          "ranks": {
+            "0.001": 56,
+            "0.0001": 110,
+            "1e-06": 229
+          }
+        },
+        {
+          "moment": "Mry",
+          "ranks": {
+            "0.001": 45,
+            "0.0001": 96,
+            "1e-06": 223
+          }
+        },
+        {
+          "moment": "Mrr",
+          "ranks": {
+            "0.001": 66,
+            "0.0001": 122,
+            "1e-06": 242
+          }
+        },
+        {
+          "moment": "M0_area_normalized",
+          "ranks": {
+            "0.001": 240,
+            "0.0001": 273,
+            "1e-06": 317
+          }
+        }
+      ]
+    }
+  ]
+}

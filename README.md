@@ -32,6 +32,12 @@ remain supported. Static-fill plugins use the `pcbqs.static_backends` entry grou
 - [Validation and limits](docs/quasistatic-validation.md)
 - [Migration](docs/migration.md)
 - [Copied-code provenance](PROVENANCE.json)
+- [PEEC and skin-effect test PCB](examples/peec-skin/README.md): two coupons,
+  model comparisons, independent references and a reproducible KiCad layout.
+- [Experimental PEEC PDN comparison](examples/pdn-peec-trial/README.md):
+  loaded rails, independent DC/AC references, and mesh sensitivity.
+- [Jetson AGX Thor PDN check](examples/jetson-pdn/REPORT.md): a real-board DC
+  cross-check, cavity limitations, and a bounded local PEEC/skin comparison.
 
 Private `_numerics` functions are independently maintained snapshots, not a
 shared library or a runtime link to MoM. `emsdev` supplies only existing hardware

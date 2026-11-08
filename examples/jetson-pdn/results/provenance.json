@@ -1,0 +1,9 @@
+{
+  "repository": "KiCad/kicad-source-mirror",
+  "revision": "8c85ac14529b4375d75f2bb3d0e97e6145b0a32c",
+  "path": "demos/jetson-agx-thor-baseboard/jetson-agx-thor-baseboard.kicad_pcb",
+  "git_blob_sha1": "2884cd5276b0676d4e5d8d919f202d85e8432987",
+  "sha256": "e61179b68ac151376f5552f91a8acc2aed46f0cc4cd9c771049490735cdbf3f8",
+  "bytes": 84806775,
+  "license": "Apache-2.0; Antmicro 2025-2026"
+}

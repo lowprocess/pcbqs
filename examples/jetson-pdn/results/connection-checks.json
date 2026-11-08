@@ -1,0 +1,26 @@
+[
+  {
+    "net": "+1V8",
+    "load": "U78",
+    "power_path_only": true,
+    "source": "L7",
+    "drop_V_at_1A": 0.009001828791876165,
+    "power_path_R_ohm": 0.009001828791876165,
+    "loss_W": 0.00900181184508484,
+    "notes": [],
+    "mesh_nodes": 28374,
+    "seconds": 2.2852820930002054
+  },
+  {
+    "net": "+12V",
+    "load": "TP98",
+    "power_path_only": true,
+    "source": "L6",
+    "drop_V_at_1A": 0.6755029729164502,
+    "power_path_R_ohm": 0.6755029729164502,
+    "loss_W": 0.6755029700052051,
+    "notes": [],
+    "mesh_nodes": 3677,
+    "seconds": 0.20733799899971928
+  }
+]

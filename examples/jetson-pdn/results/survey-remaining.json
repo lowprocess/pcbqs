@@ -1,0 +1,2168 @@
+{
+  "frequencies_Hz": [
+    1000.0,
+    2360.9861416403655,
+    5574.255561017867,
+    13160.740129524926,
+    31072.325059538613,
+    73361.32885411539,
+    173205.08075688776,
+    408934.7953287128,
+    965489.3846056313,
+    2279507.0569547783,
+    5381884.571241653,
+    12706554.888609657,
+    30000000.0
+  ],
+  "rails": [
+    {
+      "net": "+3V3",
+      "source": "L2",
+      "ground_source": "U13",
+      "loads": [
+        "J13",
+        "U21",
+        "J12"
+      ],
+      "load_A_each": 1.0,
+      "VRM_assumption": {
+        "R_ohm": 0.002,
+        "L_H": 2e-08
+      },
+      "resolutions": [
+        {
+          "dmax_mm": 3.0,
+          "plane_min_mm2": null,
+          "vertices": 50462,
+          "seconds": 408.81745517700074,
+          "cavities": [
+            {
+              "power": "In2.Cu",
+              "ground": "In3.Cu",
+              "area_mm2": 13974.068746585674,
+              "d_mm": 0.07000000000000006,
+              "er": 3.96
+            },
+            {
+              "power": "In2.Cu",
+              "ground": "In1.Cu",
+              "area_mm2": 13974.068746585674,
+              "d_mm": 0.19999999999999984,
+              "er": 4.3
+            }
+          ],
+          "notes": [],
+          "port_connections": {
+            "C93": {
+              "role": "decap",
+              "power": "1 via(s), 2.45 squares over 0.12 mm",
+              "ground": "1 via(s), 2.45 squares over 0.12 mm",
+              "mount_H": 9.258075741607558e-10,
+              "dof": 16614,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C355": {
+              "role": "decap",
+              "power": "1 via(s), 0.99 squares over 0.12 mm",
+              "ground": "1 via(s), 3.45 squares over 0.12 mm",
+              "mount_H": 9.045094404407051e-10,
+              "dof": 16615,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C131": {
+              "role": "decap",
+              "power": "1 via(s), 4.48 squares over 0.12 mm",
+              "ground": "1 via(s), 1.69 squares over 0.12 mm",
+              "mount_H": 1.1680176618502103e-09,
+              "dof": 16616,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C47": {
+              "role": "decap",
+              "power": "1 via(s), 2.66 squares over 0.12 mm",
+              "ground": "1 via(s), 1.75 squares over 0.12 mm",
+              "mount_H": 9.106641034833383e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C132": {
+              "role": "decap",
+              "power": "1 via(s), 5.09 squares over 0.12 mm",
+              "ground": "1 via(s), 6.85 squares over 0.12 mm",
+              "mount_H": 2.0746743842075347e-09,
+              "dof": 16618,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C117": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.12 mm",
+              "ground": "1 via(s), 1.28 squares over 0.12 mm",
+              "mount_H": 4.1171889369541865e-10,
+              "dof": 16619,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C70": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "28 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": 36700,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C94": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.12 mm",
+              "ground": "1 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 1.8843800518179031e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C166": {
+              "role": "decap",
+              "power": "no via to a plane within 6.0 mm of its pad",
+              "ground": "1 via(s), 5.12 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": null,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C67": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "18 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": 36700,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C2": {
+              "role": "decap",
+              "power": "1 via(s), 6.59 squares over 0.12 mm",
+              "ground": "1 via(s), 2.28 squares over 0.12 mm",
+              "mount_H": 1.6006479385256144e-09,
+              "dof": 16620,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C73": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "25 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": 36700,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C89": {
+              "role": "decap",
+              "power": "1 via(s), 2.19 squares over 0.12 mm",
+              "ground": "1 via(s), 1.34 squares over 0.12 mm",
+              "mount_H": 7.579829692451178e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C119": {
+              "role": "decap",
+              "power": "1 via(s), 1.68 squares over 0.12 mm",
+              "ground": "1 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 4.732109633616648e-10,
+              "dof": 16621,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C313": {
+              "role": "decap",
+              "power": "1 via(s), 39.89 squares over 0.12 mm",
+              "ground": "1 via(s), 2.69 squares over 0.12 mm",
+              "mount_H": 6.715934046525639e-09,
+              "dof": 16622,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C11": {
+              "role": "decap",
+              "power": "1 via(s), 1.41 squares over 0.12 mm",
+              "ground": "1 via(s), 1.46 squares over 0.12 mm",
+              "mount_H": 6.172150852828824e-10,
+              "dof": 16623,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C126": {
+              "role": "decap",
+              "power": "1 via(s), 5.17 squares over 0.12 mm",
+              "ground": "1 via(s), 1.18 squares over 0.12 mm",
+              "mount_H": 1.1980584499815599e-09,
+              "dof": 16624,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C96": {
+              "role": "decap",
+              "power": "1 via(s), 1.18 squares over 0.12 mm",
+              "ground": "1 via(s), 1.69 squares over 0.12 mm",
+              "mount_H": 6.701545006930952e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C124": {
+              "role": "decap",
+              "power": "1 via(s), 1.97 squares over 0.12 mm",
+              "ground": "1 via(s), 1.57 squares over 0.12 mm",
+              "mount_H": 7.604364974240508e-10,
+              "dof": 16624,
+              "element": {
+                "C": 9.999999999999999e-06,
+                "ESR": 0.005,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C64": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "30 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": 36700,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C87": {
+              "role": "decap",
+              "power": "1 via(s), 1.26 squares over 0.12 mm",
+              "ground": "1 via(s), 0.96 squares over 0.12 mm",
+              "mount_H": 5.035723392320784e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C91": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.12 mm",
+              "ground": "1 via(s), 1.69 squares over 0.12 mm",
+              "mount_H": 4.735936260929092e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C10": {
+              "role": "decap",
+              "power": "1 via(s), 2.28 squares over 0.12 mm",
+              "ground": "1 via(s), 1.59 squares over 0.12 mm",
+              "mount_H": 8.259227534748849e-10,
+              "dof": 16625,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C356": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.12 mm",
+              "ground": "1 via(s), 1.89 squares over 0.12 mm",
+              "mount_H": 5.014514458848715e-10,
+              "dof": 16626,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C157": {
+              "role": "decap",
+              "power": "no via to a plane within 6.0 mm of its pad",
+              "ground": "1 via(s), 0.83 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": null,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C98": {
+              "role": "decap",
+              "power": "1 via(s), 2.11 squares over 0.12 mm",
+              "ground": "1 via(s), 0.94 squares over 0.12 mm",
+              "mount_H": 6.973484893796135e-10,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C192": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "1 via(s), 1.58 squares over 0.86 mm",
+              "mount_H": 0.0,
+              "dof": 36701,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C190": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "1 via(s), 2.54 squares over 0.86 mm",
+              "mount_H": 0.0,
+              "dof": 36701,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C168": {
+              "role": "decap",
+              "power": "2 via(s), 1.82 squares over 0.86 mm",
+              "ground": "1 via(s), 1.58 squares over 0.86 mm",
+              "mount_H": 4.919845526842296e-09,
+              "dof": 16627,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C312": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.86 mm",
+              "ground": "1 via(s), 1.08 squares over 0.86 mm",
+              "mount_H": 2.4844609539739872e-09,
+              "dof": 16617,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C204": {
+              "role": "decap",
+              "power": "1 via(s), 2.25 squares over 0.86 mm",
+              "ground": "1 via(s), 2.24 squares over 0.86 mm",
+              "mount_H": 5.920722536732139e-09,
+              "dof": 16628,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C198": {
+              "role": "decap",
+              "power": "6 via(s), 0.01 squares over 0.86 mm",
+              "ground": "1 via(s), 2.08 squares over 0.86 mm",
+              "mount_H": 3.6343388253200773e-09,
+              "dof": 16629,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C191": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "1 via(s), 1.58 squares over 0.86 mm",
+              "mount_H": 0.0,
+              "dof": 36701,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C71": {
+              "role": "decap",
+              "power": "5 via(s), 0.01 squares over 0.86 mm",
+              "ground": "1 via(s), 2.08 squares over 0.86 mm",
+              "mount_H": 3.646736910849989e-09,
+              "dof": 16630,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C199": {
+              "role": "decap",
+              "power": "1 via(s), 1.61 squares over 0.86 mm",
+              "ground": "1 via(s), 1.61 squares over 0.86 mm",
+              "mount_H": 4.562860026839233e-09,
+              "dof": 16631,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C189": {
+              "role": "decap",
+              "power": "1 via(s), 1.99 squares over 0.86 mm",
+              "ground": "1 via(s), 2.04 squares over 0.86 mm",
+              "mount_H": 5.427921968266298e-09,
+              "dof": 16632,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C193": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "1 via(s), 2.08 squares over 0.86 mm",
+              "mount_H": 0.0,
+              "dof": 36701,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C210": {
+              "role": "decap",
+              "power": "1 via(s), 4.28 squares over 0.86 mm",
+              "ground": "1 via(s), 1.68 squares over 0.86 mm",
+              "mount_H": 7.554599476653105e-09,
+              "dof": 16633,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C205": {
+              "role": "decap",
+              "power": "1 via(s), 2.47 squares over 0.86 mm",
+              "ground": "3 via(s), 2.45 squares over 0.86 mm",
+              "mount_H": 6.416708523363758e-09,
+              "dof": 16634,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C207": {
+              "role": "decap",
+              "power": "1 via(s), 2.50 squares over 0.86 mm",
+              "ground": "2 via(s), 1.70 squares over 0.86 mm",
+              "mount_H": 5.951595875743403e-09,
+              "dof": 16635,
+              "element": {
+                "C": 9.999999999999999e-06,
+                "ESR": 0.005,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C125": {
+              "role": "decap",
+              "power": "1 via(s), 4.59 squares over 0.86 mm",
+              "ground": "1 via(s), 0.01 squares over 0.86 mm",
+              "mount_H": 6.321187323653541e-09,
+              "dof": 16636,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C74": {
+              "role": "decap",
+              "power": "5 via(s), 0.29 squares over 0.86 mm",
+              "ground": "1 via(s), 2.09 squares over 0.86 mm",
+              "mount_H": 3.983367182400157e-09,
+              "dof": 16630,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C171": {
+              "role": "decap",
+              "power": "2 via(s), 1.86 squares over 0.86 mm",
+              "ground": "1 via(s), 1.69 squares over 0.86 mm",
+              "mount_H": 4.827787681730396e-09,
+              "dof": 16627,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C170": {
+              "role": "decap",
+              "power": "6 via(s), 0.01 squares over 0.86 mm",
+              "ground": "1 via(s), 2.08 squares over 0.86 mm",
+              "mount_H": 3.634444055120329e-09,
+              "dof": 16629,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C208": {
+              "role": "decap",
+              "power": "2 via(s), 6.03 squares over 0.86 mm",
+              "ground": "1 via(s), 2.69 squares over 0.86 mm",
+              "mount_H": 1.0407704940366162e-08,
+              "dof": 16637,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C203": {
+              "role": "decap",
+              "power": "1 via(s), 5.41 squares over 0.86 mm",
+              "ground": "2 via(s), 3.69 squares over 0.86 mm",
+              "mount_H": 1.1245478068305055e-08,
+              "dof": 16635,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C159": {
+              "role": "decap",
+              "power": "6 via(s), 1.62 squares over 0.86 mm",
+              "ground": "1 via(s), 0.01 squares over 0.86 mm",
+              "mount_H": 3.2968678291080636e-09,
+              "dof": 16638,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C167": {
+              "role": "decap",
+              "power": "1 via(s), 28.05 squares over 0.86 mm",
+              "ground": "1 via(s), 6.47 squares over 0.86 mm",
+              "mount_H": 3.9076900922249414e-08,
+              "dof": 16639,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C118": {
+              "role": "decap",
+              "power": "1 via(s), 1.18 squares over 0.86 mm",
+              "ground": "1 via(s), 0.01 squares over 0.86 mm",
+              "mount_H": 2.5510180327829287e-09,
+              "dof": 16621,
+              "element": {
+                "C": 9.999999999999999e-06,
+                "ESR": 0.005,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C85": {
+              "role": "decap",
+              "power": "1 via(s), 4.43 squares over 0.86 mm",
+              "ground": "1 via(s), 2.69 squares over 0.86 mm",
+              "mount_H": 9.171459876863364e-09,
+              "dof": 16617,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C180": {
+              "role": "decap",
+              "power": "2 via(s), 1.86 squares over 0.86 mm",
+              "ground": "1 via(s), 1.60 squares over 0.86 mm",
+              "mount_H": 4.755294319697691e-09,
+              "dof": 16627,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "L2": {
+              "role": "source",
+              "power": "planeless net",
+              "ground": "29 via(s), 0.00 squares over 0.12 mm",
+              "mount_H": 0.0,
+              "dof": 36700,
+              "element": {
+                "R": 0.002,
+                "L": 2e-08
+              }
+            },
+            "J13": {
+              "role": "load",
+              "power": "no pad",
+              "ground": "16 via(s), 0.03 squares over 0.86 mm",
+              "mount_H": 0.0,
+              "dof": null,
+              "element": null
+            },
+            "U21": {
+              "role": "load",
+              "power": "8 via(s), 0.30 squares over 0.12 mm",
+              "ground": "7 via(s), 0.01 squares over 0.12 mm",
+              "mount_H": 8.398898311121405e-11,
+              "dof": 16617,
+              "element": null
+            },
+            "J12": {
+              "role": "load",
+              "power": "2 via(s), 1.06 squares over 0.12 mm",
+              "ground": "6 via(s), 0.29 squares over 0.12 mm",
+              "mount_H": 2.902501936211586e-10,
+              "dof": 16627,
+              "element": null
+            }
+          },
+          "impedance": {
+            "U21": {
+              "real_ohm": [
+                0.0038723573831754236,
+                0.003881584749631914,
+                0.003925373663246484,
+                0.004171970991874792,
+                0.006159895639898637,
+                0.007688680379199518,
+                0.0012455730399203208,
+                0.001139261346020076,
+                0.0013282828444824714,
+                0.00153204726177969,
+                0.010245835212851998,
+                0.004059597248307797,
+                0.0013392567599379201
+              ],
+              "imag_ohm": [
+                0.00011287909006960642,
+                0.0002666983387898949,
+                0.0006324419304891713,
+                0.0015308708059879356,
+                0.004101547709055394,
+                -0.011722835025509526,
+                -0.0026684412274578856,
+                -0.0003280027423150082,
+                0.0014402719878603828,
+                0.0043589413030258204,
+                0.008346208747674909,
+                0.005236536283879686,
+                0.02340794267065415
+              ],
+              "bare_abs_ohm": [
+                16475.87674753006,
+                6978.396897488825,
+                2955.7155596203042,
+                1251.8992694546614,
+                530.2442882756864,
+                224.58590038882795,
+                95.12364439582169,
+                40.28949087197079,
+                17.063979865679865,
+                7.225869973042481,
+                3.0568466547607263,
+                1.286099959117424,
+                0.5242798700061574
+              ]
+            },
+            "J12": {
+              "real_ohm": [
+                0.004266323289356983,
+                0.004276456002972406,
+                0.004321620896113232,
+                0.004570237482502607,
+                0.006560715203049578,
+                0.00810518076720671,
+                0.00165839882077209,
+                0.0014015379436968286,
+                0.0018242676640842304,
+                0.0021498997277520277,
+                0.011550391842058414,
+                0.004585795659284875,
+                0.0027044192268362226
+              ],
+              "imag_ohm": [
+                0.000114354764846129,
+                0.0002701820205212901,
+                0.0006406677409426293,
+                0.0015503266526095906,
+                0.0041482335664931955,
+                -0.011617346890997906,
+                -0.0024289520684527234,
+                0.00023456162541807648,
+                0.0030259958111091235,
+                0.007892382746113131,
+                0.016750260784115192,
+                0.02594523822500301,
+                0.07082659228395402
+              ],
+              "bare_abs_ohm": [
+                16475.876749310282,
+                6978.396896900993,
+                2955.715553805662,
+                1251.8992514909717,
+                530.2442416902219,
+                224.58578624927904,
+                95.12337082185394,
+                40.28884172873343,
+                17.06245250840153,
+                7.222313624440817,
+                3.0485630846251666,
+                1.2666458651948842,
+                0.47841062296668
+              ]
+            }
+          }
+        }
+      ],
+      "nets": [
+        "+3V3",
+        "/CSI/CSIA_I2C_VCC",
+        "/CSI/CSIB_I2C_VCC",
+        "/DCDC/3V3_OUT",
+        "/M.2/3V3_M2",
+        "Net-(U21-USB2DN_DM3)",
+        "Net-(U21-USB2DN_DM4)",
+        "Net-(U21-USB2DN_DP3)",
+        "Net-(U21-USB2DN_DP4)",
+        "Net-(U71-~{RESET})"
+      ],
+      "series": [
+        {
+          "ref": "R344",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "Net-(U71-~{RESET})"
+        },
+        {
+          "ref": "R258",
+          "kind": "R",
+          "R_ohm": 0.001,
+          "a": "+3V3",
+          "b": "/DCDC/3V3_OUT"
+        },
+        {
+          "ref": "R169",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "/CSI/CSIB_I2C_VCC"
+        },
+        {
+          "ref": "R21",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "Net-(U21-USB2DN_DP3)"
+        },
+        {
+          "ref": "R48",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "Net-(U21-USB2DN_DP4)"
+        },
+        {
+          "ref": "R213",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "/M.2/3V3_M2"
+        },
+        {
+          "ref": "R46",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "Net-(U21-USB2DN_DM3)"
+        },
+        {
+          "ref": "R57",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "Net-(U21-USB2DN_DM4)"
+        },
+        {
+          "ref": "R158",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+3V3",
+          "b": "/CSI/CSIA_I2C_VCC"
+        }
+      ],
+      "decaps": 51,
+      "plane_selection": "default",
+      "seconds": 411.63062587999957
+    },
+    {
+      "net": "+1V8",
+      "source": "L7",
+      "ground_source": "U7",
+      "loads": [
+        "U43",
+        "U78"
+      ],
+      "load_A_each": 1.0,
+      "VRM_assumption": {
+        "R_ohm": 0.002,
+        "L_H": 2e-08
+      },
+      "resolutions": [
+        {
+          "dmax_mm": 3.0,
+          "plane_min_mm2": null,
+          "vertices": 10926,
+          "seconds": 19.307114821999676,
+          "cavities": [
+            {
+              "power": "In4.Cu",
+              "ground": "In6.Cu",
+              "area_mm2": 2736.6019290667073,
+              "d_mm": 0.27,
+              "er": 4.206367795059469
+            },
+            {
+              "power": "In4.Cu",
+              "ground": "In3.Cu",
+              "area_mm2": 2736.6019290667073,
+              "d_mm": 0.19999999999999996,
+              "er": 4.3
+            }
+          ],
+          "notes": [],
+          "port_connections": {
+            "C305": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "5 via(s), 0.30 squares over 0.39 mm",
+              "mount_H": 0.0,
+              "dof": 6958,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C202": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.39 mm",
+              "ground": "1 via(s), 0.01 squares over 0.39 mm",
+              "mount_H": 5.876732302400743e-10,
+              "dof": 3149,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C9": {
+              "role": "decap",
+              "power": "1 via(s), 2.28 squares over 0.39 mm",
+              "ground": "1 via(s), 1.59 squares over 0.39 mm",
+              "mount_H": 2.6623702997987824e-09,
+              "dof": 3150,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C354": {
+              "role": "decap",
+              "power": "1 via(s), 1.47 squares over 0.39 mm",
+              "ground": "1 via(s), 1.18 squares over 0.39 mm",
+              "mount_H": 1.995005096584373e-09,
+              "dof": 3151,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C37": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "5 via(s), 0.01 squares over 0.39 mm",
+              "mount_H": 0.0,
+              "dof": 6958,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C1": {
+              "role": "decap",
+              "power": "1 via(s), 8.09 squares over 0.39 mm",
+              "ground": "1 via(s), 2.28 squares over 0.39 mm",
+              "mount_H": 5.930179793974521e-09,
+              "dof": 3152,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C155": {
+              "role": "decap",
+              "power": "1 via(s), 2.01 squares over 0.39 mm",
+              "ground": "1 via(s), 0.68 squares over 0.39 mm",
+              "mount_H": 2.0643598710730333e-09,
+              "dof": 3153,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C33": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "5 via(s), 0.01 squares over 0.39 mm",
+              "mount_H": 0.0,
+              "dof": 6958,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C162": {
+              "role": "decap",
+              "power": "1 via(s), 14.11 squares over 0.39 mm",
+              "ground": "1 via(s), 1.47 squares over 0.39 mm",
+              "mount_H": 8.49693932849925e-09,
+              "dof": 3154,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C216": {
+              "role": "decap",
+              "power": "1 via(s), 0.01 squares over 0.39 mm",
+              "ground": "1 via(s), 3.18 squares over 0.39 mm",
+              "mount_H": 2.2859063600402927e-09,
+              "dof": 3155,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C163": {
+              "role": "decap",
+              "power": "1 via(s), 1.89 squares over 0.39 mm",
+              "ground": "1 via(s), 2.63 squares over 0.39 mm",
+              "mount_H": 2.935054340317642e-09,
+              "dof": 3156,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "L7": {
+              "role": "source",
+              "power": "planeless net",
+              "ground": "5 via(s), 0.25 squares over 0.39 mm",
+              "mount_H": 0.0,
+              "dof": 6958,
+              "element": {
+                "R": 0.002,
+                "L": 2e-08
+              }
+            },
+            "U43": {
+              "role": "load",
+              "power": "1 via(s), 2.67 squares over 0.39 mm",
+              "ground": "3 via(s), 0.56 squares over 0.39 mm",
+              "mount_H": 2.2099429104630212e-09,
+              "dof": 3153,
+              "element": null
+            },
+            "U78": {
+              "role": "load",
+              "power": "2 via(s), 1.50 squares over 0.39 mm",
+              "ground": "3 via(s), 0.91 squares over 0.39 mm",
+              "mount_H": 1.5630339553919993e-09,
+              "dof": 3155,
+              "element": null
+            }
+          },
+          "impedance": {
+            "U43": {
+              "real_ohm": [
+                0.010539320366587217,
+                0.0105596814993,
+                0.010593723213662977,
+                0.010661452317707647,
+                0.01085920925939936,
+                0.012037991509392663,
+                0.09284210759786489,
+                0.012641533857302939,
+                0.012549943173336622,
+                0.015615813714382067,
+                0.025922185789809583,
+                0.010988441266355769,
+                0.009326771140238934
+              ],
+              "imag_ohm": [
+                0.0001525270066380146,
+                0.00036016099718964053,
+                0.0008509610372951919,
+                0.002017423574553939,
+                0.004876241979675988,
+                0.013316679500967474,
+                -0.03362942928869426,
+                0.0014925105260999274,
+                0.02311990872316251,
+                0.06418254897192713,
+                0.09689477636838124,
+                0.22113636193424893,
+                0.5905032686685185
+              ],
+              "bare_abs_ohm": [
+                177770.81779043537,
+                75296.17099549666,
+                31892.006384624725,
+                13507.949477769302,
+                5721.322369835666,
+                2423.2766889201494,
+                1026.3809888909482,
+                434.71978227317476,
+                184.11265948902695,
+                77.94892095433751,
+                32.939064619197275,
+                13.77109335351175,
+                5.406781277265996
+              ]
+            },
+            "U78": {
+              "real_ohm": [
+                0.020298867243875456,
+                0.020068960879588232,
+                0.02001651890555534,
+                0.02000454758140932,
+                0.02000143956650522,
+                0.020000500197699122,
+                0.020000168083104054,
+                0.020000038628376904,
+                0.019999986222718105,
+                0.019999965688410032,
+                0.019999967401954654,
+                0.020000036144807627,
+                0.020000513383145437
+              ],
+              "imag_ohm": [
+                -1591.5473627043743,
+                -674.1027462984802,
+                -285.5173308607635,
+                -120.93110294958718,
+                -51.21991720477443,
+                -21.692701391550475,
+                -9.184233520730366,
+                -3.881145584352102,
+                -1.6229637314824872,
+                -0.6380585505598702,
+                -0.1537345039208784,
+                0.20997934561891043,
+                0.7384347008628404
+              ],
+              "bare_abs_ohm": [
+                1226896413.5118823,
+                523711528.00367427,
+                222322107.9560049,
+                94222785.08146052,
+                39915717.93726044,
+                16907275.691405706,
+                7161285.935645823,
+                3033219.0756155984,
+                1284744.9454724465,
+                544155.6556565718,
+                230478.65928255548,
+                97619.60626529502,
+                41346.728380410816
+              ]
+            }
+          }
+        }
+      ],
+      "nets": [
+        "+1V8",
+        "/DCDC/1V8_OUT"
+      ],
+      "series": [
+        {
+          "ref": "R10",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+1V8",
+          "b": "/DCDC/1V8_OUT"
+        }
+      ],
+      "decaps": 11,
+      "plane_selection": "default",
+      "seconds": 20.50570538000011
+    },
+    {
+      "net": "+5V_AON",
+      "source": "L8",
+      "ground_source": "U75",
+      "loads": [
+        "U15",
+        "U70"
+      ],
+      "load_A_each": 1.0,
+      "VRM_assumption": {
+        "R_ohm": 0.002,
+        "L_H": 2e-08
+      },
+      "resolutions": [
+        {
+          "dmax_mm": 3.0,
+          "plane_min_mm2": 50.0,
+          "vertices": 710,
+          "seconds": 1.8716832970003452,
+          "cavities": [
+            {
+              "power": "F.Cu",
+              "ground": "In1.Cu",
+              "area_mm2": 81.45840047325093,
+              "d_mm": 0.1200000000000001,
+              "er": 4.1
+            }
+          ],
+          "notes": [],
+          "port_connections": {
+            "C378": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 711,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C223": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 710,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C62": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 710,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 4.5e-10,
+                "defaulted": true,
+                "pkg": "0603"
+              }
+            },
+            "C379": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 711,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C381": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 711,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C380": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 711,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "L8": {
+              "role": "source",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 711,
+              "element": {
+                "R": 0.002,
+                "L": 2e-08
+              }
+            },
+            "U15": {
+              "role": "load",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 710,
+              "element": null
+            },
+            "U70": {
+              "role": "load",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 710,
+              "element": null
+            }
+          },
+          "impedance": {
+            "U15": {
+              "real_ohm": [
+                0.0030003881907989596,
+                0.0030021653291386935,
+                0.0030121154546001744,
+                0.003068972997544902,
+                0.0034347716452181854,
+                0.009103742149236526,
+                0.003535528268127476,
+                0.0018799500159504957,
+                0.0026655801879485984,
+                0.0018901195090530747,
+                0.0020485635284151417,
+                0.03526903406144878,
+                0.004447977221241888
+              ],
+              "imag_ohm": [
+                0.0001291242967251502,
+                0.00030497405239622756,
+                0.0007215351799482496,
+                0.0017234816335603166,
+                0.0043523553371352525,
+                0.016314980056968797,
+                -0.012000422304883247,
+                -0.0021808161648918423,
+                0.0012050074438380567,
+                0.005661765461479888,
+                0.01585194697358493,
+                0.06308114033440619,
+                0.04791036700179459
+              ],
+              "bare_abs_ohm": [
+                488671834567.11115,
+                517417018049.4543,
+                488671098120.3369,
+                488671834567.11115,
+                488671834567.11115,
+                462952264326.73676,
+                462952264326.7368,
+                488671834567.1111,
+                499018909583.3704,
+                499511937374.72235,
+                499952399087.7837,
+                500038030406.5511,
+                499993713704.337
+              ]
+            },
+            "U70": {
+              "real_ohm": [
+                0.0030003881907989596,
+                0.0030021653291386935,
+                0.0030121154546001744,
+                0.003068972997544902,
+                0.0034347716452181854,
+                0.009103742149236526,
+                0.003535528268127476,
+                0.0018799500159504957,
+                0.0026655801879485984,
+                0.0018901195090530747,
+                0.0020485635284151417,
+                0.03526903406144878,
+                0.004447977221241888
+              ],
+              "imag_ohm": [
+                0.0001291242967251502,
+                0.00030497405239622756,
+                0.0007215351799482496,
+                0.0017234816335603166,
+                0.0043523553371352525,
+                0.016314980056968797,
+                -0.012000422304883247,
+                -0.0021808161648918423,
+                0.0012050074438380567,
+                0.005661765461479888,
+                0.01585194697358493,
+                0.06308114033440619,
+                0.04791036700179459
+              ],
+              "bare_abs_ohm": [
+                488671834567.11115,
+                517417018049.4543,
+                488671098120.3369,
+                488671834567.11115,
+                488671834567.11115,
+                462952264326.73676,
+                462952264326.7368,
+                488671834567.1111,
+                499018909583.3704,
+                499511937374.72235,
+                499952399087.7837,
+                500038030406.5511,
+                499993713704.337
+              ]
+            }
+          }
+        }
+      ],
+      "nets": [
+        "+5V_AON",
+        "/DCDC/5V_{AON}_OUT"
+      ],
+      "series": [
+        {
+          "ref": "R366",
+          "kind": "R",
+          "R_ohm": 0.001,
+          "a": "+5V_AON",
+          "b": "/DCDC/5V_{AON}_OUT"
+        }
+      ],
+      "decaps": 6,
+      "plane_selection": "explicit 50 mm2 small-rail diagnostic",
+      "seconds": 2.788921258999835
+    },
+    {
+      "net": "+20V",
+      "source": "L4",
+      "ground_source": "U65",
+      "loads": [
+        "U63",
+        "U64"
+      ],
+      "load_A_each": 1.0,
+      "VRM_assumption": {
+        "R_ohm": 0.002,
+        "L_H": 2e-08
+      },
+      "resolutions": [
+        {
+          "dmax_mm": 3.0,
+          "plane_min_mm2": 50.0,
+          "vertices": 1235,
+          "seconds": 1.91575438900054,
+          "cavities": [
+            {
+              "power": "B.Cu",
+              "ground": "In8.Cu",
+              "area_mm2": 265.88692942715636,
+              "d_mm": 0.12,
+              "er": 4.1
+            },
+            {
+              "power": "F.Cu",
+              "ground": "In1.Cu",
+              "area_mm2": 121.82622871721534,
+              "d_mm": 0.1200000000000001,
+              "er": 4.1
+            }
+          ],
+          "notes": [],
+          "port_connections": {
+            "C295": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 519,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C293": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 520,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C302": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 521,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C301": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 522,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C287": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 523,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C296": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 524,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C292": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 525,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C283": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 526,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C303": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 527,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C289": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 528,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C291": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 529,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C297": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 530,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C285": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 531,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C284": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 532,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C288": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 7.418501888059946e-11,
+              "dof": 533,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C264": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 5.428231436337047e-11,
+              "dof": 534,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "C263": {
+              "role": "decap",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 5.428231436337047e-11,
+              "dof": 535,
+              "element": {
+                "C": 1.0000000000000001e-07,
+                "ESR": 0.02,
+                "ESL": 3.5e-10,
+                "defaulted": true,
+                "pkg": "0402"
+              }
+            },
+            "L4": {
+              "role": "source",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 1.0028556785135611e-10,
+              "dof": 536,
+              "element": {
+                "R": 0.002,
+                "L": 2e-08
+              }
+            },
+            "U63": {
+              "role": "load",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 5.4056253037375006e-11,
+              "dof": 537,
+              "element": null
+            },
+            "U64": {
+              "role": "load",
+              "power": "pad on the plane",
+              "ground": "pad on the plane",
+              "mount_H": 5.4056253037375006e-11,
+              "dof": 538,
+              "element": null
+            }
+          },
+          "impedance": {
+            "U63": {
+              "real_ohm": [
+                0.03664906954886085,
+                0.03673494857435457,
+                0.03689124780595156,
+                0.03727808021850351,
+                0.03918431381202411,
+                0.0447030974321299,
+                0.03677597631825853,
+                0.03775184731151686,
+                0.040031058702814114,
+                0.04682980406594445,
+                0.10013233757123793,
+                0.05034851241992184,
+                0.024664953507901027
+              ],
+              "imag_ohm": [
+                0.0001287642138800426,
+                0.00030419072537601514,
+                0.0007209921500389443,
+                0.001741266801993389,
+                0.004654336962169787,
+                -0.01009729520176752,
+                -0.00021526625635826365,
+                0.005613491864698785,
+                0.015583892390562527,
+                0.038849235189935154,
+                0.10697680484930101,
+                -0.044482423966278516,
+                0.11566934983714822
+              ],
+              "bare_abs_ohm": [
+                1362252.1452214788,
+                576991.2579339918,
+                244386.98182693237,
+                103510.74231724313,
+                43842.20632803291,
+                18569.45364348737,
+                7865.125069043119,
+                3331.2831768695964,
+                1410.9581142325105,
+                597.5826550456223,
+                253.0328303983303,
+                106.99621459049328,
+                44.90147568990045
+              ]
+            },
+            "U64": {
+              "real_ohm": [
+                0.0023014285044137507,
+                0.002306848267896839,
+                0.0023345985041614364,
+                0.0024960279917428207,
+                0.0038663331300973825,
+                0.011176566737525923,
+                0.0018493709415999353,
+                0.001541659268729031,
+                0.0014941333336665997,
+                0.001507298923808601,
+                0.001694851363167126,
+                0.002333086905141451,
+                0.004233713394649098
+              ],
+              "imag_ohm": [
+                0.00011781332598606187,
+                0.0002784084531248874,
+                0.0006606954178264441,
+                0.0016054699706395071,
+                0.004452560914777134,
+                -0.009761377217386326,
+                -0.0028297162729509265,
+                -0.000739196240266495,
+                0.000507997992213387,
+                0.002321215461422413,
+                0.005975839753602666,
+                0.014664077762741617,
+                0.026049146098383272
+              ],
+              "bare_abs_ohm": [
+                1362252.1445523056,
+                576991.2573017938,
+                244386.98125178905,
+                103510.74186369914,
+                43842.20615981496,
+                18569.454150728972,
+                7865.127176906868,
+                3331.289074054666,
+                1410.9729742730462,
+                597.6187012199179,
+                253.11893468129833,
+                107.2005623844925,
+                45.385079958399345
+              ]
+            }
+          }
+        }
+      ],
+      "nets": [
+        "+20V",
+        "/DCDC/20V_OUT"
+      ],
+      "series": [
+        {
+          "ref": "R284",
+          "kind": "R",
+          "R_ohm": 0.001,
+          "a": "+20V",
+          "b": "/DCDC/20V_OUT"
+        }
+      ],
+      "decaps": 17,
+      "plane_selection": "explicit 50 mm2 small-rail diagnostic",
+      "seconds": 2.8071709659998305
+    },
+    {
+      "net": "+12V",
+      "source": "L6",
+      "ground_source": "U8",
+      "loads": [
+        "TP98"
+      ],
+      "load_A_each": 1.0,
+      "VRM_assumption": {
+        "R_ohm": 0.002,
+        "L_H": 2e-08
+      },
+      "resolutions": [
+        {
+          "dmax_mm": 3.0,
+          "plane_min_mm2": 50.0,
+          "vertices": 475,
+          "seconds": 2.0461460959995748,
+          "cavities": [
+            {
+              "power": "F.Cu",
+              "ground": "In1.Cu",
+              "area_mm2": 157.36626590070975,
+              "d_mm": 0.1200000000000001,
+              "er": 4.1
+            }
+          ],
+          "notes": [],
+          "port_connections": {
+            "C307": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 459,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C235": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 459,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C222": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 459,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "C306": {
+              "role": "decap",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 459,
+              "element": {
+                "C": 2.2e-05,
+                "ESR": 0.005,
+                "ESL": 6e-10,
+                "defaulted": true,
+                "pkg": "0805"
+              }
+            },
+            "L6": {
+              "role": "source",
+              "power": "planeless net",
+              "ground": "pad on the plane",
+              "mount_H": 0.0,
+              "dof": 459,
+              "element": {
+                "R": 0.002,
+                "L": 2e-08
+              }
+            },
+            "TP98": {
+              "role": "load",
+              "power": "pad on the plane",
+              "ground": "no pad",
+              "mount_H": 0.0,
+              "dof": 454,
+              "element": null
+            }
+          },
+          "impedance": {
+            "TP98": {
+              "real_ohm": [
+                54500423.621628575,
+                13579667.074628036,
+                4192732.8436793005,
+                1489406.3625537565,
+                581469.0856929127,
+                235292.98431335707,
+                98241.99528228157,
+                41278.90977124371,
+                17425.96889127529,
+                7370.753334731932,
+                3120.10839071278,
+                1321.1880430574922,
+                559.5323651143473
+              ],
+              "imag_ohm": [
+                -836014111.9514964,
+                -355080262.85941064,
+                -150498183.30555582,
+                -63758440.03814999,
+                -27007199.8038956,
+                -11439455.387462582,
+                -4845244.976900141,
+                -2052227.4846798717,
+                -869226.3101675974,
+                -368162.4578961817,
+                -155935.9197748442,
+                -66046.9590064693,
+                -27974.30262803488
+              ],
+              "bare_abs_ohm": [
+                837788691.4711764,
+                355339837.9441375,
+                150556574.70522884,
+                63775834.03932232,
+                27013458.637226652,
+                11441874.949072542,
+                4846240.849959182,
+                2052642.5887785177,
+                869400.9677239702,
+                368236.2331559446,
+                155967.13164124178,
+                66060.17205432752,
+                27979.8978552905
+              ]
+            }
+          }
+        }
+      ],
+      "nets": [
+        "+12V",
+        "/DCDC/12V_OUT"
+      ],
+      "series": [
+        {
+          "ref": "R22",
+          "kind": "R",
+          "R_ohm": 1e-05,
+          "a": "+12V",
+          "b": "/DCDC/12V_OUT"
+        }
+      ],
+      "decaps": 4,
+      "plane_selection": "explicit 50 mm2 small-rail diagnostic",
+      "seconds": 3.115153293999356
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "case": "tight_planes",
+  "body_spacing_mm": 2.5,
+  "contact_spacing_mm": 0.20833333333333334,
+  "checks": [
+    {
+      "frequency_Hz": 1000.0,
+      "input_power_W": 0.0017179495644698856,
+      "copper_loss_W": 0.0007179494008529596,
+      "component_loss_W": 0.0010000001636153453,
+      "dielectric_loss_W": 1.483260740928532e-15,
+      "power_balance_relative": 5.6757211370999333e-14,
+      "charge_continuity_residual_A": 1.223663991304847e-15
+    },
+    {
+      "frequency_Hz": 1000000.0,
+      "input_power_W": 0.0021155860654156235,
+      "copper_loss_W": 0.0009090276211495445,
+      "component_loss_W": 0.0012065545549004633,
+      "dielectric_loss_W": 3.8893625273287064e-09,
+      "power_balance_relative": 1.4597695388227633e-12,
+      "charge_continuity_residual_A": 1.1101371819271147e-15
+    },
+    {
+      "frequency_Hz": 18000000.0,
+      "input_power_W": 0.004366840604298648,
+      "copper_loss_W": 0.001830663583617271,
+      "component_loss_W": 0.002536175960002235,
+      "dielectric_loss_W": 1.0606617730331883e-09,
+      "power_balance_relative": 3.9774080171347105e-12,
+      "charge_continuity_residual_A": 6.965685756060865e-16
+    },
+    {
+      "frequency_Hz": 30000000.0,
+      "input_power_W": 0.004769498129972512,
+      "copper_loss_W": 0.002349659855622553,
+      "component_loss_W": 0.0024198122470680053,
+      "dielectric_loss_W": 2.6027279067456918e-08,
+      "power_balance_relative": 6.052576564583623e-13,
+      "charge_continuity_residual_A": 1.062003433889568e-15
+    }
+  ]
+}

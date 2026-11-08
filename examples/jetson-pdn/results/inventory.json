@@ -1,0 +1,802 @@
+{
+  "source_sha256": "e61179b68ac151376f5552f91a8acc2aed46f0cc4cd9c771049490735cdbf3f8",
+  "source_revision": "8c85ac14529b4375d75f2bb3d0e97e6145b0a32c",
+  "stack": {
+    "layers": [
+      {
+        "name": "dielectric 9",
+        "z0": 0.0,
+        "z1": 0.12,
+        "er": 4.1,
+        "tand": 0.02,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 8",
+        "z0": 0.12,
+        "z1": 0.32,
+        "er": 4.3,
+        "tand": 0.02,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 7",
+        "z0": 0.32,
+        "z1": 0.39,
+        "er": 3.96,
+        "tand": 0.0,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 6",
+        "z0": 0.39,
+        "z1": 0.59,
+        "er": 4.3,
+        "tand": 0.02,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 5",
+        "z0": 0.59,
+        "z1": 0.66,
+        "er": 3.96,
+        "tand": 0.0,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 4",
+        "z0": 0.66,
+        "z1": 0.86,
+        "er": 4.3,
+        "tand": 0.02,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 3",
+        "z0": 0.86,
+        "z1": 0.93,
+        "er": 3.96,
+        "tand": 0.0,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 2",
+        "z0": 0.93,
+        "z1": 1.13,
+        "er": 4.3,
+        "tand": 0.02,
+        "kind": "diel"
+      },
+      {
+        "name": "dielectric 1",
+        "z0": 1.13,
+        "z1": 1.25,
+        "er": 4.1,
+        "tand": 0.02,
+        "kind": "diel"
+      }
+    ],
+    "copper": [
+      {
+        "name": "B.Cu",
+        "z": 0.0,
+        "t": 0.035
+      },
+      {
+        "name": "In8.Cu",
+        "z": 0.12,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In7.Cu",
+        "z": 0.32,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In6.Cu",
+        "z": 0.39,
+        "t": 0.035
+      },
+      {
+        "name": "In5.Cu",
+        "z": 0.59,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In4.Cu",
+        "z": 0.66,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In3.Cu",
+        "z": 0.86,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In2.Cu",
+        "z": 0.93,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "In1.Cu",
+        "z": 1.13,
+        "t": 0.018000000000000002
+      },
+      {
+        "name": "F.Cu",
+        "z": 1.25,
+        "t": 0.035
+      }
+    ],
+    "thickness": 1.25,
+    "copper_finish": "ENIG"
+  },
+  "footprints": 1120,
+  "vias": 3309,
+  "converters": [
+    {
+      "converter": "U65",
+      "inductor": "L4",
+      "switch": "/DCDC/20V_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/20V_VDD",
+          "capacitors": [
+            "C279"
+          ]
+        },
+        {
+          "vin": "/DCDC/20V_VDRV",
+          "capacitors": [
+            "C280"
+          ]
+        },
+        {
+          "vin": "VCC_IN",
+          "capacitors": [
+            "C276",
+            "C269",
+            "C274",
+            "C278",
+            "C277",
+            "C30"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U65",
+      "inductor": "L4",
+      "switch": "/DCDC/20V_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/20V_VDD",
+          "capacitors": [
+            "C279"
+          ]
+        },
+        {
+          "vin": "/DCDC/20V_VDRV",
+          "capacitors": [
+            "C280"
+          ]
+        },
+        {
+          "vin": "VCC_IN",
+          "capacitors": [
+            "C276",
+            "C269",
+            "C274",
+            "C278",
+            "C277",
+            "C30"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U69",
+      "inductor": "L5",
+      "switch": "/DCDC/1V15_SW",
+      "inputs": [
+        {
+          "vin": "+5V",
+          "capacitors": [
+            "C156",
+            "C35",
+            "C139",
+            "C231",
+            "C206",
+            "C31",
+            "C76",
+            "C232",
+            "C32",
+            "C147",
+            "C77",
+            "C137",
+            "C148",
+            "C104",
+            "C114",
+            "C158"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U11",
+      "inductor": "L3",
+      "switch": "/DCDC/16V_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/16V_VDD",
+          "capacitors": [
+            "C244"
+          ]
+        },
+        {
+          "vin": "/DCDC/16V_VDRV",
+          "capacitors": [
+            "C245"
+          ]
+        },
+        {
+          "vin": "/DCDC/VIN_PWR_ON",
+          "capacitors": [
+            "C404"
+          ]
+        },
+        {
+          "vin": "/DCDC/~{VDDIN_PWR_BAD}",
+          "capacitors": [
+            "C236"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U11",
+      "inductor": "L3",
+      "switch": "/DCDC/16V_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/16V_VDD",
+          "capacitors": [
+            "C244"
+          ]
+        },
+        {
+          "vin": "/DCDC/16V_VDRV",
+          "capacitors": [
+            "C245"
+          ]
+        },
+        {
+          "vin": "/DCDC/VIN_PWR_ON",
+          "capacitors": [
+            "C404"
+          ]
+        },
+        {
+          "vin": "/DCDC/~{VDDIN_PWR_BAD}",
+          "capacitors": [
+            "C236"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U8",
+      "inductor": "L6",
+      "switch": "/DCDC/12V_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/12V_VDD",
+          "capacitors": [
+            "C54"
+          ]
+        },
+        {
+          "vin": "/DCDC/12V_VDRV",
+          "capacitors": [
+            "C218"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U8",
+      "inductor": "L6",
+      "switch": "/DCDC/12V_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/12V_VDD",
+          "capacitors": [
+            "C54"
+          ]
+        },
+        {
+          "vin": "/DCDC/12V_VDRV",
+          "capacitors": [
+            "C218"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U12",
+      "inductor": "L1",
+      "switch": "/DCDC/5V_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/5V_VDD",
+          "capacitors": [
+            "C52"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_VDRV",
+          "capacitors": [
+            "C55"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U12",
+      "inductor": "L1",
+      "switch": "/DCDC/5V_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/5V_VDD",
+          "capacitors": [
+            "C52"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_VDRV",
+          "capacitors": [
+            "C55"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U7",
+      "inductor": "L7",
+      "switch": "/DCDC/1V8_SW",
+      "inputs": [
+        {
+          "vin": "+5V",
+          "capacitors": [
+            "C156",
+            "C35",
+            "C139",
+            "C231",
+            "C206",
+            "C31",
+            "C76",
+            "C232",
+            "C32",
+            "C147",
+            "C77",
+            "C137",
+            "C148",
+            "C104",
+            "C114",
+            "C158"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U13",
+      "inductor": "L2",
+      "switch": "/DCDC/3V3_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/3V3_VDD",
+          "capacitors": [
+            "C53"
+          ]
+        },
+        {
+          "vin": "/DCDC/3V3_VDRV",
+          "capacitors": [
+            "C56"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U13",
+      "inductor": "L2",
+      "switch": "/DCDC/3V3_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/3V3_VDD",
+          "capacitors": [
+            "C53"
+          ]
+        },
+        {
+          "vin": "/DCDC/3V3_VDRV",
+          "capacitors": [
+            "C56"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U75",
+      "inductor": "L8",
+      "switch": "/DCDC/5V_{AON}_OUT",
+      "inputs": [
+        {
+          "vin": "/DCDC/5V_{AON}_EN",
+          "capacitors": [
+            "C6"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_{AON}_VDD",
+          "capacitors": [
+            "C375"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_{AON}_VDRV",
+          "capacitors": [
+            "C376"
+          ]
+        },
+        {
+          "vin": "/DCDC/~{VDDIN_PWR_BAD}",
+          "capacitors": [
+            "C236"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    },
+    {
+      "converter": "U75",
+      "inductor": "L8",
+      "switch": "/DCDC/5V_{AON}_SW",
+      "inputs": [
+        {
+          "vin": "/DCDC/5V_{AON}_EN",
+          "capacitors": [
+            "C6"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_{AON}_VDD",
+          "capacitors": [
+            "C375"
+          ]
+        },
+        {
+          "vin": "/DCDC/5V_{AON}_VDRV",
+          "capacitors": [
+            "C376"
+          ]
+        },
+        {
+          "vin": "/DCDC/~{VDDIN_PWR_BAD}",
+          "capacitors": [
+            "C236"
+          ]
+        },
+        {
+          "vin": "VCC",
+          "capacitors": [
+            "C373",
+            "C370",
+            "C243",
+            "C371",
+            "C309",
+            "C372",
+            "C43",
+            "C268",
+            "C271",
+            "C273",
+            "C242",
+            "C270",
+            "C241",
+            "C374",
+            "C45",
+            "C29",
+            "C42",
+            "C308",
+            "C28",
+            "C48",
+            "C267",
+            "C46",
+            "C49",
+            "C51",
+            "C275",
+            "C34"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+[
+  {
+    "margin_mm": 0.3,
+    "triangles": 1122,
+    "via_segments": 18,
+    "crop_bounds_mm": [
+      210.3364005,
+      -121.703,
+      213.42000000000002,
+      -119.02499999999999
+    ],
+    "closed_loop": false,
+    "error": "source(s) I: their terminals are on copper joined only through them (an island: a pad with no via or path to the rest): no loop to drive"
+  },
+  {
+    "margin_mm": 0.6,
+    "triangles": 1439,
+    "via_segments": 27,
+    "crop_bounds_mm": [
+      210.0364005,
+      -122.003,
+      213.72,
+      -118.725
+    ],
+    "closed_loop": true
+  },
+  {
+    "margin_mm": 1.0,
+    "triangles": 1726,
+    "via_segments": 27,
+    "crop_bounds_mm": [
+      209.6364005,
+      -122.403,
+      214.12,
+      -118.32499999999999
+    ],
+    "closed_loop": true
+  },
+  {
+    "margin_mm": 1.5,
+    "triangles": 2271,
+    "via_segments": 36,
+    "crop_bounds_mm": [
+      209.1364005,
+      -122.903,
+      214.62,
+      -117.82499999999999
+    ],
+    "closed_loop": true
+  },
+  {
+    "margin_mm": 2.0,
+    "triangles": 2876,
+    "via_segments": 45,
+    "crop_bounds_mm": [
+      208.6364005,
+      -123.403,
+      215.12,
+      -117.32499999999999
+    ],
+    "closed_loop": true
+  },
+  {
+    "margin_mm": 3.0,
+    "triangles": 4750,
+    "via_segments": 81,
+    "crop_bounds_mm": [
+      207.6364005,
+      -124.403,
+      216.12,
+      -116.32499999999999
+    ],
+    "closed_loop": true
+  }
+]

@@ -1,0 +1,65 @@
+{
+  "source": {
+    "repository": "KiCad/kicad-source-mirror",
+    "revision": "8c85ac14529b4375d75f2bb3d0e97e6145b0a32c",
+    "path": "demos/jetson-agx-thor-baseboard/jetson-agx-thor-baseboard.kicad_pcb",
+    "git_blob_sha1": "2884cd5276b0676d4e5d8d919f202d85e8432987",
+    "sha256": "e61179b68ac151376f5552f91a8acc2aed46f0cc4cd9c771049490735cdbf3f8",
+    "bytes": 84806775,
+    "license": "Apache-2.0; Antmicro 2025-2026"
+  },
+  "dc_crosschecks": [
+    {
+      "net": "SYS_VIN_HV",
+      "load": "J1",
+      "dc_board_R_ohm": 0.003560687395793849,
+      "dc_coarse_board_R_ohm": 0.003536613259841559,
+      "mesh_change": 0.006807115786634954,
+      "power_R_ohm": 0.0032706195259262216,
+      "ground_R_ohm": 0.0002900678698673805,
+      "cavity_ReZ_1kHz_ohm": 0.004341631106921981,
+      "DC_plus_assumed_VRM_R_ohm": 0.005560687395793849,
+      "dc_limit_relative_difference": -0.21922762459079653,
+      "cavity_inferred_board_R_ohm": 0.002341631106921981,
+      "board_only_relative_difference": -0.3423654349190857
+    },
+    {
+      "net": "+1V15",
+      "load": "U21",
+      "dc_board_R_ohm": 0.005860964088019616,
+      "dc_coarse_board_R_ohm": 0.005781517140841741,
+      "mesh_change": 0.013741539675917736,
+      "power_R_ohm": 0.005292620387726599,
+      "ground_R_ohm": 0.0005683437002929465,
+      "cavity_ReZ_1kHz_ohm": 0.004886093333787688,
+      "DC_plus_assumed_VRM_R_ohm": 0.007860964088019616,
+      "dc_limit_relative_difference": -0.3784358662528092,
+      "cavity_inferred_board_R_ohm": 0.0028860933337876878,
+      "board_only_relative_difference": -0.5075736192127256
+    }
+  ],
+  "local_metrics": {
+    "valid_margin_mm": 0.6,
+    "invalid_margin_mm": 0.3,
+    "PEEC_MQS_max_complex_relative": 4.5058985870900854e-05,
+    "copper_R_skin_30MHz_ohm": 0.022231829220596088,
+    "copper_R_dc_30MHz_ohm": 0.011160197312584344,
+    "skin_copper_R_ratio_30MHz": 1.9920641721564607,
+    "mesh_change_max_over_1_10_30MHz": 0.060180089099675683,
+    "crop_change_1_to_1p5mm_max_over_1_10_30MHz": 0.015048420882863747
+  },
+  "assumptions": {
+    "cavity_VRM_R_ohm": 0.002,
+    "cavity_VRM_L_H": 2e-08,
+    "via_plating_mm": 0.025,
+    "conductor_sigma_Sm": 58000000.0,
+    "local_C90_ESR_ohm": 0.005,
+    "local_C90_ESL_H": 3.5e-10,
+    "local_dielectric_tol": 1e-06
+  },
+  "not_assessed": [
+    "Hardware accuracy, actual load currents, measured regulator control-loop impedance and MLCC bias curves",
+    "M.2 J13 branch observation was omitted by the original direct-net filter; it is not assessed",
+    "Whole-rail PEEC exceeds memory; local C90 results are not whole-rail PDN impedance"
+  ]
+}
