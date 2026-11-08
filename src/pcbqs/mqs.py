@@ -35,7 +35,7 @@ from shapely.ops import unary_union
 from ._numerics.base import MU0, RWG, combine, qform, _BAR3, _W3, quad_pts
 from .static import edge_inductance as dense_edge_inductance, static_moments
 from .biot import rwg_currents, h_sheets, h_segments
-from .pdn.mesh import copper_of, mesh_sheet, stack_z
+from .pdn.mesh import copper_of, mesh_sheet, simplify_copper, stack_z
 
 SIGMA_CU = 5.8e7
 
@@ -67,7 +67,8 @@ class MQS:
                  fill_chunk=16384, fill_device=None, coarsen=None, grow=0.5,
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
-                 solver_tol=1e-8, solver_maxiter=500):
+                 solver_tol=1e-8, solver_maxiter=500, drop_lone_pads=True, pad_area=1.0, pad_sides=8,
+                 via_sides=6):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -85,6 +86,13 @@ class MQS:
         near blocks dense and compresses far blocks at `compression_tol`.
         GMRES uses `solver_tol` and raises on nonconvergence; `solve_info`
         records residuals. Compression tolerance is not a port-error bound.
+        Mesh simplification: copper pieces under `pad_area` mm^2 touching no
+        terminal and holding at most one via are dropped (`drop_lone_pads`; the
+        via spans to the next copper); other small round pads and holes become
+        regular `pad_sides`-gons of equal area; via rings are `via_sides`-gons
+        with the via's perimeter. False/None restores the unsimplified mesh;
+        `mesh_info` records the counts. Lone pads carry no lateral current but
+        do carry PEEC charge: keep them where small pad capacitance matters.
         """
         if matrix_backend not in ('dense','hierarchical'):
             raise ValueError('matrix_backend must be dense or hierarchical')
@@ -98,6 +106,12 @@ class MQS:
                 raise ValueError(name+' must be a positive integer')
         if not np.isfinite(compression_eta) or compression_eta <= 0:
             raise ValueError('compression_eta must be finite and positive')
+        if not np.isfinite(pad_area) or pad_area < 0:
+            raise ValueError('pad_area must be finite and nonnegative')
+        for name, value in (('pad_sides', pad_sides), ('via_sides', via_sides)):
+            if value not in (None, 0, False) and (isinstance(value, bool) or not isinstance(value, (int, np.integer))
+                                                  or value < 3):
+                raise ValueError(name + ' must be None or an integer of at least 3')
         self.matrix_backend=matrix_backend
         self._compression_options=dict(tol=compression_tol,leaf=compression_leaf,eta=compression_eta)
         self.solver_tol,self.solver_maxiter=solver_tol,solver_maxiter
@@ -131,6 +145,8 @@ class MQS:
         pts = [(v['x'], v['y'], v['r']) for v in vias]
         nodes, tris, layer_of, z_of, t_of = [], [], [], [], []
         self.layer_tris, self.term_tris, ring_tris = {}, {n: [] for n in self.terms}, {}
+        self.mesh_info = dict(dropped_pads=0, regular_pads=0, regular_holes=0, drop_lone_pads=bool(drop_lone_pads),
+                              pad_area_mm2=float(pad_area), pad_sides=pad_sides or None, via_sides=via_sides or None)
         off = 0
         for lay in sorted(zt, key=lambda l: zt[l][0]):
             g = copper_of(board, self.nets, lay)
@@ -141,10 +157,16 @@ class MQS:
                 if g.is_empty:
                     continue
             polys = [(n, poly) for n, pads in self.terms.items() for l, poly in pads if l == lay]
+            g, counts = simplify_copper(g, [p for _, p in polys], pts, bool(drop_lone_pads), pad_area,
+                                        pad_sides or None)
+            for key, value in counts.items():
+                self.mesh_info[key] += value
+            if g is None:
+                continue
             nd, tr, rings, regs = mesh_sheet(g, pts, dmax, regions=[p for _, p in polys], fine=fine,
                                              dmax_fine=dmax_fine if fine is not None else None,
                                              coarsen=coarsen,grow=grow,edge_rings=edge_rings,w_ref=edge_width,
-                                             edge_zone=edge_zone)
+                                             edge_zone=edge_zone,via_sides=via_sides or None)
             if not len(tr):
                 continue
             nt0 = sum(len(t) for t in tris)

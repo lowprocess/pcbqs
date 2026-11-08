@@ -22,7 +22,40 @@ Mesh dimensions are mm. `coarsen` caps bulk spacing at a multiple of `dmax`;
 `edge_rings=1` disables inward rings; larger counts add them using `edge_width`
 as the reference width. `edge_zone`, a Shapely region, restricts those rings.
 These controls preserve the imported outlines, pad constraints and via fans.
-They do not automatically provide a port-error estimate or simplify CAD.
+They do not automatically provide a port-error estimate.
+
+## Mesh simplification (MQS defaults)
+
+| Option | Default | Effect |
+|---|---|---|
+| `drop_lone_pads` | `True` | copper pieces under `pad_area` (1 mm²) that touch no terminal and hold at most one via are dropped; the via spans to the next copper layer |
+| `pad_sides` | `8` | other small round pads and clearance holes become equal-area regular polygons |
+| `via_sides` | `6` | via rings are regular polygons with the via circle's perimeter |
+
+`False`/`None` restores the unsimplified mesh; `q.mesh_info` records counts.
+Lone pads carry no lateral current, but in PEEC they carry charge, so set
+`drop_lone_pads=False` where small pad capacitance matters.
+
+Measured with 16 threads (i7-13700K):
+
+| Case | Unsimplified | Simplified |
+|---|---|---|
+| Jetson +1V15 full rail, cold (compressed PEEC) | 25,370 triangles, 186 s, 632 GMRES iterations, 3.4 GiB | 9,879 triangles, **61 s**, 267 iterations, 1.4 GiB |
+| Jetson Z(U21) at 1 MHz | 8.8698 + j5.0532 mΩ | +0.26% R, +1.3% X |
+| CM5 U702 loop, fine 0.6 mm (dense MQS) | 9,736 triangles, 4.0 s | 7,361 triangles, **1.5 s** |
+| CM5 at fine 0.25 mm, R/L at 1 kHz, 1 MHz, 10 MHz | 19,647 triangles, 56 s | 17,876–17,636, 42–45 s; within 0.1–1.2% |
+
+Lone pads were half of the Jetson mesh. Square via rings (`via_sides=4`) are
+faster still but bias R/L up by ~1–2% (smaller contact); a bare via vertex is
+not offered, as it changed CM5 R/L by 6–18%. The meshes above are far from
+converged (CM5 at 0.6 mm is 3–16% from 0.25 mm), so the saved elements are
+best spent on a finer `dmax_fine`: simplified at 0.4 mm costs about what the
+unsimplified 0.6 mm mesh did and is about twice as accurate.
+
+Via segments of one barrel now use the barrel radius for their mutual
+inductance (previously 0.1 µm), so stacked segments add up to the whole
+barrel. Vias crossing inner copper were over-inductive before: Jetson X fell
+1.6% and the CM5 loop L 0.5% with this fix alone.
 
 The H-matrix partitions full basis-support boxes in 3D. Separated blocks use
 checked adaptive cross approximation; nearby blocks remain dense. Failed or

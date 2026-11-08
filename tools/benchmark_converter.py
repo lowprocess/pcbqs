@@ -30,7 +30,8 @@ def main():
     ap.add_argument('--ground', default='GND')
     ap.add_argument('--margin', type=float, default=3, help='crop margin (mm)')
     ap.add_argument('--dmax', type=float, default=1.5)
-    ap.add_argument('--fine', type=float, default=.6)
+    ap.add_argument('--fine', type=float, default=.4,
+                    help='mesh size near the parts (mm); 0.4 with the simplified mesh costs about what 0.6 did without')
     ap.add_argument('--out', default='converter-benchmark.json')
     ap.add_argument('--fill-backend', default='auto')
     ap.add_argument('--fill-workers', type=int)

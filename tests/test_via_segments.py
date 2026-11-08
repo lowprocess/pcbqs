@@ -21,6 +21,7 @@ def stitched_board(inner_pads=True):
 
 
 TERMINALS = {'s': [('F.Cu', box(.5, 3.5, 1.5, 4.5))], 'g': [('B.Cu', box(.5, 3.5, 1.5, 4.5))]}
+PLAIN = dict(drop_lone_pads=False, pad_sides=None, via_sides=None)     # keep the inner pads as meshed copper
 
 
 @pytest.mark.parametrize('backend', ['dense', 'hierarchical'])
@@ -28,8 +29,8 @@ def test_stacked_via_segments_add_up_to_the_whole_barrel(backend):
     # Inner pads split each barrel into three coaxial segments. Their self and
     # mutual terms (same radius) must sum to the undivided barrel's self term.
     options = dict(capacitance=True, matrix_backend='hierarchical', compression_tol=1e-10) if backend == 'hierarchical' else {}
-    segmented = MQS(stitched_board(True), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None, **options)
-    whole = MQS(stitched_board(False), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None, **options)
+    segmented = MQS(stitched_board(True), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None, **PLAIN, **options)
+    whole = MQS(stitched_board(False), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None, **PLAIN, **options)
     assert segmented.nv == 9 and whole.nv == 3
     dense = lambda L: L if isinstance(L, np.ndarray) else L @ np.eye(L.shape[0])
     Ls, Lw = dense(segmented._via_matrices()[1]), dense(whole._via_matrices()[1])
@@ -43,7 +44,7 @@ def test_dead_end_inner_pads_do_not_change_the_loop_inductance():
     # segment mutuals used 0.1 um separation and these differed by ~3%.
     results = []
     for inner in (True, False):
-        q = MQS(stitched_board(inner), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None)
+        q = MQS(stitched_board(inner), 'N', terminals=TERMINALS, dmax=.8, log=lambda *_: None, **PLAIN)
         q.source('I', 's', 'g', part_h=0)
         results.append(q.solve([1e3]).z['I'][0])
     assert results[0].imag == pytest.approx(results[1].imag, rel=1e-6)
