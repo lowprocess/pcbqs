@@ -59,3 +59,24 @@ It took 715.8 s to construct L (731.8 s from import through assembly). This
 establishes inductance storage feasibility; it is not a completed PEEC solve.
 
 Validation at the implementation checkpoint: 154 tests passed, 13 skipped.
+
+The exploratory full-rail run was stopped after 1,079 s while assembling the
+layered potential operator. Peak process RSS was 1.64 GiB. There is **no
+completed potential operator, frequency solve or full-rail impedance accuracy
+result** from this run. See [stage results](jetson-compressed.json).
+The running process had loaded the initial dielectric evaluator; it predates
+the final optimization that skips analytic image corrections outside all pair
+near radii. Its 459-segment via block was dense; the final backend also
+compresses that block. These stage timings are initial implementation evidence,
+not a benchmark of the final evaluator's full-rail performance.
+
+The optimized on-demand dielectric evaluator was checked separately against
+the original dense image integration on 40 real Jetson triangles spanning all
+ten layers, including small and large panels and near-via regions. Largest
+relative entry difference was 5.53e-16, with 1.39e-16 relative Frobenius error.
+See [sample results](jetson-kernel-sample.json) and `jetson_kernel_sample.py`.
+This checks kernel integration, not compression or full-rail port accuracy.
+
+Next full-rail work is to batch/cache layered entry evaluations and measure
+convergence/preconditioner strength at this size. Adaptive mesh error control,
+automatic protected CAD cleanup and H2/FMM are still future work.

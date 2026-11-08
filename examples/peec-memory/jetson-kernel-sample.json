@@ -1,0 +1,19 @@
+{
+  "triangles": 40,
+  "layer_counts": {
+    "B.Cu": 4,
+    "In8.Cu": 4,
+    "In7.Cu": 4,
+    "In6.Cu": 4,
+    "In5.Cu": 4,
+    "In4.Cu": 4,
+    "In3.Cu": 4,
+    "In2.Cu": 4,
+    "In1.Cu": 4,
+    "F.Cu": 4
+  },
+  "dielectric_tol": 0.0001,
+  "max_entry_relative_error": 5.523879948773915e-16,
+  "relative_frobenius_error": 1.3800881618407493e-16,
+  "seconds": 19.09812051100016
+}

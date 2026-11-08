@@ -1,0 +1,57 @@
+{
+  "stages": [
+    {
+      "name": "mesh",
+      "seconds": 14.107632320999983,
+      "peak_RSS_MiB": 809.109375,
+      "triangles": 25370,
+      "edges": 30147,
+      "charge_nodes": 20799,
+      "crop_bounds_mm": [
+        190.37,
+        -135.47499999999997,
+        215.37499999999997,
+        -116.02499999999999
+      ],
+      "dielectric_tol": 0.0001,
+      "compression_tol": 1e-05
+    },
+    {
+      "name": "inductance",
+      "seconds": 731.845470145001,
+      "peak_RSS_MiB": 1639.94921875,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 25370,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 924882784,
+          "dense_bytes": 7270732872,
+          "blocks": 32088,
+          "low_rank_blocks": 10436,
+          "evaluated_entries": 215166593,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 715.8040134399998,
+          "matrix_backend": "hierarchical"
+        }
+      }
+    },
+    {
+      "name": "stopped_during_potential",
+      "seconds": 1079.0,
+      "peak_RSS_MiB": 1674.53515625,
+      "reason": "Exploratory runtime-limited run; layered potential construction not completed; no full-rail impedance or convergence result."
+    }
+  ],
+  "implementation_note": "The running process used the initial layered evaluator before the subsequent omission of images outside every pair near radius; the sampled optimized evaluator was separately checked against dense integration. Its 459-segment via matrix was dense; the final backend also compresses via inductance."
+}

@@ -11,7 +11,7 @@ from scipy.sparse.csgraph import connected_components
 from scipy.sparse.linalg import LinearOperator, gmres, splu, spilu
 
 # Conservative upper bound for assembling a projected sparse surrogate. Large
-# cases use an original-graph nodal preconditioner, avoiding cycle-pair fill.
+# cases use a local-potential tree preconditioner, avoiding cycle-pair fill.
 _PROJECTED_PRECONDITIONER_BYTES=128*1024**2
 
 
