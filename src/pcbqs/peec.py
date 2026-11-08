@@ -99,7 +99,11 @@ def capacitance_matrix(model):
     graph = coo_matrix((np.ones(len(a)), (a, b)), shape=(model.n_nodes, model.n_nodes))
     n, labels = connected_components(graph, directed=False)
     B = np.eye(n)[labels]
-    C = B.T @ dense_solve(model._potential, B, assume_a='sym')
+    if model.matrix_backend == 'hierarchical':
+        from .peec_iterative import potential_solve
+        C = B.T @ potential_solve(model,B)
+    else:
+        C = B.T @ dense_solve(model._potential, B, assume_a='sym')
     return (C + C.T) / 2, labels, {name: int(labels[node]) for name, node in model.term_node.items()}
 
 

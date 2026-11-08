@@ -13,7 +13,10 @@ from .rail import terminal
 class PEECPDN:
     def __init__(self, legacy, dmax=1., conductor_loss='slab', conductor_faces=1,
                  fill_backend='auto', fill_workers=None, contact_spacing=None, region=None,
-                 max_triangles=None, log=print):
+                 max_triangles=None, log=print, coarsen=None, grow=0.5,
+                 edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
+                 compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
+                 solver_tol=1e-8, solver_maxiter=500):
         self.legacy = legacy
         self.rail = rail = legacy.rail
         if (any(s.kind not in ('R','jumper','through') for s in rail.series)
@@ -45,8 +48,11 @@ class PEECPDN:
         self.q = MQS(rail.board, set(rail.nets)|set(rail.ground), terminals=terms,
             dmax=dmax, region=region, capacitance=True, dielectric='stack', conductor_loss=conductor_loss,
             conductor_faces=conductor_faces, fill_backend=fill_backend, fill_workers=fill_workers,
-            fine=fine, dmax_fine=contact_spacing, factor_cache_bytes=0, log=log)
-        if max_triangles is not None and len(self.q.tris)>max_triangles:
+            fine=fine, dmax_fine=contact_spacing, factor_cache_bytes=0, log=log,
+            coarsen=coarsen,grow=grow,edge_rings=edge_rings,edge_width=edge_width,edge_zone=edge_zone,
+            matrix_backend=matrix_backend,compression_tol=compression_tol,compression_leaf=compression_leaf,
+            compression_eta=compression_eta,solver_tol=solver_tol,solver_maxiter=solver_maxiter)
+        if matrix_backend == 'dense' and max_triangles is not None and len(self.q.tris)>max_triangles:
             raise RuntimeError(f'PEEC PDN trial mesh has {len(self.q.tris):,} triangles, exceeding the requested {max_triangles:,} dense-solver limit')
         self._models = {}
         self.notes = ['Experimental PEEC PDN; one source/ground, resistive series links; beads unsupported.',

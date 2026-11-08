@@ -70,11 +70,19 @@ def _outline_lines(polys, geom):
     return segs
 
 
-def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), fine=None, dmax_fine=None):
+def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), fine=None, dmax_fine=None,
+               grow=0.5, edge_rings=1, edge_zone=None):
     """Mesh one piece of copper (mm): (nodes mm, tris, [vertex ids of each point: centre + ring], [vertex ids of
     each region]) for the points (x, y, r) inside it (None where one is not) and the regions (shapely polygons, mm:
     pads), whose outlines are made mesh edges (a region on none of this copper: []). fine (shapely, mm) is meshed at
     dmax_fine (mm). coarsen: mesh_polygons' (cells grow away from the features to coarsen x dmax)."""
+    for name,value in [('dmax',dmax),('w_ref',w_ref),('coarsen',coarsen),('grow',grow),('dmax_fine',dmax_fine)]:
+        if value is not None and (not np.isfinite(value) or value <= 0):
+            raise ValueError(name+' must be finite and positive')
+    if coarsen is not None and coarsen < 1:
+        raise ValueError('coarsen must be at least 1')
+    if not isinstance(edge_rings,(int,np.integer)) or isinstance(edge_rings,bool) or edge_rings < 1:
+        raise ValueError('edge_rings must be a positive integer')
     xy = np.asarray([(x, y) for x, y, _ in points], float).reshape(-1, 2)
     hit = shapely.contains_xy(geom.buffer(1e-6), xy[:, 0], xy[:, 1]) if len(xy) else np.zeros(0, bool)
     inside = list(np.flatnonzero(hit))                     # the copper buffered once: not per point
@@ -85,8 +93,9 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
     kw = {}
     if fine is not None and dmax_fine:
         kw = dict(fine=scale(fine, 1e-3, 1e-3, origin=(0, 0)), dmax_fine=dmax_fine * 1e-3)
-    nodes, tris, vid = mesh_polygons(g, dmax * 1e-3, (w_ref or dmax) * 1e-3, ncross=1, vias=vias, coarsen=coarsen,
-                                     lines=lines, **kw)
+    zone = scale(edge_zone,1e-3,1e-3,origin=(0,0)) if edge_zone is not None else None
+    nodes, tris, vid = mesh_polygons(g, dmax * 1e-3, (w_ref or dmax) * 1e-3, ncross=edge_rings,
+                                     vias=vias, coarsen=coarsen, grow=grow, edge_zone=zone, lines=lines, **kw)
     nodes = nodes * 1e3
     rings = [None] * len(points)
     for i, v in zip(inside, vid):

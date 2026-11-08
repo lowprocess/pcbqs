@@ -38,6 +38,9 @@ remain supported. Static-fill plugins use the `pcbqs.static_backends` entry grou
   loaded rails, independent DC/AC references, and mesh sensitivity.
 - [Jetson AGX Thor PDN check](examples/jetson-pdn/REPORT.md): a real-board DC
   cross-check, cavity limitations, and a bounded local PEEC/skin comparison.
+- [PEEC memory reduction](examples/peec-memory/REPORT.md) and the
+  [experimental compressed backend](docs/peec-memory.md): graded meshes,
+  hierarchical current/charge operators and iterative solving.
 
 Private `_numerics` functions are independently maintained snapshots, not a
 shared library or a runtime link to MoM. `emsdev` supplies only existing hardware

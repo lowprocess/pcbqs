@@ -22,7 +22,6 @@ old=RailPDN(rail,dmax=3.,plane_min=50.,vrm=dict(R=.002,L=20e-9),log=lambda *_:No
 polys=[p.geom for info in old.parts.values() for p in info['part'].pads if p.net in set(rail.nets)|{'GND'}]
 polys += [p.geom for s in rail.series for p in s.part.pads]
 crop=unary_union(polys).envelope.buffer(1.,join_style=2)
-original=mqs.mesh_sheet
 out=dict(crop_bounds_mm=list(crop.bounds),mesh_runs=[],blocks=[])
 captured=[]
 def capture(*a,**kw):
@@ -30,16 +29,13 @@ def capture(*a,**kw):
 trial.MQS=capture
 original_copper=mqs.copper_of
 for coarsen,simplify in [(None,0),(2,0),(4,0),(8,0),(4,.002),(4,.005),(4,.01),(4,.025)]:
-    def mesh(*a,**kw):
-        return original(*a,**kw,coarsen=coarsen)
-    mqs.mesh_sheet=mesh
     def copper(*a,**kw):
         g=original_copper(*a,**kw)
         return g.simplify(simplify,preserve_topology=True) if simplify and g is not None else g
     mqs.copper_of=copper
     t=time.perf_counter()
     try:
-        trial.PEECPDN(old,dmax=3.,region=crop,max_triangles=1,log=lambda *_:None)
+        trial.PEECPDN(old,dmax=3.,region=crop,max_triangles=1,coarsen=coarsen,log=lambda *_:None)
     except RuntimeError as e:
         if 'dense-solver limit' not in str(e):raise
     q=captured.pop();n=len(q.tris)
@@ -48,7 +44,6 @@ for coarsen,simplify in [(None,0),(2,0),(4,0),(8,0),(4,.002),(4,.005),(4,.01),(4
     (ROOT/'memory-study.json').write_text(json.dumps(out,indent=2)+'\n')
     if coarsen is None:base=q
     del q;gc.collect()
-mqs.mesh_sheet=original
 mqs.copper_of=original_copper
 
 # The scalar potential kernel and all six reciprocal current moments share

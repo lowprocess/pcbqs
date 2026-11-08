@@ -64,7 +64,10 @@ class MQS:
                  fine=None, dmax_fine=None, near=3.0, outer_levels=1, capacitance=False, er=1.0,
                  factor_cache_bytes=64 * 1024**2, conductor_loss='dc', conductor_faces=2,
                  dielectric='homogeneous', dielectric_tol=1e-8, fill_backend='auto', fill_workers=None,
-                 fill_chunk=16384, fill_device=None):
+                 fill_chunk=16384, fill_device=None, coarsen=None, grow=0.5,
+                 edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
+                 compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
+                 solver_tol=1e-8, solver_maxiter=500):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -75,7 +78,30 @@ class MQS:
         `fill_backend` chooses auto/openmp/threaded/numpy/cupy; `fill_workers`
         caps CPU parallelism and `fill_chunk` bounds pairs per tile. Device
         backends use `fill_device`; `fill_info` records actual execution.
+        `coarsen` permits bulk cells up to coarsen*dmax, growing at `grow`
+        away from features. `edge_rings` is the transverse subdivision count
+        (1 disables inward rings); `edge_width` and `edge_zone` are in mm.
+        Experimental `matrix_backend='hierarchical'` requires PEEC, keeps
+        near blocks dense and compresses far blocks at `compression_tol`.
+        GMRES uses `solver_tol` and raises on nonconvergence; `solve_info`
+        records residuals. Compression tolerance is not a port-error bound.
         """
+        if matrix_backend not in ('dense','hierarchical'):
+            raise ValueError('matrix_backend must be dense or hierarchical')
+        if matrix_backend == 'hierarchical' and not capacitance:
+            raise ValueError('hierarchical backend currently requires capacitance=True')
+        for name,value in [('compression_tol',compression_tol),('solver_tol',solver_tol)]:
+            if not np.isfinite(value) or not 0 < value < 1:
+                raise ValueError(name+' must be between 0 and 1')
+        for name,value in [('compression_leaf',compression_leaf),('solver_maxiter',solver_maxiter)]:
+            if not isinstance(value,(int,np.integer)) or isinstance(value,bool) or value < 1:
+                raise ValueError(name+' must be a positive integer')
+        if not np.isfinite(compression_eta) or compression_eta <= 0:
+            raise ValueError('compression_eta must be finite and positive')
+        self.matrix_backend=matrix_backend
+        self._compression_options=dict(tol=compression_tol,leaf=compression_leaf,eta=compression_eta)
+        self.solver_tol,self.solver_maxiter=solver_tol,solver_maxiter
+        self.solve_info=[]
         if not np.isfinite(er) or er <= 0:
             raise ValueError('er must be finite and positive')
         self.near, self.outer_levels, self.capacitance, self.er = near, outer_levels, capacitance, er
@@ -116,7 +142,9 @@ class MQS:
                     continue
             polys = [(n, poly) for n, pads in self.terms.items() for l, poly in pads if l == lay]
             nd, tr, rings, regs = mesh_sheet(g, pts, dmax, regions=[p for _, p in polys], fine=fine,
-                                             dmax_fine=dmax_fine if fine is not None else None)
+                                             dmax_fine=dmax_fine if fine is not None else None,
+                                             coarsen=coarsen,grow=grow,edge_rings=edge_rings,w_ref=edge_width,
+                                             edge_zone=edge_zone)
             if not len(tr):
                 continue
             nt0 = sum(len(t) for t in tris)
@@ -202,6 +230,10 @@ class MQS:
 
     # ---- the matrices ----
     def _edge_matrices(self):
+        if self.matrix_backend == 'hierarchical':
+            from .compressed import edge_inductance
+            L,r = edge_inductance(self)
+            return self._sheet_resistance(r),L
         moments, info = static_moments(self.nodes, self.tris, self.z_of, self.near, self.outer_levels,
                                        **self._fill_options, return_info=True)
         nodes, M0, Mrx, Mry, Mrr = moments
@@ -216,6 +248,9 @@ class MQS:
                 self.fill_info['capacitance'] = dict(info, reused_magnetic_moments=True)
             else:
                 self._ensure_potential()
+        return self._sheet_resistance(r), L * np.outer(1/r.l,1/r.l)
+
+    def _sheet_resistance(self,r):
         # R: the Gram matrix of the RWG functions, each triangle at its sheet resistance
         Ar, Pq = r.area, quad_pts(r, _BAR3)
         rs = 1.0 / (self.sigma * self.t_of)
@@ -231,7 +266,7 @@ class MQS:
             for idx in self.layer_tris.values():
                 weights = np.zeros(len(self.tris)); weights[idx] = rs[idx]
                 self._sheet_terms.append((self.t_of[idx[0]], (scale @ gram(weights) @ scale).tocsr()))
-        return (scale @ R @ scale).tocsr(), L * np.outer(s, s)
+        return (scale @ R @ scale).tocsr()
 
     def _resistance_delta(self, f):
         from .conductor import surface_impedance
@@ -253,6 +288,10 @@ class MQS:
 
     def _ensure_potential(self):
         if self._potential is None:
+            if self.matrix_backend == 'hierarchical':
+                from .compressed import potential
+                self._potential=potential(self)
+                return self._potential
             if self.dielectric == 'stack':
                 from .electrostatic import potential_moments
                 self._set_potential(potential_moments(self), er=1.)
@@ -266,6 +305,21 @@ class MQS:
         return self._potential
 
     def _via_matrices(self):
+        if self.matrix_backend == 'hierarchical':
+            from .hmatrix import HMatrix
+            v=np.asarray(self.vseg,float).reshape(-1,5)
+            x,y,rr,z0,z1=v.T
+            ri=np.maximum(rr-self.plating,0.)
+            R=(z1-z0)/(self.sigma*np.pi*(rr**2-ri**2))
+            lo=np.c_[x-rr,y-rr,z0];hi=np.c_[x+rr,y+rr,z1]
+            def entry(a,b):
+                aa,bb=np.meshgrid(a,b,indexing='ij')
+                sep=np.hypot(x[aa]-x[bb],y[aa]-y[bb])
+                sep=np.where(aa==bb,rr[aa],np.maximum(sep,1e-7))
+                return filament_mutual(z0[aa],z1[aa],z0[bb],z1[bb],sep)
+            L=HMatrix(entry,lo,hi,**self._compression_options)
+            self.fill_info['vias']=dict(L.info,matrix_backend='hierarchical')
+            return diags(R).tocsr(),L
         n = self.nv
         R, L = np.zeros(n), np.zeros((n, n))
         for i, (x, y, rr, z0, z1) in enumerate(self.vseg):
@@ -385,6 +439,9 @@ class MQS:
     def solve(self, freqs, amps=None):
         """The currents at each frequency (Hz) for the sources' currents (amps: {source: A}, default 1 A each)."""
         if self.capacitance:
+            if self.matrix_backend == 'hierarchical':
+                from .peec_iterative import solve
+                return solve(self,freqs,amps)
             from .peec import solve
             return solve(self, freqs, amps)
         f = np.atleast_1d(np.asarray(freqs, float))

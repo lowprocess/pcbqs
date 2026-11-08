@@ -1,0 +1,432 @@
+{
+  "runs": [
+    {
+      "backend": "dense",
+      "case": "rectangular",
+      "triangles": 1436,
+      "compression_tol": 1e-06,
+      "coarsen": null,
+      "frequencies_Hz": [
+        100000.0,
+        1000000.0,
+        4000000.0,
+        4860000.0,
+        5000000.0,
+        6000000.0,
+        10000000.0,
+        30000000.0
+      ],
+      "real_ohm": [
+        0.0033119770833938693,
+        0.004058675236139442,
+        0.11055703775090914,
+        0.026271366491511402,
+        0.023340526103576544,
+        0.013926520411642315,
+        0.008550701206577537,
+        0.008641190565287104
+      ],
+      "imag_ohm": [
+        0.013142217288982648,
+        0.1428667677144748,
+        -1.4338808742752778,
+        -0.5967985351127895,
+        -0.5467884595220696,
+        -0.343378824494793,
+        -0.12114887586866983,
+        0.09397652730236032
+      ],
+      "seconds": 16.9307240069993,
+      "peak_RSS_MiB": 676.84375,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1436,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "pairs": 1031766,
+          "analytic_pairs": 192086,
+          "scalar_only": false,
+          "seconds": 0.41873878200021863
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 1,
+          "tile_workers": 2,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1436,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 1,
+          "image_terms": 62,
+          "scalar_only": true,
+          "seconds": 8.69860073899963
+        }
+      },
+      "solves": [],
+      "max_complex_relative_error_vs_dense": 0.0
+    },
+    {
+      "backend": "hierarchical",
+      "case": "rectangular",
+      "triangles": 1436,
+      "compression_tol": 1e-06,
+      "coarsen": null,
+      "frequencies_Hz": [
+        100000.0,
+        1000000.0,
+        4000000.0,
+        4860000.0,
+        5000000.0,
+        6000000.0,
+        10000000.0,
+        30000000.0
+      ],
+      "real_ohm": [
+        0.003311976973292732,
+        0.004058675569590697,
+        0.11055703714549675,
+        0.026271366691618003,
+        0.023340526415609526,
+        0.013926520728677897,
+        0.008550701070775418,
+        0.008641190437675892
+      ],
+      "imag_ohm": [
+        0.013142216888470204,
+        0.14286676782933383,
+        -1.4338808729092085,
+        -0.5967985359724894,
+        -0.5467884604999321,
+        -0.34337882518317353,
+        -0.12114887605468225,
+        0.09397652745680166
+      ],
+      "seconds": 55.311831248999624,
+      "peak_RSS_MiB": 129.32421875,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1436,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 15391784,
+          "dense_bytes": 35347232,
+          "blocks": 1547,
+          "low_rank_blocks": 92,
+          "evaluated_entries": 2927214,
+          "tolerance": 1e-06,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 26.01723812399996,
+          "matrix_backend": "hierarchical"
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1436,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 13010900,
+          "dense_bytes": 32993536,
+          "blocks": 423,
+          "low_rank_blocks": 71,
+          "evaluated_entries": 1007086,
+          "tolerance": 1e-06,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 6.343527641000037,
+          "matrix_backend": "hierarchical"
+        }
+      },
+      "solves": [
+        {
+          "frequency_Hz": 100000.0,
+          "iterations": 86,
+          "relative_residual": 8.482409043139826e-09,
+          "preconditioner_bytes": 2935000
+        },
+        {
+          "frequency_Hz": 1000000.0,
+          "iterations": 89,
+          "relative_residual": 5.803418266716293e-09,
+          "preconditioner_bytes": 2944520
+        },
+        {
+          "frequency_Hz": 4000000.0,
+          "iterations": 94,
+          "relative_residual": 8.314654593186675e-09,
+          "preconditioner_bytes": 2946780
+        },
+        {
+          "frequency_Hz": 4860000.0,
+          "iterations": 93,
+          "relative_residual": 7.740949707426034e-09,
+          "preconditioner_bytes": 2946700
+        },
+        {
+          "frequency_Hz": 5000000.0,
+          "iterations": 93,
+          "relative_residual": 8.747168170139714e-09,
+          "preconditioner_bytes": 2946660
+        },
+        {
+          "frequency_Hz": 6000000.0,
+          "iterations": 92,
+          "relative_residual": 8.635599937431958e-09,
+          "preconditioner_bytes": 2946200
+        },
+        {
+          "frequency_Hz": 10000000.0,
+          "iterations": 90,
+          "relative_residual": 7.554596815139226e-09,
+          "preconditioner_bytes": 2944540
+        },
+        {
+          "frequency_Hz": 30000000.0,
+          "iterations": 86,
+          "relative_residual": 6.854102564230727e-09,
+          "preconditioner_bytes": 2942000
+        }
+      ],
+      "max_complex_relative_error_vs_dense": 3.0647576677714815e-08
+    },
+    {
+      "backend": "dense",
+      "case": "slotted",
+      "triangles": 1391,
+      "compression_tol": 1e-06,
+      "coarsen": null,
+      "frequencies_Hz": [
+        100000.0,
+        1000000.0,
+        4000000.0,
+        4860000.0,
+        5000000.0,
+        6000000.0,
+        10000000.0,
+        30000000.0
+      ],
+      "real_ohm": [
+        0.0038104033963963775,
+        0.004741053518622179,
+        0.10612279939091926,
+        0.026240238605335524,
+        0.023344186256458024,
+        0.013988427868502207,
+        0.008663733416492752,
+        0.00888773821911621
+      ],
+      "imag_ohm": [
+        0.013464249095089737,
+        0.14605899159951685,
+        -1.372257990457481,
+        -0.5878344280239985,
+        -0.5394107669353091,
+        -0.34054929063923156,
+        -0.11961541231281479,
+        0.09867621941054608
+      ],
+      "seconds": 15.62851469799989,
+      "peak_RSS_MiB": 661.07421875,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1391,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "pairs": 968136,
+          "analytic_pairs": 177698,
+          "scalar_only": false,
+          "seconds": 0.6265511250003328
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 1,
+          "tile_workers": 2,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1391,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 1,
+          "image_terms": 62,
+          "scalar_only": true,
+          "seconds": 8.886425051000515
+        }
+      },
+      "solves": [],
+      "max_complex_relative_error_vs_dense": 0.0
+    },
+    {
+      "backend": "hierarchical",
+      "case": "slotted",
+      "triangles": 1391,
+      "compression_tol": 1e-06,
+      "coarsen": null,
+      "frequencies_Hz": [
+        100000.0,
+        1000000.0,
+        4000000.0,
+        4860000.0,
+        5000000.0,
+        6000000.0,
+        10000000.0,
+        30000000.0
+      ],
+      "real_ohm": [
+        0.0038104035545151104,
+        0.004741054392621676,
+        0.10612279891449523,
+        0.026240238556717164,
+        0.02334418622348891,
+        0.013988428009696303,
+        0.00866373328915698,
+        0.008887738271926028
+      ],
+      "imag_ohm": [
+        0.013464250495493988,
+        0.14605899156018382,
+        -1.3722579891006066,
+        -0.5878344279565565,
+        -0.5394107668911919,
+        -0.3405492908391677,
+        -0.11961541238432327,
+        0.09867621969425383
+      ],
+      "seconds": 30.745305894000012,
+      "peak_RSS_MiB": 113.49609375,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1391,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 14213856,
+          "dense_bytes": 32740232,
+          "blocks": 433,
+          "low_rank_blocks": 53,
+          "evaluated_entries": 2140927,
+          "tolerance": 1e-06,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 10.372901886999898,
+          "matrix_backend": "hierarchical"
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 1391,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 11750860,
+          "dense_bytes": 30958096,
+          "blocks": 404,
+          "low_rank_blocks": 72,
+          "evaluated_entries": 943464,
+          "tolerance": 1e-06,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 7.817625828000018,
+          "matrix_backend": "hierarchical"
+        }
+      },
+      "solves": [
+        {
+          "frequency_Hz": 100000.0,
+          "iterations": 92,
+          "relative_residual": 3.873515060182392e-09,
+          "preconditioner_bytes": 2069008
+        },
+        {
+          "frequency_Hz": 1000000.0,
+          "iterations": 93,
+          "relative_residual": 7.601130157127814e-09,
+          "preconditioner_bytes": 2105248
+        },
+        {
+          "frequency_Hz": 4000000.0,
+          "iterations": 99,
+          "relative_residual": 7.084508122535894e-09,
+          "preconditioner_bytes": 2120168
+        },
+        {
+          "frequency_Hz": 4860000.0,
+          "iterations": 97,
+          "relative_residual": 6.8022112714710525e-09,
+          "preconditioner_bytes": 2119388
+        },
+        {
+          "frequency_Hz": 5000000.0,
+          "iterations": 97,
+          "relative_residual": 6.524702762015e-09,
+          "preconditioner_bytes": 2119348
+        },
+        {
+          "frequency_Hz": 6000000.0,
+          "iterations": 95,
+          "relative_residual": 8.600559454987872e-09,
+          "preconditioner_bytes": 2118948
+        },
+        {
+          "frequency_Hz": 10000000.0,
+          "iterations": 93,
+          "relative_residual": 8.953560647347138e-09,
+          "preconditioner_bytes": 2117068
+        },
+        {
+          "frequency_Hz": 30000000.0,
+          "iterations": 88,
+          "relative_residual": 5.247984634765522e-09,
+          "preconditioner_bytes": 2114868
+        }
+      ],
+      "max_complex_relative_error_vs_dense": 1.0071453300658133e-07
+    }
+  ]
+}
