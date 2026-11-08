@@ -48,6 +48,24 @@ This bounds that assembly step, not total RSS or all factorization
 workspace. The full compressed operator determines the convergence residual.
 Nonconvergence raises rather than returning an unchecked impedance.
 
+With the compiled core (`python -m pcbqs.core.build`), H-matrix products run
+natively: on first use the blocks are packed into flat arrays (the blocks are
+rebound to views of them, so storage is not duplicated), each block writes its
+own contribution rows in parallel, and each output row then sums its
+contributions in block order. Products are therefore bitwise identical for any
+thread count. Threads default to the CPU affinity/cgroup quota;
+`PCBQS_HMATRIX_THREADS` or `H.workers` override it, and `PCBQS_NO_CORE` selects
+the NumPy block loop. The packed cache is dropped when pickling and rebuilt
+after loading. Scratch holds one row per block contribution, typically about
+100 per unknown and column, and is reused between products.
+
+On the 30 x 20 mm two-layer layered-dielectric case (5,816 triangles, 8,596
+RWG unknowns, 11,079 inductance blocks, 141 MB), one inductance product went
+from 59 ms (NumPy loop) to 3.9 ms with 16 threads on an i7-13700K. A
+three-frequency GMRES solve fell from 45.7 s to 6.0 s (medians of three), with
+identical iteration counts and impedances. Operator construction (ACA and
+entry evaluation, about 43 s here) is unchanged.
+
 `fill_info` reports matrix payload/storage and evaluated entry counts.
 `solve_info` records GMRES iterations, relative operator residual and sparse
 preconditioner storage at each frequency. Storage figures are not process RSS

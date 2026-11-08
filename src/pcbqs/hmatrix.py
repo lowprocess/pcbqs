@@ -5,6 +5,9 @@ failed or uneconomical approximations are subdivided, never silently truncated.
 Transpose symmetry (not Hermitian symmetry) also applies to lossy kernels.
 """
 from dataclasses import dataclass
+from importlib import import_module
+import os
+import threading
 import time
 import numpy as np
 from scipy.sparse.linalg import LinearOperator
@@ -16,6 +19,27 @@ class _Cluster:
     lo: np.ndarray
     hi: np.ndarray
     children: tuple = ()
+
+
+def _native():
+    """The compiled block product, unless PCBQS_NO_CORE is set or the core predates it."""
+    if os.environ.get('PCBQS_NO_CORE'):
+        return None
+    try:
+        core=import_module('pcbqs._core')
+    except ImportError:
+        return None
+    return core if hasattr(core,'hmatrix_apply') else None
+
+
+def _workers():
+    env=os.environ.get('PCBQS_HMATRIX_THREADS')
+    if env:
+        value=int(env)
+        if value<1:raise ValueError('PCBQS_HMATRIX_THREADS must be a positive integer')
+        return value
+    from .static_backends import default_workers
+    return default_workers()
 
 
 class HMatrix(LinearOperator):
@@ -133,11 +157,87 @@ class HMatrix(LinearOperator):
                        evaluated_entries=self.entries,cached_rows=row_hits,tolerance=tol,leaf=leaf,eta=eta)
 
     def _matmat(self,x):
+        x=np.asarray(x)
+        core=_native()
+        if core is not None and self.blocks:
+            return self._native_matmat(core,x)
         out=np.zeros((self.shape[0],x.shape[1]),dtype=np.result_type(self.dtype,x.dtype))
         for a,b,u,v,same in self.blocks:
             out[a]+=u@x[b] if v is None else u@(v@x[b])
             if not same:out[b]+=u.T@x[a] if v is None else v.T@(u.T@x[a])
         return out
+
+    def _pack(self):
+        """Flatten blocks once; blocks are rebound to views, so storage is not duplicated.
+
+        Contribution slots follow block order (forward rows, then transposed
+        rows), and each output row sums its slots in that order, so native
+        products do not depend on thread count or scheduling.
+        """
+        complex_=self.dtype.kind=='c' or any(u.dtype.kind=='c' or (v is not None and v.dtype.kind=='c')
+                                             for _,_,u,v,_ in self.blocks)
+        dtype=np.complex128 if complex_ else np.float64
+        nb=len(self.blocks);meta=np.empty((nb,10),np.int64)
+        isize=sum(len(a)+len(b) for a,b,*_ in self.blocks)
+        dsize=sum(u.size+(v.size if v is not None else 0) for _,_,u,v,_ in self.blocks)
+        idx=np.empty(isize,np.int64);data=np.empty(dsize,dtype);targets=[]
+        io=do=so=0;blocks=[]
+        for k,(a,b,u,v,same) in enumerate(self.blocks):
+            la,lb=len(a),len(b)
+            idx[io:io+la]=a;idx[io+la:io+la+lb]=b
+            av,bv=idx[io:io+la],idx[io+la:io+la+lb]
+            uo=do;data[do:do+u.size]=u.ravel();uv=data[do:do+u.size].reshape(u.shape);do+=u.size
+            vo,vv=-1,None
+            if v is not None:
+                vo=do;data[do:do+v.size]=v.ravel();vv=data[do:do+v.size].reshape(v.shape);do+=v.size
+            rank=0 if v is None else u.shape[1]
+            meta[k]=(io,la,io+la,lb,uo,vo,rank,int(bool(same)),so,-1 if same else so+la)
+            targets.append(av)
+            so+=la
+            if not same:targets.append(bv);so+=lb
+            io+=la+lb
+            blocks.append((av,bv,uv,vv,same))
+        targets=np.concatenate(targets) if targets else np.empty(0,np.int64)
+        slots=np.argsort(targets,kind='stable').astype(np.int64)
+        row_ptr=np.zeros(self.shape[0]+1,np.int64);np.cumsum(np.bincount(targets,minlength=self.shape[0]),out=row_ptr[1:])
+        self.blocks=blocks
+        self._packed=dict(meta=meta,idx=idx,data=data,row_ptr=row_ptr,slots=slots,nslots=so,
+                          work=np.empty(0,dtype),lock=threading.Lock())
+        return self._packed
+
+    def _native_matmat(self,core,x):
+        packed=getattr(self,'_packed',None) or self._pack()
+        data=packed['data']
+        if data.dtype.kind=='c':
+            xx=np.ascontiguousarray(x,dtype=np.complex128)
+        elif x.dtype.kind=='c':
+            # A real operator acts on real and imaginary parts as independent columns.
+            xx=np.ascontiguousarray(x,dtype=np.complex128).view(np.float64)
+        else:
+            xx=np.ascontiguousarray(x,dtype=np.float64)
+        workers=getattr(self,'workers',None) or _workers()
+        size=packed['nslots']*xx.shape[1]
+        # Reusing scratch avoids page-faulting ~100 contribution rows per
+        # unknown on every product; concurrent callers get their own buffer.
+        lock=packed['lock'];owned=lock.acquire(blocking=False)
+        try:
+            if owned:
+                if packed['work'].size<size:packed['work']=np.empty(size,dtype=data.dtype)
+                work=packed['work']
+            else:
+                work=np.empty(size,dtype=data.dtype)
+            y=core.hmatrix_apply(packed['meta'],packed['idx'],data,packed['row_ptr'],packed['slots'],
+                                 xx,work,packed['nslots'],workers)
+        finally:
+            if owned:lock.release()
+        if data.dtype.kind!='c' and x.dtype.kind=='c':
+            y=y.view(np.complex128)
+        return y.astype(np.result_type(self.dtype,x.dtype),copy=False)
+
+    def __getstate__(self):
+        # The packed copy is a cache; it is rebuilt from blocks after loading.
+        state=super().__getstate__();state.pop('_packed',None)
+        return state
 
     def _matvec(self,x):return self._matmat(np.asarray(x).reshape(-1,1))[:,0]
     def _rmatvec(self,x):return self._matvec(x.conj()).conj()

@@ -1,6 +1,7 @@
 // QS-only native backend. Kernel provenance: PROVENANCE.json; GPL-3.0-or-later.
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <pybind11/complex.h>
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
@@ -10,9 +11,11 @@
 namespace py = pybind11;
 template <class T> using arr = py::array_t<T, py::array::c_style | py::array::forcecast>;
 #include "static_kernels.hpp"
+#include "hmatrix_kernels.hpp"
 PYBIND11_MODULE(_core, m) {
     m.def("static_pairs", &static_pairs);
     m.def("static_thread_count", &static_thread_count);
+    m.def("hmatrix_apply", &hmatrix_apply);
 #ifdef _OPENMP
     m.attr("static_openmp") = true;
 #else

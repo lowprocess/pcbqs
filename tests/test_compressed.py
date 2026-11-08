@@ -163,3 +163,48 @@ def test_benchmark_checkpoints_reuse_kernels_and_invalidate_options(tmp_path):
     assert cache.fingerprint(a,'potential')==cache.fingerprint(b,'potential')
     b._compression_options=dict(b._compression_options,tol=1e-4)
     assert cache.fingerprint(a,'potential')!=cache.fingerprint(b,'potential')
+
+
+@pytest.mark.parametrize('dtype',[float,complex])
+def test_native_hmatrix_product_matches_python_and_is_thread_independent(dtype,monkeypatch):
+    import pickle
+    import pcbqs.hmatrix as hm
+    if hm._native() is None:
+        pytest.skip('compiled core without hmatrix_apply')
+    rng=np.random.default_rng(7);pts=rng.random((512,3));pts[:,2]*=.01
+    dense=(1-.02j if dtype is complex else 1)/np.sqrt(((pts[:,None]-pts[None,:])**2).sum(-1)+.005**2)
+    H=HMatrix(lambda a,b:dense[np.ix_(a,b)],pts,pts,dtype=dtype,leaf=16,tol=1e-7)
+    assert H.info['low_rank_blocks']>0
+    inputs=[rng.normal(size=512),rng.normal(size=(512,3)),rng.normal(size=(512,2))+1j*rng.normal(size=(512,2))]
+    monkeypatch.setattr(hm,'_native',lambda:None)
+    python=[H@x for x in inputs]
+    monkeypatch.undo()
+    for x,expected in zip(inputs,python):
+        results=[]
+        for workers in (1,2,5):
+            H.workers=workers;results.append(H@x)
+        assert all(np.array_equal(results[0],r) for r in results[1:])
+        assert results[0].dtype==expected.dtype and results[0].shape==expected.shape
+        np.testing.assert_allclose(results[0],expected,rtol=1e-13,atol=1e-13*np.abs(expected).max())
+    # The packed cache is not serialized, and blocks still describe the operator.
+    restored=pickle.loads(pickle.dumps(H,protocol=5))
+    assert not hasattr(restored,'_packed')
+    assert np.array_equal(restored@inputs[2],H@inputs[2])
+    monkeypatch.setenv('PCBQS_NO_CORE','1')
+    np.testing.assert_allclose(H@inputs[1],python[1],rtol=1e-13,atol=1e-13*np.abs(python[1]).max())
+
+
+def test_native_hmatrix_rejects_inconsistent_layout():
+    import pcbqs.hmatrix as hm
+    core=hm._native()
+    if core is None:
+        pytest.skip('compiled core without hmatrix_apply')
+    rng=np.random.default_rng(3);pts=rng.random((64,3))
+    H=HMatrix(lambda a,b:np.ones((len(a),len(b))),pts,pts,leaf=8)
+    p=H._pack();x=np.ones((64,1));work=np.empty(p['nslots'])
+    meta=p['meta'].copy();meta[0,1]+=10**6
+    with pytest.raises(ValueError,match='layout'):
+        core.hmatrix_apply(meta,p['idx'],p['data'],p['row_ptr'],p['slots'],x,work,p['nslots'],2)
+    with pytest.raises(ValueError,match='scratch'):
+        core.hmatrix_apply(p['meta'],p['idx'],p['data'],p['row_ptr'],p['slots'],x,work[:1],p['nslots'],2)
+
