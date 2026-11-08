@@ -103,7 +103,7 @@ def test_graph_preconditioner_avoids_large_projected_fill(monkeypatch):
     dense=make('dense',layered=True,closed=True)
     f=[1e-3,1e5,30e6]
     np.testing.assert_allclose(q.solve(f).z['I'],dense.solve(f).z['I'],rtol=1e-5,atol=1e-9)
-    assert all(s['preconditioner']=='tree_diagonal' for s in q.solve_info)
+    assert all(s['preconditioner']=='graph_ilu' for s in q.solve_info)
 
 
 def test_serialized_operators_retain_complex_products():
@@ -148,6 +148,10 @@ def test_benchmark_checkpoints_reuse_kernels_and_invalidate_options(tmp_path):
     def fail():raise AssertionError('cached kernels rebuilt')
     assert cache.checkpoint(b,'inductance',tmp_path,fail)['hit']
     assert cache.checkpoint(b,'potential',tmp_path,fail)['hit']
+    kernel=b._potential.kernel
+    panels=np.arange(min(10,kernel.shape[0]))
+    columns=np.eye(kernel.shape[0])[:,panels]
+    np.testing.assert_allclose(cache.sampled_block(kernel,panels,panels),(kernel@columns)[panels],rtol=1e-14)
     np.testing.assert_allclose(b.solve([1e5]).z['I'],a.solve([1e5]).z['I'],rtol=1e-12)
     b.solver_tol=1e-9
     assert cache.fingerprint(a,'potential')==cache.fingerprint(b,'potential')

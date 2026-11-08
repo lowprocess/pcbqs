@@ -57,3 +57,26 @@ def checkpoint(model,stage,folder,build):
     finally:
         temporary.unlink(missing_ok=True)
     return dict(hit=False,path=str(path),file_bytes=path.stat().st_size)
+
+
+def sampled_block(operator,rows,cols):
+    """Extract a small H-matrix block without applying N dense unit vectors."""
+    rows,cols=np.asarray(rows,int),np.asarray(cols,int)
+    if len(np.unique(rows))!=len(rows) or len(np.unique(cols))!=len(cols):
+        raise ValueError('sample indices must be unique')
+    if (rows<0).any() or (cols<0).any() or (rows>=operator.shape[0]).any() or (cols>=operator.shape[1]).any():
+        raise ValueError('sample indices out of range')
+    rm=np.full(operator.shape[0],-1,int);cm=np.full(operator.shape[1],-1,int)
+    rm[rows]=np.arange(len(rows));cm[cols]=np.arange(len(cols))
+    out=np.zeros((len(rows),len(cols)),dtype=operator.dtype)
+    for a,b,u,v,same in operator.blocks:
+        ra=np.flatnonzero(rm[a]>=0);cb=np.flatnonzero(cm[b]>=0)
+        if len(ra) and len(cb):
+            value=u[np.ix_(ra,cb)] if v is None else u[ra]@v[:,cb]
+            out[np.ix_(rm[a[ra]],cm[b[cb]])]=value
+        if not same:
+            rb=np.flatnonzero(rm[b]>=0);ca=np.flatnonzero(cm[a]>=0)
+            if len(rb) and len(ca):
+                value=u[np.ix_(ca,rb)].T if v is None else v[:,rb].T@u[ca].T
+                out[np.ix_(rm[b[rb]],cm[a[ca]])]=value
+    return out

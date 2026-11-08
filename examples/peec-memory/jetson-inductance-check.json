@@ -1,0 +1,10 @@
+{
+  "inductance": {
+    "edges": 40,
+    "relative_frobenius_error": 5.590679575813773e-07,
+    "max_entry_relative_error": 0.7903406855913573,
+    "relative_entry_floor": 4.228465598305911e-22,
+    "max_absolute_error": 2.146718381330357e-16
+  },
+  "seconds": 24.963743270000123
+}

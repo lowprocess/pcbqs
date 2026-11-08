@@ -18,6 +18,10 @@ This continues the [initial implementation](IMPLEMENTATION.md).
   solver-tolerance changes reuse the operators and rebuild current topology.
 - Report assembly progress and iterative residuals. Nonconvergence still raises,
   with structured diagnostics retained for inspection.
+- Strengthen the large-system preconditioner through a sparse graph Laplacian
+  solve for loop impedance, without constructing the projected cycle matrix.
+  Apply the charge-tree inverse separately to preserve low-frequency stability.
+  The forced large-system test still agrees with dense PEEC from 1 mHz to 30 MHz.
 
 ## Measurements
 
@@ -35,6 +39,20 @@ reciprocal matrix fill. The former used 63 native calls for 44,661 image/pair
 interactions. This is an integration microbenchmark, not an end-to-end speedup
 or a physical accuracy bound; timings are single runs with shared CPU activity.
 See [raw kernel sample](jetson-kernel-batched.json).
+
+A 40-edge principal block sampled from the completed full-rail inductance
+operator agrees with direct dense moment integration to 5.59e-7 relative
+Frobenius error. Maximum absolute error is 2.15e-16 H. The largest entry-relative
+error is 0.79 for a very weak mutual entry, using a denominator floor of
+4.23e-22 H; the aggregate norm must not be read as an entrywise guarantee.
+This is operator validation on actual geometry, not a port-error bound.
+
+A 15-second nonblocking sampling profile of potential construction captured
+712 main-thread samples (26 sampling errors). About 53% of captured stack time
+was at the native integration call site. Spline evaluation and array processing
+also contributed. This locates the remaining cost; it is not a controlled CPU
+benchmark. The largest grouped contact contains only 162 triangles, so grouped
+self terms do not explain the long build on their own.
 
 ## Reproduce and resume
 

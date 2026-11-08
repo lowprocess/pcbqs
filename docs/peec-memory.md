@@ -40,9 +40,11 @@ remain sparse. Restarted GMRES applies these operators through sparse
 loop/tree transforms, retaining the reference solver's equilibrium-charge split
 and low-frequency scaling. A sparse approximate impedance projection and ILU
 precondition small solves. Before assembling that surrogate, a conservative
-nonzero-count estimate is checked against 128 MiB. Larger cases use a loop
-diagonal and local-potential tree solve, avoiding the projected sparse square
-matrix. This bounds that assembly step, not total RSS or all factorization
+nonzero-count estimate is checked against 128 MiB. Larger cases use an ILU
+solve on the original branch graph for loop impedance, followed by a stable
+local-potential tree solve. This avoids the projected sparse square matrix;
+if graph factorization fails, a loop-diagonal fallback remains available.
+This bounds that assembly step, not total RSS or all factorization
 workspace. The full compressed operator determines the convergence residual.
 Nonconvergence raises rather than returning an unchecked impedance.
 
@@ -54,7 +56,8 @@ the iterative path rebuilds its sparse preconditioner per frequency.
 
 This is an initial scalable path, not a guaranteed memory/runtime bound.
 Fundamental-cycle transforms can still have substantial support on large
-graphs; the tree/loop-diagonal fallback may need more iterations. Floating passive components can also
+graphs; approximate graph solves and the tree/loop-diagonal fallback may need
+more iterations. Floating passive components can also
 make the equilibrium solve expensive. Near blocks between overlapping planes
 can dominate; entry integration and iterative convergence can dominate time.
 Compression and iterative tolerances must be tightened independently from

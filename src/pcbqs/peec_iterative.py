@@ -41,6 +41,38 @@ def _tree_preconditioner(m,diagonal,zscale):
     return LinearOperator((K.shape[1],K.shape[1]),matvec=apply,dtype=complex),size
 
 
+def _graph_preconditioner(m,diagonal,zscale):
+    """Graph solve for loop impedance, followed by a stable charge-tree solve.
+
+    The graph Laplacian applies the inverse of Kc.T diag(Z) Kc without forming
+    it. Recover only loop currents from that operation; tree charge is solved
+    separately to avoid subtracting conduction currents and dividing by jw.
+    """
+    K,A,T=m['K'],m['A'],m['T'];nl=m['nl'];passive=m['passive'];keep=m['keep']
+    if not nl:return _tree_preconditioner(m,diagonal,zscale)
+    Kc,Kt=K[:,:nl],K[:,nl:];cotree=m['cotree']
+    position=np.full(A.shape[1],-1,int);position[passive]=np.arange(len(passive))
+    d=diagonal[passive].copy();d[abs(d)<zscale*1e-12]=zscale*1e-12
+    inverse=1/d;Ap=A[:,passive]
+    graph=(Ap@diags(inverse)@Ap.T).tocsc()
+    lu=spilu(graph[keep][:,keep].tocsc(),drop_tol=1e-6,fill_factor=20)
+    # Reuse the charge-coordinate inverse, whose tree block is independent of
+    # the loop-diagonal block discarded here.
+    charge_inverse,base_bytes=_tree_preconditioner(m,diagonal,zscale)
+    def apply(y):
+        force=np.zeros(A.shape[1],complex);force[cotree]=zscale*y[:nl]
+        trial=inverse*force[passive]
+        voltage=np.zeros(A.shape[0],complex)
+        voltage[keep]=lu.solve(np.asarray(Ap@trial).ravel()[keep])
+        loop=(trial-inverse*(Ap.T@voltage))[position[cotree]]
+        rhs=y.copy()
+        rhs[nl:]-=np.asarray(Kt.T@(diagonal*(Kc@loop))).ravel()/zscale
+        result=charge_inverse@rhs;result[:nl]=loop
+        return result
+    size=base_bytes+sum(s.data.nbytes+s.indices.nbytes+s.indptr.nbytes for s in (lu.L,lu.U))
+    return LinearOperator((K.shape[1],K.shape[1]),matvec=apply,dtype=complex),size
+
+
 class ConvergenceError(RuntimeError):
     def __init__(self,status,residual,iterations):
         self.status,self.relative_residual,self.iterations=status,residual,iterations
@@ -84,6 +116,8 @@ def prepare(model):
     cycles=[i for i in range(m['C'].shape[1]) if i not in m['src'].values()]
     K=hstack((m['C'][:,cycles],eye(nb,format='csc')[:,np.flatnonzero(m['tree'])]),format='csc')
     nl=len(cycles);T=(A@K[:,nl:]).tocsc()
+    non_tree=np.flatnonzero(~m['tree']);identity=m['C'][non_tree][:,cycles].tocoo()
+    cotree=np.empty(nl,int);cotree[identity.col]=non_tree[identity.row]
     graph=coo_matrix((np.ones(len(passive)),(a[passive],b[passive])),shape=(model.n_nodes,model.n_nodes))
     nc,labels=connected_components(graph,directed=False)
     # Sparse component indicators avoid a potentially node-square identity.
@@ -99,7 +133,7 @@ def prepare(model):
     model._peec=dict(A=A,K=K,T=T,P=P,nl=nl,B=B,keep=keep,tree_lu=tree_lu,
                      sources=sources,passive=passive,names=names,pscale=pscale,
                      source_components=(A[:,sources].T@B).toarray(),ldiag=ldiag,
-                     backend='hierarchical',factorizations=0,factor_bytes=0)
+                     backend='hierarchical',factorizations=0,factor_bytes=0,cotree=cotree)
     return model._peec
 
 
@@ -149,8 +183,12 @@ def solve(model,freqs,amps=None):
             electric_counts=np.diff(T.tocsr().indptr).astype(float)
             estimated_bytes=min(n*n,float(counts@counts+electric_counts@electric_counts))*24
             if estimated_bytes>_PROJECTED_PRECONDITIONER_BYTES:
-                M,preconditioner_bytes=_tree_preconditioner(m,diagonal,zscale)
-                kind='tree_diagonal'
+                try:
+                    M,preconditioner_bytes=_graph_preconditioner(m,diagonal,zscale)
+                    kind='graph_ilu'
+                except RuntimeError:
+                    M,preconditioner_bytes=_tree_preconditioner(m,diagonal,zscale)
+                    kind='tree_diagonal'
             else:
                 approx=(K.T@diags(diagonal)@K).tocsc()/zscale
                 scaling=np.r_[np.ones(nl),np.full(n-nl,jw*alpha)]
