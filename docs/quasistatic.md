@@ -214,6 +214,31 @@ the good/far/slot cases took approximately 1.3/4.7/3.4 s for planes and volume,
 with 4,140/5,326/5,588 triangles respectively. These runs use the demo's
 unchanged meshes, RLC assumptions and source waveform.
 
+The maintained `tools/nearfield_demo.py` now reruns those same geometries and
+waveform with layered PEEC and conductor-loss comparisons:
+
+```sh
+OPENBLAS_NUM_THREADS=4 OMP_NUM_THREADS=8 python tools/nearfield_demo.py out/
+```
+
+It compares MQS/DC-sheet, PEEC/DC-sheet and PEEC with one- and two-face slabs.
+The one-face slab is the primary field result; the face comparison is a model
+sensitivity, not a rigorous error bound. Lateral current redistribution and its
+loss are solved, while through-thickness proximity currents are not resolved.
+The board's dielectric stack and loss tangent supply distributed capacitance;
+the explicit 10 µF capacitor retains its original ESR and ESL. Reported copper
+resistance is computed from copper dissipation per squared source-current
+amplitude, separate from capacitor ESR and dielectric loss. It does not subtract
+a lumped capacitor impedance from the PEEC port impedance.
+
+The script writes per-model power-balance/charge-continuity checks, floating
+VIN–GND capacitance, current/charge and mesh pictures, and harmonic H dumps.
+Summed losses cover only the selected AC harmonics, excluding DC and omitted
+harmonics. `--plot-only` regenerates pictures from saved results with the same
+mesh controls. No KiCad or mom25d installation is needed for this synthetic
+example. Shared immutable geometry kernels are reused between model variants;
+their timing records identify that reuse.
+
 ## Converter command and GUI
 
 ```sh
