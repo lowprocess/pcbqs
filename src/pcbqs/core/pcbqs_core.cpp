@@ -23,7 +23,7 @@ PYBIND11_MODULE(_core, m) {
     m.def("static_fill", &static_fill);
     m.def("static_combine", &static_combine);
     m.def("static_thread_count", &static_thread_count);
-    m.def("hmatrix_apply", &hmatrix_apply);
+    bind_hmatrix(m);
     m.def("static_block", &static_block);
     m.def("rwg_inductance", &rwg_inductance);
     m.def("layered_pairs", &layered_pairs);

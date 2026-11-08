@@ -187,9 +187,10 @@ def test_native_hmatrix_product_matches_python_and_is_thread_independent(dtype,m
         assert all(np.array_equal(results[0],r) for r in results[1:])
         assert results[0].dtype==expected.dtype and results[0].shape==expected.shape
         np.testing.assert_allclose(results[0],expected,rtol=1e-13,atol=1e-13*np.abs(expected).max())
-    # The packed cache is not serialized, and blocks still describe the operator.
+    # The packed cache is not serialized (blocks describe the operator); it is
+    # rebuilt when loading.
+    assert '_packed' not in H.__getstate__()
     restored=pickle.loads(pickle.dumps(H,protocol=5))
-    assert not hasattr(restored,'_packed')
     assert np.array_equal(restored@inputs[2],H@inputs[2])
     monkeypatch.setenv('PCBQS_NO_CORE','1')
     np.testing.assert_allclose(H@inputs[1],python[1],rtol=1e-13,atol=1e-13*np.abs(python[1]).max())
@@ -199,15 +200,28 @@ def test_native_hmatrix_rejects_inconsistent_layout():
     import pcbqs.hmatrix as hm
     core=hm._native()
     if core is None:
-        pytest.skip('compiled core without hmatrix_apply')
+        pytest.skip('compiled core without HBlocks')
     rng=np.random.default_rng(3);pts=rng.random((64,3))
     H=HMatrix(lambda a,b:np.ones((len(a),len(b))),pts,pts,leaf=8)
-    p=H._pack();x=np.ones((64,1));work=np.empty(p['nslots'])
-    meta=p['meta'].copy();meta[0,1]+=10**6
+    H._pack();blocks=list(H.blocks)
+    meta=np.zeros((len(blocks),10),np.int64);idx=np.concatenate([np.r_[a,b] for a,b,*_ in blocks]).astype(np.int64)
+    io=so=0;targets=[]
+    for k,(a,b,u,v,same) in enumerate(blocks):
+        meta[k]=(io,len(a),io+len(a),len(b),0,-1 if v is None else 0,0 if v is None else u.shape[1],int(same),so,-1 if same else so+len(a))
+        targets+= [a] if same else [a,b];so+=len(a)+(0 if same else len(b));io+=len(a)+len(b)
+    t=np.concatenate(targets);slots=np.argsort(t,kind='stable').astype(np.int64)
+    rp=np.r_[0,np.cumsum(np.bincount(t,minlength=64))].astype(np.int64)
+    factors=[(u,v) for *_,u,v,_ in blocks]
+    ok=core.HBlocks(meta,idx,rp,slots,so,64,factors,False)
+    np.testing.assert_allclose(ok.apply(np.ones((64,1)),np.empty(so),2),H@np.ones((64,1)),rtol=1e-12)
+    bad=meta.copy();bad[0,1]+=10**6
     with pytest.raises(ValueError,match='layout'):
-        core.hmatrix_apply(meta,p['idx'],p['data'],p['row_ptr'],p['slots'],x,work,p['nslots'],2)
+        core.HBlocks(bad,idx,rp,slots,so,64,factors,False)
+    wrong=list(factors);u,v=wrong[0];wrong[0]=(np.ones((u.shape[0]+1,u.shape[1])),v)
+    with pytest.raises(ValueError,match='layout shape'):
+        core.HBlocks(meta,idx,rp,slots,so,64,wrong,False)
     with pytest.raises(ValueError,match='scratch'):
-        core.hmatrix_apply(p['meta'],p['idx'],p['data'],p['row_ptr'],p['slots'],x,work[:1],p['nslots'],2)
+        ok.apply(np.ones((64,1)),np.empty(1),2)
 
 
 @pytest.mark.parametrize('near',[3.,np.inf])

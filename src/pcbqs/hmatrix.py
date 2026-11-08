@@ -29,7 +29,15 @@ def _native():
         core=import_module('pcbqs._core')
     except ImportError:
         return None
-    return core if hasattr(core,'hmatrix_apply') else None
+    return core if hasattr(core,'HBlocks') else None
+
+
+def _trim():
+    try:
+        import ctypes
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except (OSError,AttributeError):
+        pass
 
 
 def _build_core():
@@ -203,6 +211,7 @@ class HMatrix(LinearOperator):
             if core is not None:build_native(root)
             else:build(root,root)
         self.native_build=core is not None
+        self._compact()
         self.storage_bytes=sum(a.nbytes+b.nbytes+u.nbytes+(v.nbytes if v is not None else 0)
                                for a,b,u,v,_ in self.blocks)+self.diagonal.nbytes
         self.info=dict(bytes=self.storage_bytes,dense_bytes=len(lo)**2*self.dtype.itemsize,
@@ -222,47 +231,46 @@ class HMatrix(LinearOperator):
         return out
 
     def _pack(self):
-        """Flatten blocks once; blocks are rebound to views, so storage is not duplicated.
+        """Index the blocks once for the compiled product, without copying them.
 
-        Contribution slots follow block order (forward rows, then transposed
-        rows), and each output row sums its slots in that order, so native
-        products do not depend on thread count or scheduling.
+        Block index vectors are gathered into one array (blocks are rebound to
+        views of it); factor arrays are used in place, converted only when their
+        dtype or layout differs. Contribution slots follow block order (forward
+        rows, then transposed rows), and each output row sums its slots in that
+        order, so native products do not depend on thread count or scheduling.
         """
+        core=_native()
         complex_=self.dtype.kind=='c' or any(u.dtype.kind=='c' or (v is not None and v.dtype.kind=='c')
                                              for _,_,u,v,_ in self.blocks)
         dtype=np.complex128 if complex_ else np.float64
-        nb=len(self.blocks);meta=np.empty((nb,10),np.int64)
-        isize=sum(len(a)+len(b) for a,b,*_ in self.blocks)
-        dsize=sum(u.size+(v.size if v is not None else 0) for _,_,u,v,_ in self.blocks)
-        idx=np.empty(isize,np.int64);data=np.empty(dsize,dtype);targets=[]
-        io=do=so=0;blocks=[]
-        for k,(a,b,u,v,same) in enumerate(self.blocks):
+        nb=len(self.blocks);meta=np.zeros((nb,10),np.int64)
+        idx=np.empty(sum(len(a)+len(b) for a,b,*_ in self.blocks),np.int64);targets=[];factors=[]
+        io=so=0;blocks=self.blocks
+        for k in range(nb):
+            a,b,u,v,same=blocks[k]
             la,lb=len(a),len(b)
             idx[io:io+la]=a;idx[io+la:io+la+lb]=b
             av,bv=idx[io:io+la],idx[io+la:io+la+lb]
-            uo=do;data[do:do+u.size]=u.ravel();uv=data[do:do+u.size].reshape(u.shape);do+=u.size
-            vo,vv=-1,None
-            if v is not None:
-                vo=do;data[do:do+v.size]=v.ravel();vv=data[do:do+v.size].reshape(v.shape);do+=v.size
+            u=np.ascontiguousarray(u,dtype=dtype)
+            v=None if v is None else np.ascontiguousarray(v,dtype=dtype)
             rank=0 if v is None else u.shape[1]
-            meta[k]=(io,la,io+la,lb,uo,vo,rank,int(bool(same)),so,-1 if same else so+la)
+            meta[k]=(io,la,io+la,lb,0,-1 if v is None else 0,rank,int(bool(same)),so,-1 if same else so+la)
             targets.append(av)
             so+=la
             if not same:targets.append(bv);so+=lb
             io+=la+lb
-            blocks.append((av,bv,uv,vv,same))
+            blocks[k]=(av,bv,u,v,same);factors.append((u,v))
         targets=np.concatenate(targets) if targets else np.empty(0,np.int64)
         slots=np.argsort(targets,kind='stable').astype(np.int64)
         row_ptr=np.zeros(self.shape[0]+1,np.int64);np.cumsum(np.bincount(targets,minlength=self.shape[0]),out=row_ptr[1:])
-        self.blocks=blocks
-        self._packed=dict(meta=meta,idx=idx,data=data,row_ptr=row_ptr,slots=slots,nslots=so,
-                          work=np.empty(0,dtype),lock=threading.Lock())
+        self._packed=dict(blocks=core.HBlocks(meta,idx,row_ptr,slots,so,self.shape[0],factors,complex_),
+                          dtype=np.dtype(dtype),nslots=so,work=np.empty(0,dtype),lock=threading.Lock())
         return self._packed
 
     def _native_matmat(self,core,x):
         packed=getattr(self,'_packed',None) or self._pack()
-        data=packed['data']
-        if data.dtype.kind=='c':
+        dtype=packed['dtype']
+        if dtype.kind=='c':
             xx=np.ascontiguousarray(x,dtype=np.complex128)
         elif x.dtype.kind=='c':
             # A real operator acts on real and imaginary parts as independent columns.
@@ -276,17 +284,29 @@ class HMatrix(LinearOperator):
         lock=packed['lock'];owned=lock.acquire(blocking=False)
         try:
             if owned:
-                if packed['work'].size<size:packed['work']=np.empty(size,dtype=data.dtype)
+                if packed['work'].size<size:packed['work']=np.empty(size,dtype=dtype)
                 work=packed['work']
             else:
-                work=np.empty(size,dtype=data.dtype)
-            y=core.hmatrix_apply(packed['meta'],packed['idx'],data,packed['row_ptr'],packed['slots'],
-                                 xx,work,packed['nslots'],workers)
+                work=np.empty(size,dtype=dtype)
+            y=packed['blocks'].apply(xx,work,workers)
         finally:
             if owned:lock.release()
-        if data.dtype.kind!='c' and x.dtype.kind=='c':
+        if dtype.kind!='c' and x.dtype.kind=='c':
             y=y.view(np.complex128)
         return y.astype(np.result_type(self.dtype,x.dtype),copy=False)
+
+    def _compact(self):
+        """Index blocks for the native product now, and return freed heap pages.
+
+        Indexing copies only index vectors; any dtype/layout conversions free
+        the originals, and malloc_trim returns those pages (glibc only).
+        """
+        if self.blocks and _native() is not None and getattr(self,'_packed',None) is None:
+            self._pack();_trim()
+
+    def __setstate__(self,state):
+        super().__setstate__(state)
+        self._compact()
 
     def __getstate__(self):
         # The packed copy is a cache; it is rebuilt from blocks after loading.
