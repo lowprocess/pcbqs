@@ -1,0 +1,48 @@
+{
+  "potential": {
+    "sampled_main_thread_seconds": 14.219999999999894,
+    "categories": {
+      "spline_evaluation": {
+        "seconds": 0.6400000000000002,
+        "percent": 4.500703234880485
+      },
+      "image_selection_and_array_processing": {
+        "seconds": 5.53999999999997,
+        "percent": 38.95921237693397
+      },
+      "native_integration_callsite": {
+        "seconds": 7.719999999999923,
+        "percent": 54.289732770745296
+      },
+      "aca_and_other": {
+        "seconds": 0.32,
+        "percent": 2.250351617440242
+      }
+    }
+  },
+  "solver": {
+    "sampled_main_thread_seconds": 14.989999999999773,
+    "categories": {
+      "inductance_application": {
+        "seconds": 9.209999999999848,
+        "percent": 61.440960640426866
+      },
+      "other_operator_application": {
+        "seconds": 0.05,
+        "percent": 0.33355570380254007
+      },
+      "potential_application": {
+        "seconds": 5.5799999999999255,
+        "percent": 37.22481654436297
+      },
+      "preconditioner": {
+        "seconds": 0.12999999999999998,
+        "percent": 0.8672448298866041
+      },
+      "gmres_and_other": {
+        "seconds": 0.02,
+        "percent": 0.13342228152101604
+      }
+    }
+  }
+}

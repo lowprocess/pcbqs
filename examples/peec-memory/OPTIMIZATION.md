@@ -1,6 +1,8 @@
 # Batched entries, checkpoints and full-rail convergence
 
 This continues the [initial implementation](IMPLEMENTATION.md).
+See [the profiling breakdown](PROFILING.md) for cold-stage timings and separate
+construction/solver sampling profiles.
 
 ## Full-rail result
 
