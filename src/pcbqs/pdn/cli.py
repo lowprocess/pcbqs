@@ -36,6 +36,8 @@ OPTIONS = [
     ('stop', '--stop', 'str', '', "parts the tree never follows, comma-separated", G_RAIL, None),
     ('plating', '--plating', 'float', 0.025, "via plating thickness, mm", G_DC, None),
     ('dmax', '--dmax', 'float', 1.0, "the largest mesh cell, mm (finer at the source and the loads)", G_MESH, None),
+    ('plane_min', '--plane-min', 'float', 0.0, "smallest rail or ground copper on a layer counted as a plane, mm^2 "
+     "(0: a tenth of the board's area; small rails need less)", G_PDN, None),
     ('vrm_r', '--vrm-r', 'float', 1e-3, "the regulator's output resistance, ohms", G_PDN, None),
     ('vrm_l', '--vrm-l', 'float', 30e-9, "the regulator's output inductance (its loop's bandwidth), H", G_PDN, None),
     ('fmin', '--fmin', 'float', 1e4, "lowest frequency, Hz", G_PDN, None),
@@ -155,7 +157,10 @@ def run(a):
         from .stack import RailPDN
         say('PDN: plane pairs, parts, mesh')
         t = time.time()
-        pdn = RailPDN(rail, dmax=a.dmax, vrm=dict(R=a.vrm_r, L=a.vrm_l), log=lambda m: say(m))
+        if a.plane_min < 0:
+            raise SystemExit('pdn: error: --plane-min must be nonnegative')
+        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l),
+                      log=lambda m: say(m))
         t_b = time.time() - t
         f = np.logspace(np.log10(a.fmin), np.log10(a.fmax), a.points)
         say(f'PDN: {len(f)} frequencies')

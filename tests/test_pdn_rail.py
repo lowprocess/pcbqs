@@ -154,3 +154,12 @@ def test_rail_pdn_with_its_parts():
     assert abs(z['U2'][k]) == pytest.approx(2 * np.pi * f[k] * 0.85e-9, rel=0.1)
     z0 = pdn.z(f[k:k + 1], observe=['U1'], bare=True)['U1'][0]
     assert abs(z['U1'][k]) < 0.5 * abs(z0)                           # C1, C2 (~0.7 nH together) on the planes
+
+
+def test_cli_describes_plane_min():
+    # The window's Power Integrity form is generated from describe(): a small
+    # rail's plane threshold must be offered there.
+    import pcbqs.pdn.cli as cli
+    options = {o['key']: o for o in cli.describe()['options']}
+    assert options['plane_min']['flag'] == '--plane-min' and options['plane_min']['default'] == 0.0
+    assert options['plane_min']['group'] == 'PDN impedance'

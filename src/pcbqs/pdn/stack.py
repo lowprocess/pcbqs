@@ -115,7 +115,8 @@ class RailPDN:
                 tand = sum((q - p) / e * tn for p, q, e, tn in slabs) / sum((q - p) / e for p, q, e, _ in slabs)
                 self.cavities.append(Cavity(rl, gl, geom, d, er, tand, min(zt[rl][1], zt[gl][1])))
         if not self.cavities:
-            raise ValueError(f"{rail.net}: no plane pair (rail and ground planes over {plane_min:.0f} mm2)")
+            raise ValueError(f"{rail.net}: no plane pair (rail and ground planes over {plane_min:.0f} mm2); "
+                             "lower plane_min (--plane-min) for a small rail")
         self.plane_layers = sorted({c.rail_layer for c in self.cavities} | {c.ground_layer for c in self.cavities},
                                    key=lambda l: zt[l][0])
         # the parts and how each side meets the PDN
