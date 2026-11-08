@@ -81,13 +81,27 @@ q = MQS(board, nets=nets, terminals=terminals,
         fill_backend='cupy', fill_device=0, fill_chunk=16384)
 ```
 
-The backend uploads geometry once and evaluates both near analytic integrals
-and far product quadrature on the selected device. A fused CUDA/HIP kernel
-assigns one thread per pair, keeping observation reductions local and avoiding
-intermediate quadrature arrays and chains of small CuPy operations. Only bounded pair inputs
-and float64 results cross the device boundary; there is no dense GPU matrix.
-Each batch synchronizes before host assembly. CPU worker counts do not create
-multiple GPU submitters. Initialization, allocation and kernel errors propagate.
+The backend uploads geometry once. Free-space moment fills (`static_moments`,
+used by MQS/PEEC) run entirely on the device in row strips of at least 4M
+pairs: each thread generates its pair, classifies it with the host
+near/far rule (no FMA contraction, so quadrature choices match the CPU
+backends), and integrates far pairs immediately. Near pairs are compacted
+into per-level lists and integrated by a second launch, because mixing the
+product rule with the analytic asinh/atan2 loop in one wavefront was measured
+at about 8x slower. Every entry is computed from its canonical (min, max)
+pair, so reciprocal entries are bitwise identical without host transposes.
+Two strip buffers alternate on separate streams, overlapping integration of
+one strip with the copy of the previous one into contiguous host rows. Device
+memory is bounded by the two strips (about 330 MB); there is no dense GPU matrix.
+
+Explicit pair-list callers (layered capacitance images, compressed PEEC) use
+the pair protocol below; the device sorts each batch by kind before one
+fused launch. These callers batch at least 1M pairs per call on the device
+(`FillEngine.pair_batch`). Per-call latency (about 0.2 ms launch, synchronize
+and copy on ROCm) still dominates the many small sequential requests of
+hierarchical ACA, where the OpenMP core remains faster.
+CPU worker counts do not create multiple GPU submitters. Initialization,
+allocation and kernel errors propagate.
 
 This is an **experimental optional backend**: its formulas are independently
 checked on a host array namespace, and hardware tests run when CuPy and a
@@ -96,6 +110,23 @@ real device path, all close-quadrature levels, magnetic/scalar fills and MQS,
 PEEC and electrostatic solver tests. Other device/driver combinations and
 consumer-device FP64 throughput still need target-hardware measurements.
 Selecting a GPU fill does not move RWG projection or the linear solve to GPU.
+
+Measured on an RX 7800 XT (CuPy 14.2.0/ROCm) against OpenMP with 16 threads on
+an i7-13700K. "Host tiles" is the pair-protocol path with host classification
+and block assembly (already kind-sorted; the unsorted original was ~7% slower),
+medians of three runs, rectangular single-layer meshes:
+
+| Triangles | Moments | OpenMP-16 | CuPy host tiles | CuPy device strips |
+|---:|---|---:|---:|---:|
+| 2,838 | full | 0.25 s | 0.42 s | 0.08 s |
+| 7,500 | full | 1.58 s | 2.63 s | 0.25 s |
+| 16,472 | full | 7.39 s | 11.3 s | 0.93 s |
+| 16,472 | scalar | 6.07 s | 9.56 s | 0.57 s |
+
+A 6,844-triangle two-dielectric layered capacitance fill fell from 152 s to
+19.5 s on CuPy and from 65.5 s to 24.0 s on OpenMP by batching observation rows
+(bitwise-identical results). That path is now host-bound on the NumPy image
+and spline loops rather than device work.
 
 ## Add a backend
 

@@ -37,6 +37,12 @@ def _analytic(xp, geometry, p, q, dz, scalar_only):
 
 class CupyBackend:
     parallel_tiles = False
+    # Dense row strips hold at least this many pairs: the device needs millions
+    # of threads in flight, while host tiles are sized for cache.
+    min_strip_pairs = 1 << 22
+    # Explicit pair-list callers batch at least this many pairs per call, so
+    # launch and synchronization latency do not dominate (layered images).
+    min_batch_pairs = 1 << 20
 
     def __init__(self, geometry, workers, chunk, device):
         try:
@@ -49,11 +55,19 @@ class CupyBackend:
             with self.device:
                 cp.zeros(1, dtype=cp.float64).sum().item()
                 self.levels = {k: tuple(cp.asarray(a) for a in g) for k, g in geometry.levels.items()}
-                self.points, self.area = cp.asarray(geometry.points), cp.asarray(geometry.area)
+                self.points = cp.asarray(geometry.points)
+                self.z, self.cent, self.radius = (cp.asarray(a) for a in (geometry.z, geometry.cent, geometry.radius))
         except Exception as exc:
             raise RuntimeError(f'CuPy fill could not initialize device {device}: {exc}') from exc
         from .static_cupy_kernels import SOURCE
-        self.kernel = cp.RawKernel(SOURCE, 'static_pairs')
+        module = cp.RawModule(code=SOURCE)
+        self.kernel = module.get_function('static_pairs')
+        self.rows_far = module.get_function('static_rows_far')
+        self.rows_near = module.get_function('static_rows_near')
+        levels = [self.levels.get(k, self.levels[0]) for k in range(3)]
+        V, length, tau, un, area, _, _ = self.levels[0]
+        quadrature = tuple(a for level in levels for a in (level[5], level[6], np.int32(len(level[6]))))
+        self.geometry_args = (V, length, tau, un, area, self.points, *quadrature)
         self.cp, self.chunk = cp, chunk
 
     def evaluate(self, p, q, d, kind, scalar_only):
@@ -61,14 +75,84 @@ class CupyBackend:
         with self.device:
             out = cp.empty((len(p), 1 if scalar_only else 6), dtype=cp.float64)
             if len(p):
-                # Upload one bounded pair tile, launch one fused integration kernel,
-                # then download once. No per-level Python scheduling or ufunc chains.
-                levels = [self.levels.get(k, self.levels[0]) for k in range(3)]
-                V, length, tau, un, area, _, _ = self.levels[0]
-                quadrature = tuple(a for level in levels for a in (level[5], level[6], np.int32(len(level[6]))))
+                # Upload one bounded pair tile and launch one fused kernel in
+                # kind-sorted order, so far and near pairs do not share wavefronts.
+                kind = cp.asarray(kind, dtype=cp.int32)
+                order = cp.argsort(kind).astype(cp.int32) if len(p) > 1 else None
                 inputs = (cp.asarray(p, dtype=cp.int32), cp.asarray(q, dtype=cp.int32),
-                          cp.asarray(d, dtype=cp.float64), cp.asarray(kind, dtype=cp.int32))
+                          cp.asarray(d, dtype=cp.float64), kind, order)
                 self.kernel(((len(p)+127)//128,), (128,),
-                            (V, length, tau, un, area, self.points, *quadrature,
-                             *inputs, np.int32(len(p)), np.int32(scalar_only), out))
+                            (*self.geometry_args, *inputs, np.int32(len(p)), np.int32(scalar_only), out))
             return cp.asnumpy(out)
+
+    def fill_symmetric(self, matrices, near, outer_levels, scalar_only):
+        """Write dense reciprocal moments straight into host `matrices`.
+
+        Row strips are generated, classified and integrated on the device,
+        then copied into contiguous host rows, so no pair lists, kinds or
+        transposed block writes run on the host. Two strip buffers alternate:
+        the device integrates one strip while the host receives the previous
+        one. Device memory is bounded by two strips, not by the dense
+        matrices. Every entry is computed from its canonical (min, max) pair,
+        so reciprocal entries are bitwise identical. Returns the analytic
+        count of unordered pairs.
+        """
+        cp = self.cp
+        n = matrices[0].shape[0]
+        width = len(matrices)
+        rows = max(1, min(n, max(self.chunk, self.min_strip_pairs)//n))
+        plane = np.uint64(rows*n)
+        all_near = bool(np.isinf(near))
+        near = np.float64(0. if all_near else near)
+        threads = 256
+        with self.device:
+            compute, copy = cp.cuda.Stream(non_blocking=True), cp.cuda.Stream(non_blocking=True)
+            buffers = [dict(out=cp.empty((width, rows*n), dtype=cp.float64),
+                            lists=cp.empty((2, rows*n), dtype=cp.int32),
+                            count=cp.empty(3, dtype=cp.uint32), done=cp.cuda.Event(), copied=None)
+                       for _ in range(2)]
+            with compute:
+                analytic = cp.zeros((), dtype=cp.uint64)
+                finite = cp.ones((), dtype=cp.bool_)
+            near_blocks = 4*self.device.attributes['MultiProcessorCount']*(1024//threads)
+
+            def launch(index, r0):
+                b = buffers[index % 2]
+                m = min(rows, n-r0)
+                with compute:
+                    if b['copied'] is not None:
+                        compute.wait_event(b['copied'])
+                    b['count'].fill(0)
+                    self.rows_far((((m*n)+threads-1)//threads,), (threads,),
+                                  (*self.geometry_args, self.z, self.cent, self.radius,
+                                   np.int32(r0), np.int32(m), np.int32(n), near, np.int32(all_near),
+                                   np.int32(outer_levels), np.int32(scalar_only),
+                                   b['out'], plane, b['lists'][0], b['lists'][1], b['count']))
+                    for level in (0, 1):
+                        self.rows_near((near_blocks,), (threads,),
+                                       (*self.geometry_args, self.z, np.int32(r0), np.int32(n),
+                                        np.int32(outer_levels if level else 0), np.int32(scalar_only),
+                                        b['out'], plane, b['lists'][level], b['count'][level:level+1]))
+                    analytic[...] += b['count'][2]
+                    finite[...] &= cp.isfinite(b['out'][:, :m*n]).all()
+                    b['done'].record(compute)
+
+            def receive(index, r0):
+                b = buffers[index % 2]
+                m = min(rows, n-r0)
+                copy.wait_event(b['done'])
+                for k, matrix in enumerate(matrices):
+                    b['out'][k, :m*n].get(stream=copy, out=matrix[r0:r0+m].reshape(-1))
+                b['copied'] = copy.record()
+                copy.synchronize()
+
+            starts = list(range(0, n, rows))
+            launch(0, starts[0])
+            for index, r0 in enumerate(starts):
+                if index+1 < len(starts):
+                    launch(index+1, starts[index+1])
+                receive(index, r0)
+            compute.synchronize()
+            if not bool(finite.get()):
+                raise FloatingPointError('non-finite triangle-pair moments from fill backend')
+            return int(analytic.get())

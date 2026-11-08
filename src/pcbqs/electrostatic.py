@@ -110,7 +110,8 @@ def potential_moments(model):
     v = nodes[g.tris]
     M = np.zeros((len(v), len(v)), complex)
     rho_max = np.linalg.norm(np.ptp(nodes, axis=0))
-    layers = list(model.layer_tris.values())
+    layers = [np.asarray(t) for t in model.layer_tris.values()]
+    batch = engine.pair_batch
     image_count = 0
     for li, pa in enumerate(layers):
         for pb in layers[li:]:
@@ -129,43 +130,51 @@ def potential_moments(model):
                 for d, c in positive:
                     kernel += c/np.hypot(rho, d)
                 smooth = CubicSpline(rho, kernel)
-            def evaluate_row(p):
-                qs = pb[pb >= p] if pa is pb else pb
-                row = np.empty(len(qs), complex)
-                for start in range(0, len(qs), engine.chunk):
-                    q = qs[start:start+engine.chunk]
-                    pp = np.full(len(q), p, int)
+            def evaluate_rows(rows):
+                # A block of observation rows is flattened into one pair list,
+                # so each image costs one backend call per block, not per row.
+                if pa is pb:
+                    r, c = np.nonzero(pb[None, :] >= rows[:, None])
+                    pp, qq = rows[r], pb[c]
+                else:
+                    pp, qq = np.repeat(rows, len(pb)), np.tile(pb, len(rows))
+                out = np.empty(len(pp), complex)
+                for start in range(0, len(pp), batch):
+                    p, q = pp[start:start+batch], qq[start:start+batch]
                     values = np.zeros(len(q), complex)
                     rho2 = ((cent[q]-cent[p])**2).sum(-1)
                     delta = points[p, :, None]-points[q, None, :]
                     quadrature_rho2 = (delta*delta).sum(-1)
+                    size = radius[p]+radius[q]
                     if smooth is not None:
                         values += area[p]*area[q]*smooth(np.sqrt(quadrature_rho2)).mean((1, 2))
                     for d, coefficient in images:
                         dist = np.sqrt(rho2+d*d)
-                        close = dist <= model.near*(radius[p]+radius[q])
+                        close = dist <= model.near*size
                         if smooth is not None and d > 0:
                             if not close.any():
                                 continue
                             # Replace the smooth product rule by analytic
                             # source integration wherever an image is close.
                             approximate = 1/np.sqrt(quadrature_rho2[close]+d*d)
-                            values[close] -= coefficient*area[p]*area[q[close]]*approximate.mean((1, 2))
-                        refine = close & (dist <= radius[p]+radius[q])
+                            values[close] -= coefficient*area[p[close]]*area[q[close]]*approximate.mean((1, 2))
+                        refine = close & (dist <= size)
                         for mask, level in ((close & ~refine, 0), (refine, model.outer_levels)):
                             if mask.any():
                                 kinds = np.full(mask.sum(), level, np.int32)
                                 values[mask] += coefficient*engine.evaluate(
-                                    pp[mask], q[mask], d, kinds, scalar_only=True)[:, 0]
+                                    p[mask], q[mask], d, kinds, scalar_only=True)[:, 0]
                         far = ~close if d == 0 or smooth is None else np.zeros(len(q), bool)
                         if far.any():
                             kinds = np.full(far.sum(), -1, np.int32)
                             values[far] += coefficient*engine.evaluate(
-                                pp[far], q[far], d, kinds, scalar_only=True)[:, 0]
-                    row[start:start+len(q)] = values
-                return p, qs, row
+                                p[far], q[far], d, kinds, scalar_only=True)[:, 0]
+                    out[start:start+len(q)] = values
+                return pp, qq, out
 
-            for p, q, values in bounded_map(evaluate_row, pa, engine.tile_workers):
+            step = max(1, batch//max(1, len(pb)))
+            blocks = [pa[i:i+step] for i in range(0, len(pa), step)]
+            for p, q, values in bounded_map(evaluate_rows, blocks, engine.tile_workers):
                 M[p, q] = M[q, p] = values
     model.fill_info['capacitance'] = dict(engine.info, image_terms=image_count, scalar_only=True,
                                          seconds=time.perf_counter()-started)

@@ -246,6 +246,11 @@ class FillEngine:
         if hasattr(self.backend, 'observed_workers'):
             self.info['observed_kernel_workers'] = self.backend.observed_workers
 
+    @property
+    def pair_batch(self):
+        """Pairs per evaluate() call: the tile bound, or a device's larger minimum."""
+        return max(self.chunk, getattr(self.backend, 'min_batch_pairs', 1))
+
     def kinds(self, p, q, d):
         g = self.geometry
         distance = np.sqrt(((g.cent[p]-g.cent[q])**2).sum(-1)+d*d)

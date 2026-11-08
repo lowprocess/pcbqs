@@ -24,8 +24,8 @@ def _moments(engine,p,q,scalar=False):
     n=len(engine.geometry.tris)
     keys,inverse=np.unique(a.astype(np.int64)*n+b,return_inverse=True)
     unique=np.empty((len(keys),1 if scalar else 6))
-    for start in range(0,len(keys),engine.chunk):
-        key=keys[start:start+engine.chunk];aa,bb=key//n,key%n
+    for start in range(0,len(keys),engine.pair_batch):
+        key=keys[start:start+engine.pair_batch];aa,bb=key//n,key%n
         unique[start:start+len(key)]=engine.evaluate(aa,bb,engine.geometry.z[aa]-engine.geometry.z[bb],scalar_only=scalar)
     result=unique[inverse]
     if not scalar:
@@ -54,7 +54,7 @@ def edge_inductance(model):
         out=np.zeros(len(a))
         # Evaluate the four support combinations together, deduplicating the
         # triangle pairs shared by neighboring RWGs. Scratch stays tile-sized.
-        side=max(1,engine.chunk//4)
+        side=max(1,engine.pair_batch//4)
         for start in range(0,len(a),side):
             aa,bb=a[start:start+side],b[start:start+side]
             p=np.broadcast_to(support[aa,:,None],(len(aa),2,2)).ravel()
@@ -103,8 +103,8 @@ class _LayeredPairs:
         nl=len(self.interfaces);code=self.layer[p]*nl+self.layer[q]
         for k in np.unique(code):
             ids=np.flatnonzero(code==k);images,smooth,distances=self.images(int(k)//nl,int(k)%nl)
-            for start in range(0,len(ids),self.engine.chunk):
-                pick=ids[start:start+self.engine.chunk];a,b=p[pick],q[pick]
+            for start in range(0,len(ids),self.engine.pair_batch):
+                pick=ids[start:start+self.engine.pair_batch];a,b=p[pick],q[pick]
                 rho2=((g.cent[a]-g.cent[b])**2).sum(1)
                 delta=g.points[a,:,None]-g.points[b,None,:]
                 quad=(delta*delta).sum(-1);area=g.area[a]*g.area[b]
@@ -130,12 +130,12 @@ class _LayeredPairs:
                 # One integration call handles many offsets and layer images.
                 offsets=np.r_[0,np.cumsum(counts)];begin=0
                 while begin<len(a):
-                    end=max(begin+1,int(np.searchsorted(offsets,offsets[begin]+self.engine.chunk,side='right')-1))
+                    end=max(begin+1,int(np.searchsorted(offsets,offsets[begin]+self.engine.pair_batch,side='right')-1))
                     end=min(end,len(a))
                     ii=np.repeat(np.arange(begin,end),counts[begin:end])
                     jj=np.arange(offsets[end]-offsets[begin])-np.repeat(offsets[begin:end]-offsets[begin],counts[begin:end])
-                    for first in range(0,len(ii),self.engine.chunk):
-                        ix,jx=ii[first:first+self.engine.chunk],jj[first:first+self.engine.chunk]
+                    for first in range(0,len(ii),self.engine.pair_batch):
+                        ix,jx=ii[first:first+self.engine.pair_batch],jj[first:first+self.engine.pair_batch]
                         d=ds[jx];dist=np.sqrt(rho2[ix]+d*d)
                         kind=np.full(len(ix),-1,np.int32)
                         close=dist<=m.near*size[ix];kind[close]=0

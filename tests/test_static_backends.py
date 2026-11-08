@@ -197,3 +197,35 @@ def test_actual_cupy_backend_when_device_available(mesh, level):
         again = static_moments(*mesh, backend='cupy', device=0, scalar_only=scalar,
                                outer_levels=level, chunk=3)
         assert all(np.array_equal(a, b) for a, b in zip(actual, again))
+
+
+@pytest.mark.parametrize('level', [0, 2])
+def test_cupy_row_strips_and_pair_protocol(mesh, level, monkeypatch):
+    pytest.importorskip('cupy')
+    import cupy as cp
+    try:
+        cp.zeros(1).sum().item()
+    except Exception as exc:
+        pytest.skip(f'CuPy device unavailable: {exc}')
+    from pcbqs.static_cupy import CupyBackend
+    # Eight triangles in strips of 3, 3 and 2 rows: a partial final strip.
+    monkeypatch.setattr(CupyBackend, 'min_strip_pairs', 24)
+    for scalar in (False, True):
+        expected, info0 = static_moments(*mesh, backend='numpy', scalar_only=scalar, outer_levels=level,
+                                         return_info=True)
+        actual, info = static_moments(*mesh, backend='cupy', scalar_only=scalar, outer_levels=level,
+                                      chunk=3, return_info=True)
+        for a, b in zip(expected, actual):
+            assert b == pytest.approx(a, rel=2e-10, abs=1e-26)
+        assert np.array_equal(actual[1], actual[1].T)
+        if not scalar:
+            assert np.array_equal(actual[4], actual[4].T)
+        assert (info['pairs'], info['analytic_pairs']) == (info0['pairs'], info0['analytic_pairs'])
+    # The explicit pair protocol (layered capacitance, compressed PEEC) sorts by kind.
+    reference = FillEngine(*mesh, backend='numpy', outer_levels=level)
+    device = FillEngine(*mesh, backend='cupy', outer_levels=level)
+    p, q = np.array([0, 7, 1, 2, 3, 4, 0]), np.array([0, 2, 0, 5, 7, 2, 6])
+    d = device.geometry.z[p]-device.geometry.z[q]
+    for scalar in (False, True):
+        assert device.evaluate(p, q, d, scalar_only=scalar) == pytest.approx(
+            reference.evaluate(p, q, d, scalar_only=scalar), rel=2e-10, abs=1e-26)

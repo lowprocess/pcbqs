@@ -28,6 +28,14 @@ def static_moments(nodes, tris, z, near=3.0, outer_levels=1, chunk=16384, scalar
     g = engine.geometry
     n, side = len(tris), isqrt(engine.chunk)
     matrices = [np.empty((n, n)) for _ in range(1 if scalar_only else 4)]
+    if hasattr(engine.backend, 'fill_symmetric'):
+        # Device backends may own tiling, classification and reciprocal
+        # writes; host pair lists and block transposes then disappear.
+        analytic = engine.backend.fill_symmetric(matrices, engine.near, engine.outer_levels, scalar_only)
+        info = dict(engine.info, pairs=n*(n+1)//2, analytic_pairs=analytic, scalar_only=bool(scalar_only),
+                    seconds=time.perf_counter()-started)
+        result = (g.nodes, *matrices)
+        return (result, info) if return_info else result
 
     def tiles():
         for p0 in range(0, n, side):
