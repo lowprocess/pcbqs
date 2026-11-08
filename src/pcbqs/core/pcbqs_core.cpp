@@ -12,10 +12,13 @@ namespace py = pybind11;
 template <class T> using arr = py::array_t<T, py::array::c_style | py::array::forcecast>;
 #include "static_kernels.hpp"
 #include "hmatrix_kernels.hpp"
+#include "compressed_kernels.hpp"
 PYBIND11_MODULE(_core, m) {
     m.def("static_pairs", &static_pairs);
     m.def("static_thread_count", &static_thread_count);
     m.def("hmatrix_apply", &hmatrix_apply);
+    m.def("static_block", &static_block);
+    m.def("rwg_inductance", &rwg_inductance);
 #ifdef _OPENMP
     m.attr("static_openmp") = true;
 #else

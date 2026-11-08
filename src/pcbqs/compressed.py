@@ -18,6 +18,21 @@ def _engine(model):
     return FillEngine(model.nodes,model.tris,model.z_of,model.near,model.outer_levels,**model._fill_options)
 
 
+def _native(engine):
+    """OpenMP-backed engines also assemble whole entry blocks in the compiled core.
+
+    Returns (core, args) for static_block/rwg_inductance, or None to use the
+    NumPy assembly (other fill backends, or a core that predates the blocks).
+    """
+    backend=engine.backend
+    core=getattr(backend,'core',None)
+    if engine.info['backend']!='openmp' or core is None or not hasattr(core,'rwg_inductance'):
+        return None
+    g=engine.geometry
+    near=float('inf') if np.isinf(engine.near) else float(engine.near)
+    return core,(backend.data,g.z,g.cent,g.radius,near,int(engine.outer_levels)),backend.workers
+
+
 def _moments(engine,p,q,scalar=False):
     """Canonical triangle ordering enforces reciprocity of quadrature too."""
     flip=p>q;a=np.minimum(p,q);b=np.maximum(p,q)
@@ -48,6 +63,16 @@ def edge_inductance(model):
     support=np.stack((r.tp,r.tm),axis=1)
     vertices=np.stack((r.vp,r.vm),axis=1)
     alpha=np.stack((1/(2*r.area[r.tp]),-1/(2*r.area[r.tm])),axis=1)
+    native=_native(engine)
+    if native is not None:
+        core,common,workers=native
+        support64=np.ascontiguousarray(support,np.int64)
+        vertices=np.ascontiguousarray(vertices,float);alpha=np.ascontiguousarray(alpha,float)
+
+        def entry(rows,cols):
+            return core.rwg_inductance(*common,support64,vertices,alpha,np.asarray(rows,np.int64),
+                                       np.asarray(cols,np.int64),MU0/(4*np.pi),workers)
+        return _compressed_inductance(model,engine,entry,lo,hi,support,started,r)
 
     def entry(rows,cols):
         a,b=np.meshgrid(rows,cols,indexing='ij');a=a.ravel();b=b.ravel()
@@ -65,8 +90,13 @@ def edge_inductance(model):
             out[start:start+len(aa)]=(alpha[aa,:,None]*alpha[bb,None,:]*val).sum((1,2))
         return (MU0/(4*np.pi)*out).reshape(len(rows),len(cols))
 
+    return _compressed_inductance(model,engine,entry,lo,hi,support,started,r)
+
+
+def _compressed_inductance(model,engine,entry,lo,hi,support,started,r):
     L=HMatrix(entry,lo[support].min(1),hi[support].max(1),log=model.log,**model._compression_options)
-    model.fill_info['magnetic']=dict(engine.info,**L.info,seconds=time.perf_counter()-started,matrix_backend='hierarchical')
+    model.fill_info['magnetic']=dict(engine.info,**L.info,seconds=time.perf_counter()-started,matrix_backend='hierarchical',
+                                     native_entries=_native(engine) is not None)
     model.log(f'peec: compressed inductance {L.storage_bytes/1024**2:.2f} MiB')
     return L,r
 
@@ -166,8 +196,14 @@ class PotentialOperator(LinearOperator):
 def potential(model):
     started=time.perf_counter();engine=_engine(model);g=engine.geometry
     pairs=_LayeredPairs(model,engine) if model.dielectric=='stack' else None
+    native=_native(engine) if pairs is None else None
 
     def entry(rows,cols):
+        if native is not None:
+            core,common,workers=native
+            rows,cols=np.asarray(rows,np.int64),np.asarray(cols,np.int64)
+            vals=core.static_block(*common,rows,cols,True,workers)[:,:,0]/model.er
+            return vals/(g.area[rows][:,None]*g.area[cols][None,:]*4*np.pi*EPS0)
         p,q=np.meshgrid(rows,cols,indexing='ij');p,q=p.ravel(),q.ravel()
         vals=pairs(p,q) if pairs is not None else _moments(engine,p,q,True)[:,0]/model.er
         vals=vals/(g.area[p]*g.area[q]*4*np.pi*EPS0)

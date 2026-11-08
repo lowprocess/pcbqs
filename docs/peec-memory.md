@@ -63,8 +63,23 @@ On the 30 x 20 mm two-layer layered-dielectric case (5,816 triangles, 8,596
 RWG unknowns, 11,079 inductance blocks, 141 MB), one inductance product went
 from 59 ms (NumPy loop) to 3.9 ms with 16 threads on an i7-13700K. A
 three-frequency GMRES solve fell from 45.7 s to 6.0 s (medians of three), with
-identical iteration counts and impedances. Operator construction (ACA and
-entry evaluation, about 43 s here) is unchanged.
+identical iteration counts and impedances.
+
+When the fill backend is OpenMP, compressed entry blocks are also assembled
+natively: one call per requested block finds the distinct support triangles,
+classifies and integrates each canonical triangle pair once, and combines the
+RWG (or homogeneous potential) entries. Products are rounded before addition
+as in NumPy, and one out-of-line pair integrator serves every kernel, so the
+native blocks are bitwise identical to the NumPy assembly and independent of
+thread count. Other fill backends (`numpy`, `threaded`, `cupy`) keep the
+NumPy assembly. `fill_info['magnetic']['native_entries']` records which ran.
+
+On the same case (medians of three), inductance construction fell from 30.7 s
+to 4.9 s, and homogeneous potential construction from 3.8 s to 1.1 s; total
+homogeneous assembly from 34.7 s to 6.1 s. With the layered dielectric, total
+assembly fell from 41.6 s to 17.0 s; the layered image/spline potential (11.8 s)
+still uses the NumPy image loop. Of the remaining inductance time, about 2 s is
+native integration and the rest is the Python ACA pivot loop.
 
 `fill_info` reports matrix payload/storage and evaluated entry counts.
 `solve_info` records GMRES iterations, relative operator residual and sparse

@@ -208,3 +208,42 @@ def test_native_hmatrix_rejects_inconsistent_layout():
     with pytest.raises(ValueError,match='scratch'):
         core.hmatrix_apply(p['meta'],p['idx'],p['data'],p['row_ptr'],p['slots'],x,work[:1],p['nslots'],2)
 
+
+@pytest.mark.parametrize('near',[3.,np.inf])
+def test_native_entry_blocks_match_numpy_assembly_bitwise(near,monkeypatch):
+    import pcbqs.compressed as compressed
+    from pcbqs._numerics.base import RWG,MU0
+    q=make('hierarchical');q.near=near
+    engine=compressed._engine(q)
+    native=compressed._native(engine)
+    if native is None:
+        pytest.skip('compiled core without native entry blocks')
+    core,common,_=native;g=engine.geometry;n=len(g.tris)
+    rng=np.random.default_rng(5)
+    rows=rng.choice(n,40,replace=False);cols=np.r_[rows[:5],rng.choice(n,60,replace=False)]
+    p,qq=np.meshgrid(rows,cols,indexing='ij')
+    for scalar in (False,True):
+        expected=compressed._moments(engine,p.ravel(),qq.ravel(),scalar).reshape(len(rows),len(cols),-1)
+        blocks=[core.static_block(*common,rows.astype(np.int64),cols.astype(np.int64),scalar,w) for w in (1,4)]
+        assert np.array_equal(blocks[0],expected) and np.array_equal(blocks[1],expected)
+    # Whole inductance operators agree exactly with the NumPy entry assembly.
+    L,_=compressed.edge_inductance(q)
+    assert q.fill_info['magnetic']['native_entries']
+    monkeypatch.setattr(compressed,'_native',lambda engine:None)
+    reference,_=compressed.edge_inductance(q)
+    assert not q.fill_info['magnetic']['native_entries']
+    x=rng.normal(size=L.shape[0])
+    assert np.array_equal(L@x,reference@x)
+    monkeypatch.undo()
+    r=RWG(g.nodes,g.tris);support=np.stack((r.tp,r.tm),1).astype(np.int64)
+    vertices=np.stack((r.vp,r.vm),1);alpha=np.stack((1/(2*r.area[r.tp]),-1/(2*r.area[r.tm])),1)
+    with pytest.raises(ValueError,match='edge index'):
+        core.rwg_inductance(*common,support,vertices,alpha,np.array([r.Ne]),np.array([0]),MU0/(4*np.pi),1)
+    with pytest.raises(ValueError,match='triangle index'):
+        core.static_block(*common,np.array([-1]),np.array([0]),True,1)
+
+
+def test_entry_blocks_follow_selected_fill_backend():
+    import pcbqs.compressed as compressed
+    q=make('hierarchical');q._fill_options=dict(q._fill_options,backend='numpy')
+    assert compressed._native(compressed._engine(q)) is None
