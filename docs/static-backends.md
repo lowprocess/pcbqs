@@ -109,9 +109,15 @@ memory is bounded by the two strips (about 330 MB); there is no dense GPU matrix
 Explicit pair-list callers (layered capacitance images, compressed PEEC) use
 the pair protocol below; the device sorts each batch by kind before one
 fused launch. These callers batch at least 1M pairs per call on the device
-(`FillEngine.pair_batch`). Per-call latency (about 0.2 ms launch, synchronize
-and copy on ROCm) still dominates the many small sequential requests of
-hierarchical ACA, where the OpenMP core remains faster.
+(`FillEngine.pair_batch`). Per-call latency (about 0.2-0.5 ms launch, synchronize
+and copy on ROCm) dominates small requests, so when the compiled core is built
+pair batches below `PCBQS_CUPY_HOST_PAIRS` (default 32,768 per host thread,
+the measured crossover here) run on the host core instead;
+`fill_info[...]['routing']` counts host and device batches, and 0 keeps every
+batch on the device. Free-space strip fills always run on the device. For
+compressed (hierarchical) PEEC, prefer the OpenMP backend: its native entry
+providers and ACA built the 5,816-triangle layered case in 0.9 s, against
+39.6 s with CuPy selected (66.8 s without host routing).
 CPU worker counts do not create multiple GPU submitters. Initialization,
 allocation and kernel errors propagate.
 

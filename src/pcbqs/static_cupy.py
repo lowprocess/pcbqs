@@ -2,8 +2,34 @@
 
 Geometry is uploaded once per fill. Only bounded pair batches and their
 results cross the device boundary; dense matrices remain on the host.
+Small explicit pair batches run on the compiled host core when it is built,
+since each device call costs a launch, synchronization and copy.
 """
+import os
+
 import numpy as np
+
+
+def _host_routing():
+    """(core, workers, threshold pairs) for small batches, or (None, 0, 0).
+
+    About 32k pairs per host thread matched the device time of one call on an
+    RX 7800 XT against an i7-13700K; PCBQS_CUPY_HOST_PAIRS overrides it and 0
+    keeps every batch on the device.
+    """
+    from .static_backends import _compiled, resolve_workers
+    core = None if os.environ.get('PCBQS_NO_CORE') else _compiled()
+    if core is None:
+        return None, 0, 0
+    workers = resolve_workers(None)
+    env = os.environ.get('PCBQS_CUPY_HOST_PAIRS')
+    try:
+        threshold = int(env) if env is not None else 32768*workers
+    except ValueError as exc:
+        raise ValueError('PCBQS_CUPY_HOST_PAIRS must be a nonnegative integer') from exc
+    if threshold < 0:
+        raise ValueError('PCBQS_CUPY_HOST_PAIRS must be a nonnegative integer')
+    return (core, workers, threshold) if threshold else (None, 0, 0)
 
 def _analytic(xp, geometry, p, q, dz, scalar_only):
     V, length, tau, un, area, points, weights = geometry
@@ -69,9 +95,22 @@ class CupyBackend:
         quadrature = tuple(a for level in levels for a in (level[5], level[6], np.int32(len(level[6]))))
         self.geometry_args = (V, length, tau, un, area, self.points, *quadrature)
         self.cp, self.chunk = cp, chunk
+        self.host_core, self.host_workers, self.host_pairs = _host_routing()
+        self.routing = dict(host_threshold_pairs=self.host_pairs, host_workers=self.host_workers,
+                            host_batches=0, host_pairs=0, device_batches=0, device_pairs=0)
+        if self.host_core is not None:
+            self.host_data = dict(V=geometry.levels[0][0], L=geometry.levels[0][1], tau=geometry.levels[0][2],
+                                  un=geometry.levels[0][3], area=geometry.levels[0][4], P3=geometry.points)
+            for level in range(3):
+                g = geometry.levels.get(level, geometry.levels[0])
+                self.host_data[f'P{level}'], self.host_data[f'W{level}'] = g[5], g[6]
 
     def evaluate(self, p, q, d, kind, scalar_only):
         cp = self.cp
+        if len(p) < self.host_pairs:
+            self.routing['host_batches'] += 1; self.routing['host_pairs'] += len(p)
+            return self.host_core.static_pairs(self.host_data, p, q, d, kind, scalar_only, self.host_workers)
+        self.routing['device_batches'] += 1; self.routing['device_pairs'] += len(p)
         with self.device:
             out = cp.empty((len(p), 1 if scalar_only else 6), dtype=cp.float64)
             if len(p):

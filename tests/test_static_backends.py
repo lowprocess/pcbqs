@@ -182,7 +182,8 @@ def test_portable_gpu_formula_on_host_namespace(mesh, level, scalar_only):
 
 
 @pytest.mark.parametrize('level', [0, 1, 2])
-def test_actual_cupy_backend_when_device_available(mesh, level):
+def test_actual_cupy_backend_when_device_available(mesh, level, monkeypatch):
+    monkeypatch.setenv('PCBQS_CUPY_HOST_PAIRS', '0')      # keep pair batches on the device
     pytest.importorskip('cupy')
     import cupy as cp
     try:
@@ -208,6 +209,7 @@ def test_cupy_row_strips_and_pair_protocol(mesh, level, monkeypatch):
     except Exception as exc:
         pytest.skip(f'CuPy device unavailable: {exc}')
     from pcbqs.static_cupy import CupyBackend
+    monkeypatch.setenv('PCBQS_CUPY_HOST_PAIRS', '0')      # keep pair batches on the device
     # Eight triangles in strips of 3, 3 and 2 rows: a partial final strip.
     monkeypatch.setattr(CupyBackend, 'min_strip_pairs', 24)
     for scalar in (False, True):
@@ -289,3 +291,32 @@ def test_kinds_rule_and_kind_validation(mesh, near, level):
         e.evaluate(np.array([n]), np.array([0]), 0.)
     with pytest.raises(ValueError, match='finite'):
         e.evaluate(np.array([0]), np.array([0]), np.nan)
+
+
+def test_small_cupy_batches_run_on_host_core(mesh, monkeypatch):
+    pytest.importorskip('cupy')
+    import cupy as cp
+    try:
+        cp.zeros(1).sum().item()
+    except Exception as exc:
+        pytest.skip(f'CuPy device unavailable: {exc}')
+    if backends._compiled() is None:
+        pytest.skip('OpenMP core not built')
+    import os
+    if os.environ.get('PCBQS_NO_CORE'):
+        # The core is disabled: every batch stays on the device.
+        assert FillEngine(*mesh, backend='cupy').info['routing']['host_threshold_pairs'] == 0
+        return
+    p, q = np.array([0, 7, 1, 2, 3, 4, 0]), np.array([0, 2, 0, 5, 7, 2, 6])
+    host = FillEngine(*mesh, backend='cupy')
+    d = host.geometry.z[p]-host.geometry.z[q]
+    openmp = FillEngine(*mesh, backend='openmp', workers=1)
+    assert np.array_equal(host.evaluate(p, q, d), openmp.evaluate(p, q, d))
+    assert host.info['routing']['host_batches'] == 1 and host.info['routing']['device_batches'] == 0
+    monkeypatch.setenv('PCBQS_CUPY_HOST_PAIRS', '0')
+    device = FillEngine(*mesh, backend='cupy')
+    assert device.evaluate(p, q, d) == pytest.approx(openmp.evaluate(p, q, d), rel=2e-10, abs=1e-26)
+    assert device.info['routing']['device_batches'] == 1 and device.info['routing']['host_threshold_pairs'] == 0
+    monkeypatch.setenv('PCBQS_CUPY_HOST_PAIRS', '-1')
+    with pytest.raises(ValueError, match='nonnegative'):
+        FillEngine(*mesh, backend='cupy')

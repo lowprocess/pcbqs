@@ -276,6 +276,9 @@ class FillEngine:
                          near='all' if np.isinf(near) else float(near))
         if hasattr(self.backend, 'observed_workers'):
             self.info['observed_kernel_workers'] = self.backend.observed_workers
+        if hasattr(self.backend, 'routing'):
+            # Shared and updated in place: copies of info see the final counts.
+            self.info['routing'] = self.backend.routing
 
     @property
     def pair_batch(self):
