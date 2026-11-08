@@ -5,6 +5,7 @@ failed or uneconomical approximations are subdivided, never silently truncated.
 Transpose symmetry (not Hermitian symmetry) also applies to lossy kernels.
 """
 from dataclasses import dataclass
+import time
 import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
@@ -18,7 +19,7 @@ class _Cluster:
 
 
 class HMatrix(LinearOperator):
-    def __init__(self, entry, lo, hi, *, dtype=float, tol=1e-6, leaf=64, eta=1.):
+    def __init__(self, entry, lo, hi, *, dtype=float, tol=1e-6, leaf=64, eta=1.,log=None):
         lo,hi=np.asarray(lo,float),np.asarray(hi,float)
         if lo.shape != hi.shape or lo.ndim != 2 or not np.isfinite([lo,hi]).all() or (lo>hi).any():
             raise ValueError('finite support bounding boxes required')
@@ -29,6 +30,15 @@ class HMatrix(LinearOperator):
         super().__init__(np.dtype(dtype),(len(lo),len(lo)))
         self.blocks=[];self.entries=0;self.diagonal=np.zeros(len(lo),dtype=dtype)
         rng=np.random.default_rng(0)
+        next_log=time.monotonic()+15;payload=0;row_hits=0
+
+        def save(a,b,u,v,same):
+            nonlocal next_log,payload
+            self.blocks.append((a,b,u,v,same))
+            payload+=a.nbytes+b.nbytes+u.nbytes+(v.nbytes if v is not None else 0)
+            if log is not None and time.monotonic()>=next_log:
+                log(f'hmatrix: {len(self.blocks):,} blocks, {payload/1024**2:.1f} MiB, {self.entries:,} entries')
+                next_log=time.monotonic()+15
 
         def tree(ids):
             node=_Cluster(ids,lo[ids].min(0),hi[ids].max(0))
@@ -46,20 +56,34 @@ class HMatrix(LinearOperator):
             return values
 
         def aca(a,b):
+            nonlocal row_hits
             m,n=len(a),len(b)
             cap=min(128,int(.7*m*n/(m+n)))
             if cap < 1:return None
             U=np.empty((m,0),dtype=dtype);V=np.empty((0,n),dtype=dtype)
             used=np.zeros(m,bool);i=0
+            cache={}
+            def rows(indices):
+                nonlocal row_hits
+                missing=np.array([int(k) for k in indices if int(k) not in cache],int)
+                row_hits+=len(indices)-len(missing)
+                if len(missing):
+                    values=evaluate(a[missing],b)
+                    for k,row in zip(missing,values):cache[int(k)]=row
+                return np.asarray([cache[int(k)] for k in indices])
             # Checking rows independently of the pivots catches premature ACA
             # convergence. This is an estimator, not a certified operator bound.
             check=rng.choice(m,min(m,16),replace=False)
-            reference=evaluate(a[check],b)
+            reference=rows(check)
             for _ in range(cap):
-                row=evaluate(a[i:i+1],b)[0]-U[i]@V
+                row=rows(np.array([i]))[0]-U[i]@V
                 j=int(np.argmax(abs(row)));pivot=row[j]
                 if abs(pivot)>np.finfo(float).tiny:
-                    col=evaluate(a,b[j:j+1])[:,0]-U@V[:,j]
+                    col=np.empty(m,dtype=dtype)
+                    known=np.array(list(cache),int);unknown=np.ones(m,bool);unknown[known]=False
+                    col[known]=[cache[int(k)][j] for k in known]
+                    col[unknown]=evaluate(a[unknown],b[j:j+1])[:,0]
+                    col-=U@V[:,j]
                     U=np.column_stack((U,col));V=np.vstack((V,row/pivot))
                 used[i]=True
                 residual=reference-U[check]@V
@@ -67,7 +91,7 @@ class HMatrix(LinearOperator):
                 if np.linalg.norm(residual)<=tol*scale:
                     # A second independent set is checked before accepting.
                     extra=rng.choice(m,min(m,16),replace=False)
-                    ref=evaluate(a[extra],b);err=ref-U[extra]@V
+                    ref=rows(extra);err=ref-U[extra]@V
                     if np.linalg.norm(err)<=tol*max(np.linalg.norm(ref),np.finfo(float).tiny):
                         return U,V
                     check=np.r_[check,extra];reference=np.vstack((reference,ref))
@@ -87,12 +111,12 @@ class HMatrix(LinearOperator):
             if not same and gap>eta*diameter:
                 factors=aca(a.ids,b.ids)
                 if factors is not None:
-                    self.blocks.append((a.ids,b.ids,*factors,False));return
+                    save(a.ids,b.ids,*factors,False);return
             if not a.children and not b.children:
                 block=evaluate(a.ids,b.ids)
                 if same:
                     block=(block+block.T)/2;self.diagonal[a.ids]=np.diag(block)
-                self.blocks.append((a.ids,b.ids,block,None,same));return
+                save(a.ids,b.ids,block,None,same);return
             if same:
                 x,y=a.children;build(x,x);build(x,y);build(y,y)
             elif a.children and (not b.children or len(a.ids)>=len(b.ids)):
@@ -106,7 +130,7 @@ class HMatrix(LinearOperator):
                                for a,b,u,v,_ in self.blocks)+self.diagonal.nbytes
         self.info=dict(bytes=self.storage_bytes,dense_bytes=len(lo)**2*self.dtype.itemsize,
                        blocks=len(self.blocks),low_rank_blocks=sum(v is not None for _,_,_,v,_ in self.blocks),
-                       evaluated_entries=self.entries,tolerance=tol,leaf=leaf,eta=eta)
+                       evaluated_entries=self.entries,cached_rows=row_hits,tolerance=tol,leaf=leaf,eta=eta)
 
     def _matmat(self,x):
         out=np.zeros((self.shape[0],x.shape[1]),dtype=np.result_type(self.dtype,x.dtype))

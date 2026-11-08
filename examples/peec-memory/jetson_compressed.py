@@ -11,9 +11,13 @@ from pcbqs.pdn.rail import Rail
 from pcbqs.pdn.stack import RailPDN
 from pcbqs.pdn.peec_trial import PEECPDN
 from pcbqs.electrostatic import DielectricStack
+from operator_cache import checkpoint
 
 ROOT=Path(os.environ.get('JETSON_PDN_DIR','/workspace/jetson-pdn'))
 out=Path(os.environ.get('PEEC_RESULT',str(ROOT/'compressed-rail.json')))
+cache=Path(os.environ.get('PEEC_CACHE_DIR',str(ROOT/'operator-cache')))
+dielectric_tol=float(os.environ.get('PEEC_DIELECTRIC_TOL','1e-4'))
+frequencies=[float(f) for f in os.environ.get('PEEC_FREQUENCIES','1e6').split(',')]
 start=time.perf_counter();result=dict(stages=[])
 def stage(name,**data):
     result['stages'].append(dict(name=name,seconds=time.perf_counter()-start,
@@ -28,16 +32,23 @@ polys += [p.geom for s in rail.series for p in s.part.pads]
 crop=unary_union(polys).envelope.buffer(1.,join_style=2)
 try:
     adapter=PEECPDN(old,dmax=3.,region=crop,coarsen=4,matrix_backend='hierarchical',
-                    compression_tol=1e-5,solver_tol=1e-7,solver_maxiter=1000,fill_workers=2,log=print)
+                    compression_tol=1e-5,solver_tol=float(os.environ.get('PEEC_SOLVER_TOL','1e-7')),
+                    solver_maxiter=int(os.environ.get('PEEC_SOLVER_MAXITER','1000')),fill_workers=2,
+                    log=lambda msg:print(msg,flush=True))
     # This is a feasibility run. The relaxed image expansion needs a separate
     # tolerance convergence study before claiming numerical accuracy.
-    adapter.q._dielectric_stack=DielectricStack.from_board(b,1e-4)
+    adapter.q._dielectric_stack=DielectricStack.from_board(b,dielectric_tol)
     model=adapter._model(False)
     stage('mesh',triangles=len(model.tris),edges=model.ne,charge_nodes=int(model.n_nodes),
-          crop_bounds_mm=list(crop.bounds),dielectric_tol=1e-4,compression_tol=1e-5)
-    model._assemble();stage('inductance',fill=model.fill_info)
-    model._ensure_potential();stage('potential',fill=model.fill_info)
-    r=model.solve([1e6]);z=r.z['load:U21'][0]
-    stage('solved',frequency_Hz=1e6,Z_ohm=[float(z.real),float(z.imag)],solves=model.solve_info)
+          crop_bounds_mm=list(crop.bounds),dielectric_tol=dielectric_tol,compression_tol=1e-5)
+    cached=checkpoint(model,'inductance',cache,model._assemble)
+    stage('inductance',fill=model.fill_info,cache=cached)
+    cached=checkpoint(model,'potential',cache,model._ensure_potential)
+    stage('potential',fill=model.fill_info,cache=cached)
+    for frequency in frequencies:
+        r=model.solve([frequency]);z=r.z['load:U21'][0]
+        stage('solved',frequency_Hz=frequency,Z_ohm=[float(z.real),float(z.imag)],solves=model.solve_info)
+except KeyboardInterrupt:
+    stage('interrupted');raise
 except Exception as e:
-    stage('failed',error=type(e).__name__+': '+str(e));raise
+    stage('failed',error=type(e).__name__+': '+str(e),solves=model.solve_info if 'model' in globals() else []);raise

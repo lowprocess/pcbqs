@@ -71,3 +71,8 @@ PYTHONPATH=src OPENBLAS_NUM_THREADS=1 python tools/benchmark_peec_memory.py
 See [the investigation](../examples/peec-memory/REPORT.md), accompanying JSON
 and scripts for measurements. The production PDN CLI still uses its existing
 backend; the new path is opt-in through MQS/PEECPDN.
+
+The [batching and checkpoint follow-up](../examples/peec-memory/OPTIMIZATION.md)
+describes faster on-demand entry evaluation and resuming the Jetson benchmark
+without rebuilding completed operators. Checkpoints belong to the benchmark
+workflow; the API does not implicitly write caches.

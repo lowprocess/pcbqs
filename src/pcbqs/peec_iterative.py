@@ -5,6 +5,7 @@ projections, PT, electrostatic or frequency matrices densely. A sparse local
 impedance approximation preconditions restarted GMRES. Nonconvergence raises.
 """
 import inspect
+from functools import partial
 import numpy as np
 from scipy.sparse import coo_matrix, hstack, eye, diags, block_diag
 from scipy.sparse.csgraph import connected_components
@@ -40,14 +41,24 @@ def _tree_preconditioner(m,diagonal,zscale):
     return LinearOperator((K.shape[1],K.shape[1]),matvec=apply,dtype=complex),size
 
 
-def _gmres(operator,rhs,preconditioner,tol,maxiter,history):
+class ConvergenceError(RuntimeError):
+    def __init__(self,status,residual,iterations):
+        self.status,self.relative_residual,self.iterations=status,residual,iterations
+        super().__init__(f'compressed PEEC GMRES failed: status={status}, relative residual={residual:.3g}, iterations={iterations}')
+
+
+def _gmres(operator,rhs,preconditioner,tol,maxiter,history,log=None):
     # scipy 1.10/1.11 use tol; 1.12+ accept rtol.
     key='rtol' if 'rtol' in inspect.signature(gmres).parameters else 'tol'
+    def observe(r):
+        history.append(float(r))
+        if log is not None and len(history)%25==0:
+            log(f'peec GMRES: {len(history)} iterations, preconditioned residual {float(r):.3g}')
     x,status=gmres(operator,rhs,M=preconditioner,atol=0.,restart=min(100,len(rhs)),
-                   maxiter=maxiter,callback=lambda r:history.append(float(r)),callback_type='legacy',**{key:tol})
+                   maxiter=maxiter,callback=observe,callback_type='legacy',**{key:tol})
     residual=np.linalg.norm(operator@x-rhs)/max(np.linalg.norm(rhs),np.finfo(float).tiny)
     if status or not np.isfinite(residual) or residual>max(tol*5,1e-13):
-        raise RuntimeError(f'compressed PEEC GMRES failed: status={status}, relative residual={residual:.3g}, iterations={len(history)}')
+        raise ConvergenceError(status,float(residual),len(history))
     return x,residual
 
 
@@ -112,6 +123,7 @@ def solve(model,freqs,amps=None):
     currents=np.zeros((len(f),nb),complex);charge=np.zeros((len(f),model.n_nodes),complex)
     potential=np.zeros_like(charge);z={name:np.zeros(len(f),complex) for name in names}
     model.solve_info=[]
+    log=partial(print,flush=True) if model.log is print else model.log
     for fi,freq in enumerate(f):
         jw=2j*np.pi*freq
         zp=np.zeros(nb,complex)
@@ -155,7 +167,14 @@ def solve(model,freqs,amps=None):
                     M=LinearOperator((n,n),matvec=lambda x:x/d,dtype=complex)
                     kind='diagonal'
             op=LinearOperator((n,n),matvec=product,dtype=complex)
-            x,residual=_gmres(op,rhs,M,model.solver_tol,model.solver_maxiter,history)
+            log(f'peec: {freq:g} Hz, {n:,} unknowns, {kind}, {preconditioner_bytes/1024**2:.2f} MiB preconditioner')
+            try:
+                x,residual=_gmres(op,rhs,M,model.solver_tol,model.solver_maxiter,history,log)
+            except ConvergenceError as error:
+                model.solve_info.append(dict(frequency_Hz=float(freq),iterations=error.iterations,
+                    relative_residual=error.relative_residual,preconditioner=kind,converged=False,
+                    preconditioner_bytes=preconditioner_bytes,residual_history=history))
+                raise
             correction=alpha*x[nl:]
             currents[fi]=baseline+K[:,:nl]@x[:nl]+jw*(K[:,nl:]@correction)
             charge[fi]=qpart/jw-T@correction

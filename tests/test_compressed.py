@@ -104,3 +104,52 @@ def test_graph_preconditioner_avoids_large_projected_fill(monkeypatch):
     f=[1e-3,1e5,30e6]
     np.testing.assert_allclose(q.solve(f).z['I'],dense.solve(f).z['I'],rtol=1e-5,atol=1e-9)
     assert all(s['preconditioner']=='tree_diagonal' for s in q.solve_info)
+
+
+def test_serialized_operators_retain_complex_products():
+    import pickle
+    q=make('hierarchical',layered=True,closed=True);q._assemble();P=q._ensure_potential()
+    rng=np.random.default_rng(81)
+    for op in (P,q._copper[1],q._copper[3]):
+        restored=pickle.loads(pickle.dumps(op,protocol=5))
+        x=rng.normal(size=op.shape[1])+1j*rng.normal(size=op.shape[1])
+        np.testing.assert_allclose(restored@x,op@x,rtol=1e-14,atol=0)
+
+
+@pytest.mark.parametrize('near',[0.,3.,np.inf])
+def test_batched_layer_images_match_dense_with_tiny_chunks(near):
+    import copy
+    from pcbqs.compressed import _LayeredPairs
+    from pcbqs.electrostatic import potential_moments
+    from pcbqs.static_backends import FillEngine
+    q=copy.copy(make('hierarchical',layered=True))
+    ids=np.r_[q.layer_tris['B'][:3],q.layer_tris['F'][:3]]
+    q.tris=q.tris[ids];q.z_of=q.z_of[ids]
+    q.layer_tris={'B':np.arange(3),'F':np.arange(3,6)}
+    q.near=near;q._fill_options=dict(backend='auto',workers=1,chunk=7,device=None)
+    expected=potential_moments(q)
+    engine=FillEngine(q.nodes,q.tris,q.z_of,near,1,**q._fill_options)
+    pairs=_LayeredPairs(q,engine)
+    a,b=np.meshgrid(np.arange(6),np.arange(6),indexing='ij')
+    actual=pairs(a.ravel(),b.ravel()).reshape(6,6)
+    np.testing.assert_allclose(actual,expected,rtol=2e-13,atol=0.)
+    assert pairs.info['image_interactions']>0
+
+
+def test_benchmark_checkpoints_reuse_kernels_and_invalidate_options(tmp_path):
+    import importlib.util
+    from pathlib import Path
+    spec=importlib.util.spec_from_file_location('operator_cache',Path(__file__).parents[1]/'examples/peec-memory/operator_cache.py')
+    cache=importlib.util.module_from_spec(spec);spec.loader.exec_module(cache)
+    a=make('hierarchical',layered=True,closed=True)
+    assert not cache.checkpoint(a,'inductance',tmp_path,a._assemble)['hit']
+    assert not cache.checkpoint(a,'potential',tmp_path,a._ensure_potential)['hit']
+    b=make('hierarchical',layered=True,closed=True)
+    def fail():raise AssertionError('cached kernels rebuilt')
+    assert cache.checkpoint(b,'inductance',tmp_path,fail)['hit']
+    assert cache.checkpoint(b,'potential',tmp_path,fail)['hit']
+    np.testing.assert_allclose(b.solve([1e5]).z['I'],a.solve([1e5]).z['I'],rtol=1e-12)
+    b.solver_tol=1e-9
+    assert cache.fingerprint(a,'potential')==cache.fingerprint(b,'potential')
+    b._compression_options=dict(b._compression_options,tol=1e-4)
+    assert cache.fingerprint(a,'potential')!=cache.fingerprint(b,'potential')

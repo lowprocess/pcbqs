@@ -26,13 +26,15 @@ selected=np.array(selected)
 m=SimpleNamespace(nodes=q.nodes,tris=q.tris[selected],z_of=q.z_of[selected],layer_tris=layers,
                   near=3.,outer_levels=1,_fill_options=q._fill_options,
                   _dielectric_stack=DielectricStack.from_board(b,1e-4),fill_info={})
-reference=potential_moments(m)
+t=time.perf_counter();reference=potential_moments(m);reference_seconds=time.perf_counter()-t
 engine=FillEngine(m.nodes,m.tris,m.z_of,near=3.,outer_levels=1,**m._fill_options)
 p,r=np.meshgrid(np.arange(len(selected)),np.arange(len(selected)),indexing='ij')
-actual=_LayeredPairs(m,engine)(p.ravel(),r.ravel()).reshape(reference.shape)
+pairs=_LayeredPairs(m,engine)
+t=time.perf_counter();actual=pairs(p.ravel(),r.ravel()).reshape(reference.shape);batched_seconds=time.perf_counter()-t
 relative=abs(actual-reference)/np.maximum(abs(reference),np.finfo(float).tiny)
 result=dict(triangles=len(selected),layer_counts={k:len(v) for k,v in layers.items()},dielectric_tol=1e-4,
             max_entry_relative_error=float(relative.max()),relative_frobenius_error=float(np.linalg.norm(actual-reference)/np.linalg.norm(reference)),
-            seconds=time.perf_counter()-start)
-target=Path(__file__).with_name('jetson-kernel-sample.json');target.write_text(json.dumps(result,indent=2)+'\n')
+            seconds=time.perf_counter()-start,reference_seconds=reference_seconds,batched_seconds=batched_seconds,
+            image_fill=pairs.info)
+target=Path(__file__).with_name('jetson-kernel-batched.json');target.write_text(json.dumps(result,indent=2)+'\n')
 print(json.dumps(result,indent=2))
