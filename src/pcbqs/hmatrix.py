@@ -32,6 +32,12 @@ def _native():
     return core if hasattr(core,'hmatrix_apply') else None
 
 
+def _build_core():
+    """The compiled ACA/dense-leaf builder, unless PCBQS_NO_CORE is set or the core predates it."""
+    core=_native()
+    return core if core is not None and hasattr(core,'aca_blocks') else None
+
+
 def _workers():
     env=os.environ.get('PCBQS_HMATRIX_THREADS')
     if env:
@@ -43,7 +49,13 @@ def _workers():
 
 
 class HMatrix(LinearOperator):
-    def __init__(self, entry, lo, hi, *, dtype=float, tol=1e-6, leaf=64, eta=1.,log=None):
+    def __init__(self, entry, lo, hi, *, dtype=float, tol=1e-6, leaf=64, eta=1.,log=None,native=None,workers=None):
+        """`native` (optional) is a compiled entry provider from pcbqs._core with the
+        same entries as `entry`; ACA and dense leaves then run natively, one tree
+        level at a time and in parallel over blocks (`workers` threads). Native
+        ACA draws check rows from a per-block stream, so its factors are
+        deterministic but differ from the NumPy path within `tol`.
+        """
         lo,hi=np.asarray(lo,float),np.asarray(hi,float)
         if lo.shape != hi.shape or lo.ndim != 2 or not np.isfinite([lo,hi]).all() or (lo>hi).any():
             raise ValueError('finite support bounding boxes required')
@@ -148,13 +160,55 @@ class HMatrix(LinearOperator):
             else:
                 for child in b.children:build(a,child)
 
+        def children(a,b):
+            if a is b:
+                x,y=a.children;return [(x,x),(x,y),(y,y)]
+            if a.children and (not b.children or len(a.ids)>=len(b.ids)):
+                return [(child,b) for child in a.children]
+            return [(a,child) for child in b.children]
+
+        def build_native(root):
+            nonlocal row_hits
+            count=workers or _workers();pending=[(root,root)]
+            while pending:
+                admissible,dense,following=[],[],[]
+                for a,b in pending:
+                    gap=np.linalg.norm(np.maximum(0,np.maximum(a.lo-b.hi,b.lo-a.hi)))
+                    diameter=max(np.linalg.norm(a.hi-a.lo),np.linalg.norm(b.hi-b.lo))
+                    if a is not b and gap>eta*diameter:admissible.append((a,b))
+                    elif not a.children and not b.children:dense.append((a,b))
+                    else:following.extend(children(a,b))
+                if admissible:
+                    factors,entries,hits=core.aca_blocks(native,[np.asarray(a.ids,np.int64) for a,_ in admissible],
+                                                         [np.asarray(b.ids,np.int64) for _,b in admissible],float(tol),count)
+                    self.entries+=entries;row_hits+=hits
+                    for (a,b),f in zip(admissible,factors):
+                        if f is not None:save(a.ids,b.ids,f[0],f[1],False)
+                        elif not a.children and not b.children:dense.append((a,b))
+                        else:following.extend(children(a,b))
+                if dense:
+                    blocks=core.dense_blocks(native,[np.asarray(a.ids,np.int64) for a,_ in dense],
+                                             [np.asarray(b.ids,np.int64) for _,b in dense],count)
+                    for (a,b),block in zip(dense,blocks):
+                        self.entries+=block.size
+                        block=block.astype(dtype,copy=False)
+                        if a is b:
+                            block=(block+block.T)/2;self.diagonal[a.ids]=np.diag(block)
+                        save(a.ids,b.ids,block,None,a is b)
+                pending=following
+
+        core=_build_core() if native is not None else None
         if len(lo):
-            root=tree(np.arange(len(lo)));build(root,root)
+            root=tree(np.arange(len(lo)))
+            if core is not None:build_native(root)
+            else:build(root,root)
+        self.native_build=core is not None
         self.storage_bytes=sum(a.nbytes+b.nbytes+u.nbytes+(v.nbytes if v is not None else 0)
                                for a,b,u,v,_ in self.blocks)+self.diagonal.nbytes
         self.info=dict(bytes=self.storage_bytes,dense_bytes=len(lo)**2*self.dtype.itemsize,
                        blocks=len(self.blocks),low_rank_blocks=sum(v is not None for _,_,_,v,_ in self.blocks),
-                       evaluated_entries=self.entries,cached_rows=row_hits,tolerance=tol,leaf=leaf,eta=eta)
+                       evaluated_entries=self.entries,cached_rows=row_hits,tolerance=tol,leaf=leaf,eta=eta,
+                       native_build=self.native_build)
 
     def _matmat(self,x):
         x=np.asarray(x)

@@ -69,11 +69,12 @@ def edge_inductance(model):
         support64=np.ascontiguousarray(support,np.int64)
         vertices=np.ascontiguousarray(vertices,float);alpha=np.ascontiguousarray(alpha,float)
 
+        provider=core.RwgEntries(*common,support64,vertices,alpha,MU0/(4*np.pi)) if hasattr(core,'RwgEntries') else None
 
         def entry(rows,cols):
             return core.rwg_inductance(*common,support64,vertices,alpha,np.asarray(rows,np.int64),
                                        np.asarray(cols,np.int64),MU0/(4*np.pi),workers)
-        return _compressed_inductance(model,engine,entry,lo,hi,support,started,r)
+        return _compressed_inductance(model,engine,entry,lo,hi,support,started,r,provider,engine.info['workers'])
 
     def entry(rows,cols):
         a,b=np.meshgrid(rows,cols,indexing='ij');a=a.ravel();b=b.ravel()
@@ -94,8 +95,9 @@ def edge_inductance(model):
     return _compressed_inductance(model,engine,entry,lo,hi,support,started,r)
 
 
-def _compressed_inductance(model,engine,entry,lo,hi,support,started,r):
-    L=HMatrix(entry,lo[support].min(1),hi[support].max(1),log=model.log,**model._compression_options)
+def _compressed_inductance(model,engine,entry,lo,hi,support,started,r,provider=None,workers=None):
+    L=HMatrix(entry,lo[support].min(1),hi[support].max(1),log=model.log,native=provider,workers=workers,
+              **model._compression_options)
     model.fill_info['magnetic']=dict(engine.info,**L.info,seconds=time.perf_counter()-started,matrix_backend='hierarchical',
                                      native_entries=_native(engine) is not None)
     model.log(f'peec: compressed inductance {L.storage_bytes/1024**2:.2f} MiB')
@@ -218,8 +220,17 @@ def potential(model):
         vals=vals/(g.area[p]*g.area[q]*4*np.pi*EPS0)
         return vals.reshape(len(rows),len(cols))
 
+    provider=None
+    if native is not None and hasattr(native[0],'PotentialEntries'):
+        core,common,_=native
+        provider=core.PotentialEntries(*common,float(model.er),np.pi,EPS0)
+    elif pairs is not None and pairs.native is not None and hasattr(pairs.native[0],'LayeredEntries'):
+        core,common,_=pairs.native;nl=len(pairs.interfaces)
+        provider=core.LayeredEntries(*common,np.ascontiguousarray(pairs.layer,np.int64),
+                                     [pairs.images(a,b)[3] for a in range(nl) for b in range(nl)],np.pi,EPS0)
     lo,hi=_boxes(engine)
-    H=HMatrix(entry,lo,hi,dtype=complex if pairs is not None else float,log=model.log,**model._compression_options)
+    H=HMatrix(entry,lo,hi,dtype=complex if pairs is not None else float,log=model.log,native=provider,
+              workers=engine.info['workers'],**model._compression_options)
     area=np.bincount(model.node_of,weights=g.area,minlength=model.n_nodes)
     W=coo_matrix((g.area/area[model.node_of],(np.arange(len(g.area)),model.node_of)),shape=(len(g.area),model.n_nodes)).tocsr()
     # Exact grouped-contact self terms, without computing a node-square array.

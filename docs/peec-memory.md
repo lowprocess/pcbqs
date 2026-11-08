@@ -81,6 +81,22 @@ assembly fell from 41.6 s to 17.0 s; the layered image/spline potential (11.8 s)
 still uses the NumPy image loop. Of the remaining inductance time, about 2 s is
 native integration and the rest is the Python ACA pivot loop.
 
+The OpenMP backend also builds the H-matrices natively. Compiled entry
+providers (RWG inductance, homogeneous potential and the layered image kernel)
+are passed to `HMatrix(..., native=provider)`; the tree is traversed one level
+at a time, and all admissible blocks of a level run ACA in parallel, followed
+by its dense leaves. The ACA rules match the NumPy implementation (rank cap,
+16-row check sets, a second independent check before acceptance), but check
+rows are drawn from a per-block SplitMix64 stream seeded by the block, so the
+factors are independent of thread count and differ from the NumPy build
+within the compression tolerance (impedances here moved by 1e-7 to 7e-7 at
+`compression_tol=1e-6`). `H.info['native_build']` records the path;
+`PCBQS_NO_CORE` or other fill backends keep the NumPy build.
+
+With native ACA (medians of three, 16 threads), total assembly fell from
+6.1 s to 0.68 s (homogeneous) and from 17.0 s to 0.92 s (layered); GMRES
+iteration counts were unchanged.
+
 `fill_info` reports matrix payload/storage and evaluated entry counts.
 `solve_info` records GMRES iterations, relative operator residual and sparse
 preconditioner storage at each frequency. Storage figures are not process RSS

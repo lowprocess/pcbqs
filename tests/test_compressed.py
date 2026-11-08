@@ -227,7 +227,10 @@ def test_native_entry_blocks_match_numpy_assembly_bitwise(near,monkeypatch):
         expected=compressed._moments(engine,p.ravel(),qq.ravel(),scalar).reshape(len(rows),len(cols),-1)
         blocks=[core.static_block(*common,rows.astype(np.int64),cols.astype(np.int64),scalar,w) for w in (1,4)]
         assert np.array_equal(blocks[0],expected) and np.array_equal(blocks[1],expected)
-    # Whole inductance operators agree exactly with the NumPy entry assembly.
+    # Whole inductance operators agree exactly with the NumPy entry assembly
+    # (both through the NumPy ACA; native ACA draws its own check rows).
+    import pcbqs.hmatrix as hm
+    monkeypatch.setattr(hm,'_build_core',lambda:None)
     L,_=compressed.edge_inductance(q)
     assert q.fill_info['magnetic']['native_entries']
     monkeypatch.setattr(compressed,'_native',lambda engine:None)
@@ -236,6 +239,7 @@ def test_native_entry_blocks_match_numpy_assembly_bitwise(near,monkeypatch):
     x=rng.normal(size=L.shape[0])
     assert np.array_equal(L@x,reference@x)
     monkeypatch.undo()
+    assert not L.info['native_build']
     r=RWG(g.nodes,g.tris);support=np.stack((r.tp,r.tm),1).astype(np.int64)
     vertices=np.stack((r.vp,r.vm),1);alpha=np.stack((1/(2*r.area[r.tp]),-1/(2*r.area[r.tm])),1)
     with pytest.raises(ValueError,match='edge index'):
@@ -276,3 +280,27 @@ def test_native_layered_images_match_numpy_loops(near,lossy,monkeypatch):
     monkeypatch.setattr(electrostatic,'native_layered',lambda engine:None)
     R=electrostatic.potential_moments(q)
     np.testing.assert_allclose(M,R,rtol=1e-12,atol=1e-12*np.abs(R).max())
+
+
+@pytest.mark.parametrize('layered',[False,True])
+def test_native_aca_build_matches_numpy_build_within_tolerance(layered,monkeypatch):
+    import pcbqs.compressed as compressed
+    import pcbqs.hmatrix as hm
+    if hm._build_core() is None:
+        pytest.skip('compiled core without native ACA')
+    q=make('hierarchical',layered=layered)
+    L,_=compressed.edge_inductance(q);P=compressed.potential(q)
+    assert L.info['native_build'] and P.kernel.info['native_build']
+    rng=np.random.default_rng(4)
+    x=rng.normal(size=L.shape[0]);y=rng.normal(size=P.shape[0])+1j*rng.normal(size=P.shape[0])
+    # Thread count and scheduling do not change native factors.
+    for workers in (1,3):
+        q._fill_options=dict(q._fill_options,workers=workers)
+        L2,_=compressed.edge_inductance(q);P2=compressed.potential(q)
+        assert np.array_equal(L2@x,L@x) and np.array_equal(P2@y,P@y)
+    monkeypatch.setattr(hm,'_build_core',lambda:None)
+    Lr,_=compressed.edge_inductance(q);Pr=compressed.potential(q)
+    assert not Lr.info['native_build']
+    tol=q._compression_options.get('tol',1e-6)
+    assert np.linalg.norm(L@x-Lr@x)<=50*tol*np.linalg.norm(Lr@x)
+    assert np.linalg.norm(P@y-Pr@y)<=50*tol*np.linalg.norm(Pr@y)
