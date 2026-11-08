@@ -260,28 +260,44 @@ class FillEngine:
         g = self.geometry
         distance = np.sqrt(((g.cent[p]-g.cent[q])**2).sum(-1)+d*d)
         size = g.radius[p]+g.radius[q]
-        close = np.ones(len(p), bool) if np.isinf(self.near) else distance <= self.near*size
-        kind = np.full(len(p), -1, np.int32)
-        kind[close] = 0
-        kind[close & (distance <= size)] = self.outer_levels
+        refine = distance <= size
+        if np.isinf(self.near):
+            return np.where(refine, np.int32(self.outer_levels), np.int32(0)).astype(np.int32)
+        close = distance <= self.near*size
+        kind = np.where(close, np.int32(0), np.int32(-1)).astype(np.int32)
+        kind[close & refine] = self.outer_levels       # near < 1 can leave refine pairs far
         return kind
 
     def evaluate(self, p, q, d, kind=None, scalar_only=False):
         p, q = np.asarray(p), np.asarray(q)
         n = len(self.geometry.tris)
+        # Bounds via min/max (no boolean temporaries): small ACA-style calls
+        # are dominated by this validation rather than by integration.
         if (p.ndim != 1 or q.shape != p.shape or p.dtype.kind not in 'iu' or q.dtype.kind not in 'iu' or
-                (p < 0).any() or (q < 0).any() or (p >= n).any() or (q >= n).any()):
+                (len(p) and (p.min() < 0 or q.min() < 0 or p.max() >= n or q.max() >= n))):
             raise ValueError('pair indices must be matching integer vectors within the mesh')
         p, q = np.ascontiguousarray(p, np.int32), np.ascontiguousarray(q, np.int32)
-        d = np.ascontiguousarray(np.broadcast_to(np.asarray(d, float), p.shape))
-        if not np.isfinite(d).all():
-            raise ValueError('pair offsets must be finite')
+        d = np.asarray(d, float)
+        if d.ndim == 0:
+            if not np.isfinite(d):
+                raise ValueError('pair offsets must be finite')
+            d = np.full(p.shape, float(d))
+        else:
+            d = np.ascontiguousarray(np.broadcast_to(d, p.shape))
+            if not np.isfinite(d).all():
+                raise ValueError('pair offsets must be finite')
         if kind is None:
-            kind = self.kinds(p, q, d)
-        kind = np.asarray(kind)
-        if (kind.shape != p.shape or kind.dtype.kind not in 'iu' or
-                not np.isin(kind, [-1, *self.geometry.levels]).all()):
-            raise ValueError('pair kinds must select far (-1) or a prepared analytic level')
+            kind = self.kinds(p, q, d)       # valid by construction
+        else:
+            kind = np.asarray(kind)
+            if kind.shape != p.shape or kind.dtype.kind not in 'iu':
+                raise ValueError('pair kinds must select far (-1) or a prepared analytic level')
+            if len(kind):
+                lo, hi = int(kind.min()), int(kind.max())
+                levels = self.geometry.levels
+                if (lo < -1 or hi > max(levels) or
+                        any(level not in levels and (kind == level).any() for level in range(max(0, lo), hi+1))):
+                    raise ValueError('pair kinds must select far (-1) or a prepared analytic level')
         kind = np.ascontiguousarray(kind, np.int32)
         out = self.backend.evaluate(p, q, d, kind, scalar_only)
         if not isinstance(out, np.ndarray) or out.dtype != np.float64 or out.shape != (len(p), 1 if scalar_only else 6):

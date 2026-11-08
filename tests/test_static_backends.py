@@ -268,3 +268,24 @@ def test_native_combine_matches_sparse_galerkin_products(mesh, monkeypatch):
     assert native == pytest.approx(expected, rel=1e-12, abs=1e-12*np.abs(expected).max())
     assert fallback == pytest.approx(expected, rel=1e-14, abs=1e-14*np.abs(expected).max())
     assert np.array_equal(native, native.T) and np.array_equal(native, again)
+
+
+@pytest.mark.parametrize('near', [0., .5, 3., np.inf])
+@pytest.mark.parametrize('level', [0, 1, 2])
+def test_kinds_rule_and_kind_validation(mesh, near, level):
+    e = FillEngine(*mesh, backend='numpy', near=near, outer_levels=level)
+    n = len(mesh[1]); p, q = np.meshgrid(np.arange(n), np.arange(n), indexing='ij'); p, q = p.ravel(), q.ravel()
+    d = e.geometry.z[p]-e.geometry.z[q]
+    distance = np.sqrt(((e.geometry.cent[p]-e.geometry.cent[q])**2).sum(-1)+d*d)
+    size = e.geometry.radius[p]+e.geometry.radius[q]
+    close = np.ones(len(p), bool) if np.isinf(near) else distance <= near*size
+    expected = np.where(close, np.where(distance <= size, level, 0), -1)
+    assert np.array_equal(e.kinds(p, q, d), expected)
+    for bad in ({0: 1, 1: 2, 2: 1}[level], -2, 3):
+        kind = np.zeros(len(p), np.int32); kind[0] = bad
+        with pytest.raises(ValueError, match='prepared analytic level'):
+            e.evaluate(p, q, d, kind)
+    with pytest.raises(ValueError, match='within the mesh'):
+        e.evaluate(np.array([n]), np.array([0]), 0.)
+    with pytest.raises(ValueError, match='finite'):
+        e.evaluate(np.array([0]), np.array([0]), np.nan)
