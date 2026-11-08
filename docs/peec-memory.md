@@ -54,6 +54,13 @@ preconditioner storage at each frequency. Storage figures are not process RSS
 or peak construction memory. `factor_cache_bytes` applies to dense factors;
 the iterative path rebuilds its sparse preconditioner per frequency.
 
+Experimental iterative controls can also be set on an MQS model before solving:
+`q.solver_preconditioner = 'auto'`, `'graph'` or `'tree'`, and
+`q.solver_restart = 100` (a positive number of GMRES basis vectors). The default
+automatic choice protects projected-surrogate storage. Larger restarts use more
+Krylov workspace and can reduce stagnation. These choices do not change kernels
+or their checkpoint fingerprints.
+
 This is an initial scalable path, not a guaranteed memory/runtime bound.
 Fundamental-cycle transforms can still have substantial support on large
 graphs; approximate graph solves and the tree/loop-diagonal fallback may need

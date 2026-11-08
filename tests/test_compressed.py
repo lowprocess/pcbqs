@@ -60,6 +60,10 @@ def test_nonconvergence_is_reported_and_capacitance_is_available():
     np.testing.assert_allclose(C,Cd,rtol=1e-5,atol=1e-18)
     q.solver_maxiter=1;q.solver_tol=1e-14
     with pytest.raises(RuntimeError,match='GMRES failed'):q.solve([30e6])
+    q.solver_preconditioner='invalid'
+    with pytest.raises(ValueError,match='solver_preconditioner'):q.solve([1e5])
+    q.solver_preconditioner='auto';q.solver_restart=0
+    with pytest.raises(ValueError,match='solver_restart'):q.solve([1e5])
 
 
 def test_grading_preserves_terminals_and_reduces_bulk():
@@ -96,11 +100,13 @@ def test_via_operator_matches_dense_without_triangle_square_fill(monkeypatch):
     np.testing.assert_allclose(answers[1],answers[0],rtol=2e-5,atol=1e-9)
 
 
-def test_graph_preconditioner_avoids_large_projected_fill(monkeypatch):
+@pytest.mark.parametrize('closed',[False,True])
+def test_graph_preconditioner_avoids_large_projected_fill(monkeypatch,closed):
     import pcbqs.peec_iterative as module
     monkeypatch.setattr(module,'_PROJECTED_PRECONDITIONER_BYTES',0)
-    q=make('hierarchical',layered=True,closed=True)
-    dense=make('dense',layered=True,closed=True)
+    q=make('hierarchical',layered=True,closed=closed)
+    q.solver_restart=50
+    dense=make('dense',layered=True,closed=closed)
     f=[1e-3,1e5,30e6]
     np.testing.assert_allclose(q.solve(f).z['I'],dense.solve(f).z['I'],rtol=1e-5,atol=1e-9)
     assert all(s['preconditioner']=='graph_ilu' for s in q.solve_info)

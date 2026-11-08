@@ -2,6 +2,67 @@
 
 This continues the [initial implementation](IMPLEMENTATION.md).
 
+## Full-rail result
+
+The complete 25,370-triangle cropped Jetson +1V15 PEEC model now constructs both
+operators and converges at 1 MHz within the 8 GiB environment. Peak process RSS
+was 2.85 GiB. Driving-point impedance at U21 is **8.880 + j 5.137 milliohms**
+(magnitude 10.26 milliohms), including the configured VRM and component RLC
+assumptions. This is a numerical model result, not hardware validation.
+
+| Cold-run stage | Time | Operator storage |
+| --- | ---: | ---: |
+| Inductance | 374.7 s | 882.0 MiB |
+| Layered potential | 2,537.8 s | 1,126.4 MiB |
+| 1 MHz solve and preparation | 764.6 s | 21.8 MiB preconditioner |
+
+Total time from import through the solve was 3,695.5 s (61.6 minutes), with two
+fill workers and single-thread BLAS. The first solve used the automatic
+projected-ILU preconditioner: 631 iterations, 2.15e-8 true relative residual,
+and 5.05e-16 A maximum charge-continuity residual. The potential panel kernel
+alone would require 9.59 GiB densely; the compressed aggregated operator uses
+about 1.10 GiB. No global dense moments or dense projected PEEC solve were used.
+
+The cold build is still expensive: it evaluated about 1.75 billion image/panel
+interactions. Both operators are checkpointed. A subsequent process loaded
+both in 18.2 s including board import and meshing, enabling solver refinement
+without repeating construction. Timings are single samples with other checks
+occasionally sharing the CPU; they are not controlled performance statistics.
+
+Raw completed stages are in [jetson-compressed-complete.json](jetson-compressed-complete.json).
+
+## Cached solver refinement
+
+All runs below use the identical saved operators and 1 MHz excitation.
+
+| Selection | GMRES restart | Requested tolerance | Iterations | True relative residual | Preconditioner | Time after potential available |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Automatic, projected ILU | 100 | 1e-7 | 631 | 2.15e-8 | 21.81 MiB | 764.6 s |
+| Graph ILU | 100 | 1e-8 | 660 | 9.02e-9 | 4.09 MiB | 963.8 s |
+| Automatic, projected ILU | 300 | 1e-8 | 424 | 6.36e-9 | 21.81 MiB | 544.0 s |
+
+The refined results differ from the first by 1.19e-7 and 1.94e-7 relative complex
+impedance respectively. Maximum continuity residual stays below 5.1e-16 A.
+For this rail, **automatic preconditioning with restart 300** is the better
+measured choice: fewer iterations despite the tighter tolerance. Graph ILU is
+a useful lower-storage option but was weaker here. The API defaults remain
+automatic selection and restart 100, since the larger basis is not universally
+better. Increasing restart from 100 to 300 adds about 94 MiB of Krylov basis
+workspace at 30,621 unknowns; restart is capped at the iteration budget.
+
+Both retries loaded the saved operators in 18–23 s including board import and
+meshing. The restart-300 run completed in 567.0 s from startup with 2.85 GiB peak
+RSS. The first cold-run driver retained additional metadata, so equal measured
+RSS does not mean the extra Krylov vectors have no memory cost. The retries
+overlapped on the two-core environment; use iteration counts and residuals for
+algorithmic comparison, not these single-run timings as isolated benchmarks.
+
+See [solver comparison](jetson-solver-comparison.json),
+[graph refinement](jetson-graph-refined.json) and
+[restart refinement](jetson-restart-refined.json). These show iterative
+convergence for the fixed approximate operators. They do not check mesh,
+compression-tolerance or dielectric-image-tolerance convergence.
+
 ## Changes
 
 - Batch different dielectric image offsets into each native integration call.
@@ -47,6 +108,14 @@ error is 0.79 for a very weak mutual entry, using a denominator floor of
 4.23e-22 H; the aggregate norm must not be read as an entrywise guarantee.
 This is operator validation on actual geometry, not a port-error bound.
 
+The corresponding 40-panel potential sample has 7.04e-7 relative Frobenius
+error and 9.33e-4 maximum entry-relative error against direct dense integration.
+Both samples come from the actual full-rail operators at compression tolerance
+1e-5. Neither the samples nor the small iterative residual establish a global
+port-error bound. Mesh, compression and dielectric-image convergence studies
+remain necessary before claiming full-rail physical accuracy.
+The sampled full-operator data are in [jetson-operator-check.json](jetson-operator-check.json).
+
 A 15-second nonblocking sampling profile of potential construction captured
 712 main-thread samples (26 sampling errors). About 53% of captured stack time
 was at the native integration call site. Spline evaluation and array processing
@@ -67,8 +136,9 @@ these local pickle checkpoints from a trusted folder. They are not exchange
 files and are excluded from the repository results.
 
 Use `PEEC_FREQUENCIES=100000,1000000,30000000`, `PEEC_SOLVER_TOL=1e-8` or
-`PEEC_SOLVER_MAXITER=2000` to retry solves with the same operators. Changing
-`PEEC_DIELECTRIC_TOL` changes the kernel fingerprint and requires rebuilding.
+`PEEC_SOLVER_MAXITER=2000` to retry solves with the same operators.
+`PEEC_PRECONDITIONER=graph` or `PEEC_RESTART=300` also reuses those operators.
+Changing `PEEC_DIELECTRIC_TOL` changes the kernel fingerprint and requires rebuilding.
 The defaults remain dielectric tolerance 1e-4, compression 1e-5 and iterative
 tolerance 1e-7. These relaxed kernel settings need convergence checks before
 claiming full-rail physical accuracy.

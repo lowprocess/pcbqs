@@ -1,0 +1,17 @@
+{
+  "inductance": {
+    "edges": 40,
+    "relative_frobenius_error": 5.590679575813773e-07,
+    "max_entry_relative_error": 0.7903406855913573,
+    "relative_entry_floor": 4.228465598305911e-22,
+    "max_absolute_error": 2.146718381330357e-16
+  },
+  "potential": {
+    "panels": 40,
+    "relative_frobenius_error": 7.037414807037092e-07,
+    "max_entry_relative_error": 0.0009325965146571124,
+    "relative_entry_floor": 1166.9159357066164,
+    "max_absolute_error": 547085845.5258087
+  },
+  "seconds": 25.04440460999831
+}

@@ -26,7 +26,10 @@ def build_model(root,dielectric_tol=1e-4):
                     solver_maxiter=int(os.environ.get('PEEC_SOLVER_MAXITER','1000')),fill_workers=2,
                     log=lambda msg:print(msg,flush=True))
     adapter.q._dielectric_stack=DielectricStack.from_board(b,dielectric_tol)
-    return adapter._model(False),crop
+    model=adapter._model(False)
+    model.solver_preconditioner=os.environ.get('PEEC_PRECONDITIONER','auto')
+    model.solver_restart=int(os.environ.get('PEEC_RESTART','100'))
+    return model,crop
 
 
 def main():
@@ -42,6 +45,10 @@ def main():
         out.write_text(json.dumps(result,indent=2)+'\n');print(name,json.dumps(result['stages'][-1]),flush=True)
     try:
         model,crop=build_model(root,dielectric_tol)
+        result['settings']=dict(dmax_mm=3.,coarsen=4,dielectric_tol=dielectric_tol,
+            compression=model._compression_options,solver_tol=model.solver_tol,
+            solver_maxiter=model.solver_maxiter,solver_restart=model.solver_restart,
+            solver_preconditioner=model.solver_preconditioner,frequencies_Hz=frequencies)
         stage('mesh',triangles=len(model.tris),edges=model.ne,charge_nodes=int(model.n_nodes),
               crop_bounds_mm=list(crop.bounds),dielectric_tol=dielectric_tol,compression_tol=1e-5)
         cached=checkpoint(model,'inductance',cache,model._assemble)

@@ -1,5 +1,9 @@
 # Initial implementation and measurements
 
+Follow-up: the [batching/checkpoint study](OPTIMIZATION.md) now includes a
+completed full-rail Jetson PEEC solve. The stopped attempt below records the
+earlier implementation and is retained for comparison.
+
 `matrix_backend='hierarchical'` now provides on-demand compressed PEEC through
 the MQS API and experimental PEECPDN adapter. It includes RWG inductance,
 layered/homogeneous potential, via inductance, sparse slab skin impedance,

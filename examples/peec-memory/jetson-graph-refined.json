@@ -1,0 +1,205 @@
+{
+  "stages": [
+    {
+      "name": "mesh",
+      "seconds": 15.706056956001703,
+      "peak_RSS_MiB": 808.01953125,
+      "triangles": 25370,
+      "edges": 30147,
+      "charge_nodes": 20799,
+      "crop_bounds_mm": [
+        190.37,
+        -135.47499999999997,
+        215.37499999999997,
+        -116.02499999999999
+      ],
+      "dielectric_tol": 0.0001,
+      "compression_tol": 1e-05
+    },
+    {
+      "name": "inductance",
+      "seconds": 16.87228771700029,
+      "peak_RSS_MiB": 1612.9140625,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 25370,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 924882784,
+          "dense_bytes": 7270732872,
+          "blocks": 32088,
+          "low_rank_blocks": 10436,
+          "evaluated_entries": 172934886,
+          "cached_rows": 296134,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 374.74827741400077,
+          "matrix_backend": "hierarchical"
+        },
+        "vias": {
+          "bytes": 927920,
+          "dense_bytes": 1685448,
+          "blocks": 36,
+          "low_rank_blocks": 3,
+          "evaluated_entries": 115317,
+          "cached_rows": 53,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "matrix_backend": "hierarchical"
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 25370,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 1181072164,
+          "dense_bytes": 10298190400,
+          "blocks": 29680,
+          "low_rank_blocks": 10362,
+          "evaluated_entries": 109115676,
+          "cached_rows": 194769,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 2537.7559539640006,
+          "matrix_backend": "hierarchical",
+          "image_fill": {
+            "pair_requests": 109226133,
+            "image_interactions": 1754945658,
+            "integration_calls": 925512
+          }
+        }
+      },
+      "cache": {
+        "hit": true,
+        "path": "/workspace/jetson-pdn/operator-cache/inductance-1367bcf5bf5d581c37d5ccb6b96da12a22c77e3af52882d7a3a8f1a7d9dca1fc.pickle",
+        "file_bytes": 892000112
+      }
+    },
+    {
+      "name": "potential",
+      "seconds": 18.150208941999153,
+      "peak_RSS_MiB": 2727.19921875,
+      "fill": {
+        "magnetic": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 25370,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 924882784,
+          "dense_bytes": 7270732872,
+          "blocks": 32088,
+          "low_rank_blocks": 10436,
+          "evaluated_entries": 172934886,
+          "cached_rows": 296134,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 374.74827741400077,
+          "matrix_backend": "hierarchical"
+        },
+        "vias": {
+          "bytes": 927920,
+          "dense_bytes": 1685448,
+          "blocks": 36,
+          "low_rank_blocks": 3,
+          "evaluated_entries": 115317,
+          "cached_rows": 53,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "matrix_backend": "hierarchical"
+        },
+        "capacitance": {
+          "backend": "openmp",
+          "workers": 2,
+          "kernel_workers": 2,
+          "tile_workers": 1,
+          "chunk": 16384,
+          "device": null,
+          "precision": "float64",
+          "triangles": 25370,
+          "outer_levels": 1,
+          "near": 3.0,
+          "observed_kernel_workers": 2,
+          "bytes": 1181072164,
+          "dense_bytes": 10298190400,
+          "blocks": 29680,
+          "low_rank_blocks": 10362,
+          "evaluated_entries": 109115676,
+          "cached_rows": 194769,
+          "tolerance": 1e-05,
+          "leaf": 64,
+          "eta": 1.0,
+          "seconds": 2537.7559539640006,
+          "matrix_backend": "hierarchical",
+          "image_fill": {
+            "pair_requests": 109226133,
+            "image_interactions": 1754945658,
+            "integration_calls": 925512
+          }
+        }
+      },
+      "cache": {
+        "hit": true,
+        "path": "/workspace/jetson-pdn/operator-cache/potential-6504d09828f360f739c0ef546d44acf32d709ba0b27492b5b33afd0100713561.pickle",
+        "file_bytes": 1151244259
+      }
+    },
+    {
+      "name": "solved",
+      "seconds": 981.9885371189994,
+      "peak_RSS_MiB": 2813.578125,
+      "frequency_Hz": 1000000.0,
+      "Z_ohm": [
+        0.00888043163002181,
+        0.0051374719605192555
+      ],
+      "solves": [
+        {
+          "frequency_Hz": 1000000.0,
+          "iterations": 660,
+          "relative_residual": 9.022860938442888e-09,
+          "continuity_residual_A": 4.0253782395981277e-16,
+          "preconditioner_bytes": 4289504,
+          "preconditioner": "graph_ilu"
+        }
+      ]
+    }
+  ],
+  "requested_settings": {
+    "dmax_mm": 3.0,
+    "coarsen": 4,
+    "dielectric_tol": 0.0001,
+    "compression_tol": 1e-05,
+    "solver_tol": 1e-08,
+    "solver_maxiter": 1000,
+    "solver_restart": 100,
+    "solver_preconditioner": "graph",
+    "frequency_Hz": 1000000.0
+  }
+}

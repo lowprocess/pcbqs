@@ -79,14 +79,21 @@ class ConvergenceError(RuntimeError):
         super().__init__(f'compressed PEEC GMRES failed: status={status}, relative residual={residual:.3g}, iterations={iterations}')
 
 
-def _gmres(operator,rhs,preconditioner,tol,maxiter,history,log=None):
+def _restart(model):
+    value=getattr(model,'solver_restart',100)
+    if not isinstance(value,(int,np.integer)) or isinstance(value,bool) or value<1:
+        raise ValueError('solver_restart must be a positive integer')
+    return value
+
+
+def _gmres(operator,rhs,preconditioner,tol,maxiter,history,log=None,restart=100):
     # scipy 1.10/1.11 use tol; 1.12+ accept rtol.
     key='rtol' if 'rtol' in inspect.signature(gmres).parameters else 'tol'
     def observe(r):
         history.append(float(r))
         if log is not None and len(history)%25==0:
             log(f'peec GMRES: {len(history)} iterations, preconditioned residual {float(r):.3g}')
-    x,status=gmres(operator,rhs,M=preconditioner,atol=0.,restart=min(100,len(rhs)),
+    x,status=gmres(operator,rhs,M=preconditioner,atol=0.,restart=min(restart,len(rhs),maxiter),
                    maxiter=maxiter,callback=observe,callback_type='legacy',**{key:tol})
     residual=np.linalg.norm(operator@x-rhs)/max(np.linalg.norm(rhs),np.finfo(float).tiny)
     if status or not np.isfinite(residual) or residual>max(tol*5,1e-13):
@@ -102,7 +109,7 @@ def potential_solve(model,rhs):
     columns=rhs[:,None] if one else rhs
     answer=np.empty(columns.shape,complex)
     for k in range(columns.shape[1]):
-        answer[:,k],_=_gmres(P,columns[:,k],M,model.solver_tol,model.solver_maxiter,[])
+        answer[:,k],_=_gmres(P,columns[:,k],M,model.solver_tol,model.solver_maxiter,[],restart=_restart(model))
     return answer[:,0] if one else answer
 
 
@@ -142,6 +149,10 @@ def solve(model,freqs,amps=None):
     f=np.atleast_1d(np.asarray(freqs,float))
     if f.ndim!=1 or not np.isfinite(f).all() or (f<=0).any() or not len(f):
         raise ValueError('frequencies must be finite and positive')
+    preconditioner=getattr(model,'solver_preconditioner','auto')
+    if preconditioner not in ('auto','graph','tree'):
+        raise ValueError('solver_preconditioner must be auto, graph or tree')
+    restart=_restart(model)
     m=prepare(model);A,K,T,P,B=[m[k] for k in ('A','K','T','P','B')]
     nl=m['nl'];sources=m['sources'];names=m['names'];nb=A.shape[1];n=K.shape[1]
     excitation=np.array([(amps or {}).get(name,1.) for name in names],complex)
@@ -182,7 +193,10 @@ def solve(model,freqs,amps=None):
             counts=np.diff(K.tocsr().indptr).astype(float)
             electric_counts=np.diff(T.tocsr().indptr).astype(float)
             estimated_bytes=min(n*n,float(counts@counts+electric_counts@electric_counts))*24
-            if estimated_bytes>_PROJECTED_PRECONDITIONER_BYTES:
+            if preconditioner=='tree':
+                M,preconditioner_bytes=_tree_preconditioner(m,diagonal,zscale)
+                kind='tree_diagonal'
+            elif preconditioner=='graph' or estimated_bytes>_PROJECTED_PRECONDITIONER_BYTES:
                 try:
                     M,preconditioner_bytes=_graph_preconditioner(m,diagonal,zscale)
                     kind='graph_ilu'
@@ -207,7 +221,7 @@ def solve(model,freqs,amps=None):
             op=LinearOperator((n,n),matvec=product,dtype=complex)
             log(f'peec: {freq:g} Hz, {n:,} unknowns, {kind}, {preconditioner_bytes/1024**2:.2f} MiB preconditioner')
             try:
-                x,residual=_gmres(op,rhs,M,model.solver_tol,model.solver_maxiter,history,log)
+                x,residual=_gmres(op,rhs,M,model.solver_tol,model.solver_maxiter,history,log,restart)
             except ConvergenceError as error:
                 model.solve_info.append(dict(frequency_Hz=float(freq),iterations=error.iterations,
                     relative_residual=error.relative_residual,preconditioner=kind,converged=False,

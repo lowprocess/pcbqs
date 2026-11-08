@@ -1,0 +1,62 @@
+{
+  "frequency_Hz": 1000000.0,
+  "runs": [
+    {
+      "method": "auto",
+      "restart": 100,
+      "requested_tolerance": 1e-07,
+      "Z_ohm": [
+        0.008880432432368683,
+        0.00513747287847368
+      ],
+      "relative_Z_change_from_baseline": 0.0,
+      "seconds_after_potential": 764.5899348950006,
+      "total_seconds": 3695.539298391999,
+      "peak_RSS_MiB": 2918.1953125,
+      "frequency_Hz": 1000000.0,
+      "iterations": 631,
+      "relative_residual": 2.15012752822139e-08,
+      "continuity_residual_A": 5.052237841606382e-16,
+      "preconditioner_bytes": 22874156,
+      "preconditioner": "projected_ilu"
+    },
+    {
+      "method": "graph",
+      "restart": 100,
+      "requested_tolerance": 1e-08,
+      "Z_ohm": [
+        0.00888043163002181,
+        0.0051374719605192555
+      ],
+      "relative_Z_change_from_baseline": 1.1883521098543928e-07,
+      "seconds_after_potential": 963.8383281770002,
+      "total_seconds": 981.9885371189994,
+      "peak_RSS_MiB": 2813.578125,
+      "frequency_Hz": 1000000.0,
+      "iterations": 660,
+      "relative_residual": 9.022860938442888e-09,
+      "continuity_residual_A": 4.0253782395981277e-16,
+      "preconditioner_bytes": 4289504,
+      "preconditioner": "graph_ilu"
+    },
+    {
+      "method": "auto",
+      "restart": 300,
+      "requested_tolerance": 1e-08,
+      "Z_ohm": [
+        0.008880430479183889,
+        0.005137472510862021
+      ],
+      "relative_Z_change_from_baseline": 1.9372225803468788e-07,
+      "seconds_after_potential": 543.9952118700021,
+      "total_seconds": 566.9841092259994,
+      "peak_RSS_MiB": 2918.859375,
+      "frequency_Hz": 1000000.0,
+      "iterations": 424,
+      "relative_residual": 6.3575129592102285e-09,
+      "continuity_residual_A": 3.437828145069946e-16,
+      "preconditioner_bytes": 22874156,
+      "preconditioner": "projected_ilu"
+    }
+  ]
+}
