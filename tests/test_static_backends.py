@@ -229,3 +229,42 @@ def test_cupy_row_strips_and_pair_protocol(mesh, level, monkeypatch):
     for scalar in (False, True):
         assert device.evaluate(p, q, d, scalar_only=scalar) == pytest.approx(
             reference.evaluate(p, q, d, scalar_only=scalar), rel=2e-10, abs=1e-26)
+
+
+@pytest.mark.parametrize('level', [0, 1, 2])
+@pytest.mark.parametrize('scalar_only', [False, True])
+def test_native_whole_matrix_fill_matches_batched_pairs(mesh, monkeypatch, level, scalar_only):
+    core = backends._compiled()
+    if core is None or not hasattr(core, 'static_fill'):
+        pytest.skip('OpenMP core not built')
+    import pcbqs.static as static
+    native, info = static_moments(*mesh, backend='openmp', workers=2, outer_levels=level,
+                                  scalar_only=scalar_only, return_info=True)
+    single = static_moments(*mesh, backend='openmp', workers=1, outer_levels=level, scalar_only=scalar_only)
+    # The host scheduler with the batched static_pairs kernel: same pair code, same rule.
+    monkeypatch.setattr(static, 'OpenMPBackend', type('HostTiles', (), {}))
+    tiled, tiled_info = static_moments(*mesh, backend='openmp', workers=2, outer_levels=level,
+                                       scalar_only=scalar_only, chunk=5, return_info=True)
+    assert info['scheduler'] == 'native' and tiled_info['scheduler'] == 'host'
+    assert (info['pairs'], info['analytic_pairs']) == (tiled_info['pairs'], tiled_info['analytic_pairs'])
+    for a, b, c in zip(native, tiled, single):
+        assert np.array_equal(a, b) and np.array_equal(a, c)
+
+
+def test_native_combine_matches_sparse_galerkin_products(mesh, monkeypatch):
+    from pcbqs.static import edge_inductance, native_combine_available
+    if not native_combine_available():
+        pytest.skip('OpenMP core not built')
+    nodes, m0, mx, my, rr = static_moments(*mesh, backend='numpy')
+    r = RWG(nodes, mesh[1])
+    scale = 1/r.l
+    native, info = edge_inductance(r, rr, mx, my, m0, 1e-7, scale, workers=2)
+    again, _ = edge_inductance(r, rr, mx, my, m0, 1e-7, scale, workers=1)
+    monkeypatch.setenv('PCBQS_NO_CORE', '1')
+    fallback, fallback_info = edge_inductance(r, rr, mx, my, m0, 1e-7, scale, workers=2)
+    assert (info['backend'], fallback_info['backend']) == ('openmp', 'scipy')
+    L = combine(r, rr, mx, my, m0)
+    expected = 1e-7*0.5*(L+L.T)*np.outer(scale, scale)
+    assert native == pytest.approx(expected, rel=1e-12, abs=1e-12*np.abs(expected).max())
+    assert fallback == pytest.approx(expected, rel=1e-14, abs=1e-14*np.abs(expected).max())
+    assert np.array_equal(native, native.T) and np.array_equal(native, again)

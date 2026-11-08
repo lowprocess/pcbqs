@@ -116,3 +116,32 @@ def test_spectral_near_field_h_is_biot_savart():
     Hb = h_sheets([(nodes,tris,a,b,.5e-3),(nodes,tris,-a,-b,-.5e-3)],pts)
     for h,hb in zip(H,Hb):
         assert np.abs(h-hb).max() < .03*np.abs(hb).max()+1e-3*np.abs(Hb).max()
+
+
+def test_loop_space_impedance_equals_branch_voltage_kvl():
+    """Z from the loop equations equals Kirchhoff's voltage law over branch drops, with two coupled sources,
+    parts in the loops and finite-thickness sheet loss."""
+    poly = mapping(box(0, 0, 8, 4))
+    board = dict(stack=dict(layers=[], copper=[dict(name='F', z=0, t=.035), dict(name='B', z=1.0, t=.035)]),
+                 copper={'F': [dict(net='N', polygon=poly)], 'B': [dict(net='N', polygon=poly)]},
+                 vias=[dict(net='N', x=4.0, y=3.0, r=0.15, z0=0, z1=1.0)])
+    terms = {'a': [('F', box(0, 1, 1, 2))], 'b': [('B', box(0, 1, 1, 2))],
+             'c': [('F', box(7, 1, 8, 2))], 'd': [('B', box(7, 1, 8, 2))]}
+    q = MQS(board, 'N', terminals=terms, dmax=1.0, log=lambda *_: None, conductor_loss='slab')
+    q.source('I1', 'a', 'b'); q.source('I2', 'c', 'd')
+    q.element('C1', 'a', 'c', C=1e-6, ESR=3e-3, ESL=.4e-9)
+    freqs, amps = [1e4, 1e7], {'I1': 1.0, 'I2': .3j}
+    r = q.solve(freqs, amps)
+    m = q._mats
+    ne, nv = q.ne, q.nv
+    for i, f in enumerate(freqs):
+        w = 2*np.pi*f
+        zp = np.zeros(m['nb'], complex)
+        zp[-1] = 3e-3 + 1j*w*.4e-9 + 1/(1j*w*1e-6)
+        v = (m['R'] + q._resistance_delta(f)) @ r.i[i] + 1j*w*q._inductive_voltage(r.i[i]) + zp*r.i[i]
+        copper = np.r_[np.ones(ne + nv), np.zeros(m['nb'] - ne - nv)]
+        for k, c in m['src'].items():
+            name = q.parts[k - ne - nv]['name']
+            column = m['C'][:, c].toarray().ravel()
+            assert r.z[name][i] == pytest.approx((column @ v - m['C'][k, c]*v[k]) / amps[name], rel=1e-10)
+            assert r.zc[name][i] == pytest.approx((column*copper) @ v / amps[name], rel=1e-10)

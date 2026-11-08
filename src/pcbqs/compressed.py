@@ -69,6 +69,7 @@ def edge_inductance(model):
         support64=np.ascontiguousarray(support,np.int64)
         vertices=np.ascontiguousarray(vertices,float);alpha=np.ascontiguousarray(alpha,float)
 
+
         def entry(rows,cols):
             return core.rwg_inductance(*common,support64,vertices,alpha,np.asarray(rows,np.int64),
                                        np.asarray(cols,np.int64),MU0/(4*np.pi),workers)

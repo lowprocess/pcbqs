@@ -1,10 +1,11 @@
 """Reciprocal free-space 1/R moments, tiled across CPU/device fill backends."""
 from math import isqrt
+import os
 import time
 
 import numpy as np
 
-from .static_backends import FillEngine, bounded_map
+from .static_backends import FillEngine, OpenMPBackend, _compiled, bounded_map, resolve_workers
 
 
 def static_moments(nodes, tris, z, near=3.0, outer_levels=1, chunk=16384, scalar_only=False,
@@ -21,6 +22,9 @@ def static_moments(nodes, tris, z, near=3.0, outer_levels=1, chunk=16384, scalar
     workers controls CPU threads; chunk bounds tile pair count. Independent
     pair results are assembled by one writer, with identical reciprocity for
     every backend. Storage remains O(Nt**2), scratch is O(chunk*workers).
+    The OpenMP backend classifies, integrates and writes whole matrices
+    natively (scheduler='native'), device backends may fill row strips
+    (scheduler='device'); other backends use host tiles of `chunk`.
     return_info=True returns (moments, execution metadata).
     """
     started = time.perf_counter()
@@ -32,8 +36,16 @@ def static_moments(nodes, tris, z, near=3.0, outer_levels=1, chunk=16384, scalar
         # Device backends may own tiling, classification and reciprocal
         # writes; host pair lists and block transposes then disappear.
         analytic = engine.backend.fill_symmetric(matrices, engine.near, engine.outer_levels, scalar_only)
-        info = dict(engine.info, pairs=n*(n+1)//2, analytic_pairs=analytic, scalar_only=bool(scalar_only),
-                    seconds=time.perf_counter()-started)
+        info = dict(engine.info, scheduler='device', pairs=n*(n+1)//2, analytic_pairs=analytic,
+                    scalar_only=bool(scalar_only), seconds=time.perf_counter()-started)
+        result = (g.nodes, *matrices)
+        return (result, info) if return_info else result
+    if isinstance(engine.backend, OpenMPBackend) and hasattr(engine.backend.core, 'static_fill'):
+        count, analytic = engine.backend.core.static_fill(
+            engine.backend.data, g.cent, g.radius, g.z, float(engine.near), int(engine.outer_levels),
+            bool(scalar_only), engine.backend.workers, matrices)
+        info = dict(engine.info, scheduler='native', pairs=int(count), analytic_pairs=int(analytic),
+                    scalar_only=bool(scalar_only), seconds=time.perf_counter()-started)
         result = (g.nodes, *matrices)
         return (result, info) if return_info else result
 
@@ -78,6 +90,39 @@ def static_moments(nodes, tris, z, near=3.0, outer_levels=1, chunk=16384, scalar
             mx[p[diagonal], q[diagonal]] = (m[diagonal, 1]+m[diagonal, 3])/2
             my[p[diagonal], q[diagonal]] = (m[diagonal, 2]+m[diagonal, 4])/2
     result = (g.nodes, *matrices)
-    info = dict(engine.info, pairs=count, analytic_pairs=analytic, scalar_only=bool(scalar_only),
+    info = dict(engine.info, scheduler='host', pairs=count, analytic_pairs=analytic, scalar_only=bool(scalar_only),
                 seconds=time.perf_counter()-started)
     return (result, info) if return_info else result
+
+
+def native_combine_available():
+    core = _compiled()
+    return core is not None and hasattr(core, 'static_combine') and not os.environ.get('PCBQS_NO_CORE')
+
+
+def edge_inductance(rwg, Mrr, Mrx, Mry, M0, factor=1.0, scale=None, workers=None):
+    """factor * diag(scale) combine(rwg, Mrr, Mrx, Mry, M0) diag(scale), symmetric.
+
+    Returns (matrix, info). The compiled core gathers each entry from the two
+    triangles of each RWG function, with no temporaries beyond the output;
+    otherwise the sparse Galerkin products of combine() are used.
+    """
+    from ._numerics.base import combine
+    started = time.perf_counter()
+    scale = np.ones(rwg.Ne) if scale is None else np.ascontiguousarray(scale, float)
+    workers = resolve_workers(workers)
+    if native_combine_available() and all(m.flags.c_contiguous and m.dtype == np.float64
+                                          for m in (Mrr, Mrx, Mry, M0)):
+        tri = np.ascontiguousarray(np.stack([rwg.tp, rwg.tm]), np.int32)
+        alpha = np.stack([rwg.l/(2*rwg.area[rwg.tp]), -rwg.l/(2*rwg.area[rwg.tm])])
+        vertex = np.ascontiguousarray(np.stack([rwg.vp, rwg.vm]), float)
+        L = _compiled().static_combine(Mrr, Mrx, Mry, M0, tri, alpha, vertex, scale, float(factor), workers)
+        backend = 'openmp'
+    else:
+        L = combine(rwg, Mrr, Mrx, Mry, M0)
+        L += L.T                                   # overlap-safe: NumPy buffers the transpose
+        L *= 0.5 * factor
+        L *= scale[:, None]
+        L *= scale[None, :]
+        backend, workers = 'scipy', 1
+    return L, dict(backend=backend, workers=workers, seconds=time.perf_counter()-started)

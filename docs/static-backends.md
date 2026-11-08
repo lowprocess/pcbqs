@@ -17,7 +17,7 @@ print(q.fill_info)  # backend, worker counts, precision, timing, pair counts
 | Backend | Execution |
 |---|---|
 | `auto` | OpenMP if the updated core is built; otherwise threaded NumPy |
-| `openmp` | GIL-free C++ pair batches with explicit OpenMP team sizes |
+| `openmp` | GIL-free C++ whole-matrix fill: classification, integration and reciprocal writes in one OpenMP team |
 | `threaded` | NumPy integration in a bounded `ThreadPoolExecutor`; ufuncs release the GIL |
 | `numpy` | Serial NumPy reference; always one worker |
 | `cupy` | Optional CuPy GPU integration; one geometry upload per fill, host matrices |
@@ -48,13 +48,18 @@ on platforms without affinity. Explicit counts can exceed that default.
 PCBQS_FILL_BACKEND=openmp PCBQS_FILL_THREADS=8 python tools/nearfield_demo.py out/
 ```
 
-The free-space OpenMP fill runs one host coordinator and a native OpenMP
-team per pair batch. Layered electrostatics instead parallelizes independent
+The free-space OpenMP fill is one native call: square tiles of unordered
+pairs are OpenMP tasks that classify, integrate and write both reciprocal
+entries in place (`fill_info['scheduler'] == 'native'`), so no per-tile host
+work remains. Other backends keep the host tile scheduler (`'host'`).
+The magnetic RWG projection (`fill_info['magnetic']['combine']`) uses a
+native gather when the core is built, otherwise sparse products; it writes
+each symmetric entry once, with no temporaries beyond the output. Layered electrostatics instead parallelizes independent
 rows, with **one native worker per row**, avoiding nested thread pools.
 Threaded NumPy parallelizes tiles/rows. No global OpenMP or BLAS thread limits
 are changed. BLAS solves and field FFTs retain their separate controls.
 
-`fill_chunk` bounds pairs per tile, not triangle count. The scheduler keeps
+`fill_chunk` bounds pairs per host tile (host-scheduled backends), not triangle count. The scheduler keeps
 at most one task/result per host worker in flight. Integration scratch is
 bounded per worker; refined NumPy/CuPy batches are subdivided further to bound
 quadrature temporaries. Dense host matrices still require O(Nt²) storage.
@@ -127,6 +132,13 @@ A 6,844-triangle two-dielectric layered capacitance fill fell from 152 s to
 19.5 s on CuPy and from 65.5 s to 24.0 s on OpenMP by batching observation rows
 (bitwise-identical results). That path is now host-bound on the NumPy image
 and spline loops rather than device work.
+
+Dense MQS with the native whole-matrix fill and RWG gather (16 threads):
+
+| Triangles | Fill | RWG projection | Assembly | Peak RSS |
+|---:|---:|---:|---:|---:|
+| 3,747 | 0.47 -> 0.07 s | 1.07 -> 0.04 s | 1.75 -> 0.28 s | 1.36 -> 0.81 GB |
+| 6,630 | 1.37 -> 0.16 s | 3.77 -> 0.16 s | 5.92 -> 0.93 s | 4.01 -> 2.24 GB |
 
 ## Add a backend
 

@@ -5,6 +5,9 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -15,6 +18,8 @@ template <class T> using arr = py::array_t<T, py::array::c_style | py::array::fo
 #include "compressed_kernels.hpp"
 PYBIND11_MODULE(_core, m) {
     m.def("static_pairs", &static_pairs);
+    m.def("static_fill", &static_fill);
+    m.def("static_combine", &static_combine);
     m.def("static_thread_count", &static_thread_count);
     m.def("hmatrix_apply", &hmatrix_apply);
     m.def("static_block", &static_block);

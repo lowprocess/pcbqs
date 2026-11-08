@@ -5,36 +5,6 @@
 #include <algorithm>
 #include <vector>
 
-// A product rounded before use: compilers may not fuse it into an FMA. GCC
-// ignores fp-contract attributes/pragmas per function, so an empty asm
-// barrier materializes the product (MSVC does not contract by default).
-static inline double rmul(double a, double b) {
-    double r = a * b;
-#if defined(__GNUC__) && defined(__x86_64__)
-    __asm__("" : "+x"(r));
-#elif defined(__GNUC__) && defined(__aarch64__)
-    __asm__("" : "+w"(r));
-#elif defined(__GNUC__)
-    volatile double v = r; r = v;
-#endif
-    return r;
-}
-
-struct PairRule {
-    const double *z, *cent, *radius;
-    double near; bool all_near; int outer;
-};
-
-// FillEngine.kinds(): far (-1), analytic (0) or refined analytic (outer).
-// Rounded products keep quadrature choices identical to the NumPy rule.
-static inline int pair_kind(const PairRule &r, int p, int q, double d) {
-    const double dx = r.cent[2*p]-r.cent[2*q], dy = r.cent[2*p+1]-r.cent[2*q+1];
-    const double distance = std::sqrt((rmul(dx, dx)+rmul(dy, dy))+rmul(d, d));
-    const double size = r.radius[p]+r.radius[q];
-    if (!r.all_near && !(distance <= rmul(r.near, size))) return -1;
-    return distance <= size ? r.outer : 0;
-}
-
 // Canonical moments of the ordered pair (p, q), as compressed._moments.
 static inline void canonical_pair(const StaticGeometry &g, const PairRule &r, int p, int q,
                                   bool scalar_only, double *m) {
@@ -65,15 +35,6 @@ static inline double rwg_entry(const double *mm, long long ntb, const int *aloc,
         }
     }
     return total;
-}
-
-static PairRule pair_rule(const StaticGeometry &g, const arr<double> &z, const arr<double> &cent,
-                          const arr<double> &radius, double near, int outer, const char *who) {
-    if (z.ndim() != 1 || z.shape(0) != g.nt || cent.ndim() != 2 || cent.shape(0) != g.nt ||
-        cent.shape(1) != 2 || radius.ndim() != 1 || radius.shape(0) != g.nt ||
-        std::isnan(near) || near < 0 || outer < 0 || outer > 2)
-        throw std::invalid_argument(std::string(who) + ": invalid heights, centroids, radii or near rule");
-    return PairRule{z.data(), cent.data(), radius.data(), near, std::isinf(near), outer};
 }
 
 static void check_triangles(const long long *t, long long n, int nt, const char *who) {

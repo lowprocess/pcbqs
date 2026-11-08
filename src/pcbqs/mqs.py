@@ -33,7 +33,7 @@ from shapely.geometry import Point, box, shape
 from shapely.ops import unary_union
 
 from ._numerics.base import MU0, RWG, combine, qform, _BAR3, _W3, quad_pts
-from .static import static_moments
+from .static import edge_inductance as dense_edge_inductance, static_moments
 from .biot import rwg_currents, h_sheets, h_segments
 from .pdn.mesh import copper_of, mesh_sheet, stack_z
 
@@ -240,15 +240,19 @@ class MQS:
         self.fill_info['magnetic'] = info
         self.log(f'mqs: {info["backend"]} matrix fill, {info["workers"]} worker(s), {info["seconds"]:.2f} s')
         r = RWG(nodes, self.tris)
-        L = MU0 / (4 * np.pi) * combine(r, Mrr, Mrx, Mry, M0)
-        L = 0.5 * (L + L.T)
+        # in total currents across each edge (i = l I): Z / (l_m l_n)
+        s = 1.0 / r.l
+        L, combine_info = dense_edge_inductance(r, Mrr, Mrx, Mry, M0, MU0 / (4 * np.pi), s,
+                                          self._fill_options['workers'])
+        info['combine'] = combine_info
+        del Mrr, Mrx, Mry, moments
         if self.capacitance and self._potential is None:
             if self.dielectric == 'homogeneous':
                 self._set_potential(M0)
                 self.fill_info['capacitance'] = dict(info, reused_magnetic_moments=True)
             else:
                 self._ensure_potential()
-        return self._sheet_resistance(r), L * np.outer(1/r.l,1/r.l)
+        return self._sheet_resistance(r), L
 
     def _sheet_resistance(self,r):
         # R: the Gram matrix of the RWG functions, each triangle at its sheet resistance
@@ -432,8 +436,10 @@ class MQS:
     def _inductive_voltage(self, currents):
         Le, Lv = self._mats['L']
         out = np.zeros_like(currents, dtype=complex)
-        out[:self.ne] = Le @ currents[:self.ne]
-        out[self.ne:self.ne + self.nv] = Lv @ currents[self.ne:self.ne + self.nv]
+        # Real matrices times complex currents: two real products, never a
+        # complex copy of the dense copper inductance.
+        for block, L in ((slice(0, self.ne), Le), (slice(self.ne, self.ne + self.nv), Lv)):
+            out[block] = L @ currents[block].real + 1j * (L @ currents[block].imag)
         return out
 
     def solve(self, freqs, amps=None):
@@ -455,31 +461,33 @@ class MQS:
         I = np.zeros((len(f), nb), complex)
         Z = {n: np.zeros(len(f), complex) for n in src}
         Zc = {n: np.zeros(len(f), complex) for n in src}
-        cu = np.r_[np.ones(ne + nv), np.zeros(nb - ne - nv)]           # the copper's branches
+        sc = list(src.values())
         for i, fi in enumerate(f):
             w = 2 * np.pi * fi
             zp = np.zeros(nb, complex)                           # the parts' own impedances
             for k, p in enumerate(self.parts):
                 if p['kind'] == 'Z':
                     zp[ne + nv + k] = p['R'] + 1j * w * p['L'] + (1 / (1j * w * p['C']) if p.get('C') else 0)
-            Zl = m['Rl'] + 1j * w * m['Ll'] + (Cd.T @ diags(zp) @ Cd).toarray()
+            # Loop impedance of the copper alone, then with the parts' own RLC.
+            Zcu = np.empty(m['Rl'].shape, complex)
+            Zcu.real, Zcu.imag = m['Rl'], w * m['Ll']
             dR = self._resistance_delta(fi)
             if dR.nnz:
-                Zl += (Cd.T @ dR @ Cd).toarray()
+                Zcu += (Cd.T @ dR @ Cd).toarray()
+            Zl = Zcu + (Cd.T @ diags(zp) @ Cd).toarray()
             x = np.zeros(Cd.shape[1], complex)
             for n, c in src.items():
                 x[c] = (amps or {}).get(n, 1.0)
-            sc = list(src.values())
             rhs = -Zl[np.ix_(free, sc)] @ x[sc]
             x[free] = np.linalg.solve(Zl[np.ix_(free, free)], rhs)
             I[i] = Cd @ x
-            v = (m['R'] + dR) @ I[i] + 1j * w * self._inductive_voltage(I[i]) + zp * I[i]
-            for n, c in src.items():
-                k = next(kk for kk, cc in m['src'].items() if cc == c)
-                # Kirchhoff's voltage law round its loop: the drops in the rest of it are the copper loop's Z x I
-                column = Cd[:, c].toarray().ravel()
-                Z[n][i] = (column @ v - Cd[k, c] * v[k]) / x[c] if x[c] else np.nan
-                Zc[n][i] = (column * cu) @ v / x[c] if x[c] else np.nan
+            # Kirchhoff's voltage law round each source's loop, in loop space:
+            # C^T v = Zl x, where v holds every branch drop (the copper's mutual
+            # coupling included) and the ideal source branch itself drops nothing.
+            loop_v, copper_v = Zl[sc] @ x, Zcu[sc] @ x
+            for j, (n, c) in enumerate(src.items()):
+                Z[n][i] = loop_v[j] / x[c] if x[c] else np.nan
+                Zc[n][i] = copper_v[j] / x[c] if x[c] else np.nan
         return Result(f, I, Z, [p['name'] for p in self.parts], Zc)
 
     def moment(self, res, fi):

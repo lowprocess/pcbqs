@@ -54,6 +54,19 @@ def _positive_integer(value, name):
     return int(value)
 
 
+def resolve_workers(workers=None):
+    """Explicit count, else PCBQS_FILL_THREADS, PCBQS_OMP_THREADS, OMP_NUM_THREADS, then default_workers()."""
+    if workers is None:
+        key = next((k for k in ('PCBQS_FILL_THREADS', 'PCBQS_OMP_THREADS', 'OMP_NUM_THREADS')
+                    if k in os.environ), None)
+        env = os.environ.get(key) if key else None
+        try:
+            workers = int(env.split(',')[0] if key == 'OMP_NUM_THREADS' else env) if env is not None else default_workers()
+        except ValueError as exc:
+            raise ValueError(f'{key} must be a positive integer') from exc
+    return _positive_integer(workers, 'workers')
+
+
 def bounded_map(function, items, workers):
     """Ordered results with at most `workers` tasks/results in flight, including on failure."""
     if workers == 1:
@@ -214,15 +227,7 @@ class FillEngine:
         requested = backend or os.environ.get('PCBQS_FILL_BACKEND', 'auto')
         if requested == 'auto':
             requested = os.environ.get('PCBQS_FILL_BACKEND', 'auto')
-        if workers is None:
-            key = next((k for k in ('PCBQS_FILL_THREADS', 'PCBQS_OMP_THREADS', 'OMP_NUM_THREADS')
-                        if k in os.environ), None)
-            env = os.environ.get(key) if key else None
-            try:
-                workers = int(env.split(',')[0] if key == 'OMP_NUM_THREADS' else env) if env is not None else default_workers()
-            except ValueError as exc:
-                raise ValueError(f'{key} must be a positive integer') from exc
-        workers = _positive_integer(workers, 'workers')
+        workers = resolve_workers(workers)
         self.chunk = _positive_integer(chunk, 'chunk')
         self.near, self.outer_levels = near, outer_levels
         name = ('openmp' if _compiled() is not None and not os.environ.get('PCBQS_NO_CORE')
