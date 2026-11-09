@@ -102,7 +102,8 @@ def pcbqs(dmax, sheets=1, backend='dense', face='pair', workers=16):
     q.source('port', 'A', 'B', part_h=0.0)
     r = q.solve(F)
     Z = np.asarray(r.zc['port'])
-    row = dict(tool='pcbqs', sheets=sheets, backend=backend, face=face if sheets == 2 else None, mesh=dmax, n=len(q.tris), R=Z.real, L=Z.imag / (2 * np.pi * F),
+    row = dict(tool='pcbqs', sheets=sheets, backend=backend, face=face if sheets == 2 else None, mesh=dmax,
+               n=len(q.tris), R=Z.real, L=Z.imag / (2 * np.pi * F),
                seconds=time.perf_counter() - t)
     print(f"cm5: pcbqs dmax {dmax} sheets {sheets} {backend} {row['face'] or ''}: L {np.round(row['L'] * 1e9, 4)} nH, "
           f"R {np.round(Z.real * 1e3, 3)} mOhm ({row['n']:,} triangles, {row['seconds']:.0f} s)", flush=True)
@@ -113,7 +114,8 @@ def palace(h):
     from mqs_palace import palace_loop
     q = palace_loop(case(), nets(), PORT_GAP, 'x', F, DIR / f'palace_h{h:g}', h_cu=h)
     row = dict(tool='palace', mesh=h, n=q['tets'], L=q['Z'].imag / (2 * np.pi * F), seconds=q['seconds'])
-    print(f"cm5: Palace h {h}: L {np.round(row['L'] * 1e9, 4)} nH ({q['tets']:,} tets, {q['seconds']:.0f} s)", flush=True)
+    print(f"cm5: Palace h {h}: L {np.round(row['L'] * 1e9, 4)} nH ({q['tets']:,} tets, {q['seconds']:.0f} s)",
+          flush=True)
     return row
 
 
@@ -206,8 +208,9 @@ def figure():
     rows = r['rows']
     plt = style()
     fig, ax = plt.subplots(1, 2, figsize=(10, 3.8))
-    series = [('pcbqs, one sheet', PCBQS, 'o-', lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 1 and x['backend'] == 'hierarchical'),
-              ('pcbqs, two face sheets', PCBQS, 's--', lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 2 and x.get('face') == 'overlap'),
+    one = lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 1 and x['backend'] == 'hierarchical'
+    two = lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 2 and x.get('face') == 'overlap'
+    series = [('pcbqs, one sheet', PCBQS, 'o-', one), ('pcbqs, two face sheets', PCBQS, 's--', two),
               ('Palace, PEC sheets', REFERENCE, 'D-', lambda x: x['tool'] == 'palace')]
     for label, colour, style_, pick in series:
         rr = sorted((x for x in rows if pick(x)), key=lambda x: -x['mesh'])
@@ -239,8 +242,9 @@ def report():
     for row in sorted(r['rows'], key=lambda x: (x['tool'], str(x.get('sheets')), str(x.get('face')), x['mesh'])):
         L = np.array(row['L']) * 1e9
         R = np.array(row['R']) * 1e3 if 'R' in row else None
-        what = row['tool'] + (f" sheets {row['sheets']} {row['backend']} {row.get('face') or ''}" if row['tool'] == 'pcbqs'
-                              else '')
+        what = row['tool']
+        if row['tool'] == 'pcbqs':
+            what += f" sheets {row['sheets']} {row['backend']} {row.get('face') or ''}"
         print(f"{what:32s} mesh {row['mesh']:<5g} n {row['n']:>9,}  L {np.round(L, 4)} nH"
               + (f"  R {np.round(R, 3)} mOhm" if R is not None else '') + f"  {row['seconds']:.0f} s")
 

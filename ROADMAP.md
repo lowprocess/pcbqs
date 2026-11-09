@@ -94,8 +94,18 @@ In order:
    Started (2026-11-09):
    - `panels3d.py`: the 1/R moments between triangles of any orientation, which side walls need. It reproduces the
      horizontal kernel exactly, and is checked against rotations and brute-force quadrature (`test_panels3d.py`).
-     Still to do: wall panels in the mesh, 3D RWG functions across face–wall edges, the walls' resistance (it must
-     leave DC unchanged), and their entries in the compressed backend.
+     `walls.py`: each layer's boundary loops as wall panels of the copper's thickness, owned by the boundary
+     triangle beneath (its circuit node, which both faces already share), carrying rooftop currents along the wall;
+     their inductance with each other and with the sheets' RWG functions (`test_walls.py`: a straight wall and a
+     rectangle of wall against Grover within 0.1–1%, symmetric positive definite, reciprocal on a sheet's edge).
+     Still to do, in order:
+     1. The walls' impedance. A skin-only surface impedance vanishes at DC (the walls would short the copper),
+        and a fixed slice adds cross-section the faces already carry. Proposed: each wall owns the copper within
+        t/2 of its edge (the slab two-port across that depth) and the boundary triangles' faces give that strip up,
+        so DC is unchanged and the wall takes the side's skin current above ~3 MHz.
+     2. Rooftops as branches in MQS (between consecutive boundary triangles' nodes), with their R, L and the
+        mutual inductance to the sheets and vias; dense first, then the compressed backend's entries (native).
+     3. Check: DC unchanged; the strip loop, the plane return and CM5 against FastHenry.
    - `face_correction='overlap'`: two face sheets now converge on a real six-layer board (CM5); see
      validation/README.md. Whether it becomes the default waits on FastHenry's CM5 result.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,

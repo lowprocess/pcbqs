@@ -47,8 +47,10 @@ def frames(V):
     return V[:, 0], e1, e2, n, 0.5 * area2
 
 
-def pair_moments(Vo, Vs, outer_levels=1, scalar_only=False):
-    """(m0, mro, mrs, mrr) of each pair (Vo[k], Vs[k]): m0, mrr (m,), mro, mrs (m, 3). See the module."""
+def pair_moments(Vo, Vs, outer_levels=1, scalar_only=False, tensor=False):
+    """(m0, mro, mrs, mrr) of each pair (Vo[k], Vs[k]): m0, mrr (m,), mro, mrs (m, 3). See the module.
+    tensor=True: mrr is instead int int r r'^T / R (m, 3, 3) (its trace is the scalar mrr), for bases whose current
+    is any linear map of position, such as rooftops along a side wall (affine_pair)."""
     Vo, Vs = np.asarray(Vo, float), np.asarray(Vs, float)
     bar, w = _rule(outer_levels)
     o, e1, e2, n, _ = frames(Vs)
@@ -87,7 +89,10 @@ def pair_moments(Vo, Vs, outer_levels=1, scalar_only=False):
     W = o[:, None] * I1[..., None] + W2[..., :1] * e1[:, None] + W2[..., 1:] * e2[:, None]   # int r'/R (m, q, 3)
     mro = (wq[..., None] * P * I1[..., None]).sum(1)
     mrs = (wq[..., None] * W).sum(1)
-    mrr = (wq * (P * W).sum(-1)).sum(1)
+    if tensor:
+        mrr = np.einsum('mq,mqi,mqj->mij', wq, P, W)
+    else:
+        mrr = (wq * (P * W).sum(-1)).sum(1)
     return m0, mro, mrs, mrr
 
 
@@ -96,3 +101,14 @@ def rwg_pair(moments, ao, vo, as_, vs):
     the source triangle, from pair_moments' (m0, mro, mrs, mrr); ao, as_ (m,), vo, vs (m, 3)."""
     m0, mro, mrs, mrr = moments
     return ao * as_ * (mrr - (vs * mro).sum(-1) - (vo * mrs).sum(-1) + (vo * vs).sum(-1) * m0)
+
+
+def affine_pair(moments, Mo, vo, Ms, vs):
+    """int int f_o . f_s / R for affine currents f_o = Mo (r - vo) and f_s = Ms (r' - vs) (Mo, Ms (m, 3, 3); vo, vs
+    (m, 3)), from pair_moments(..., tensor=True). An RWG half is M = alpha I; a rooftop along a wall of direction
+    tau is M = c tau tau^T."""
+    m0, mro, mrs, T = moments
+    K = np.einsum('mki,mkj->mij', Mo, Ms)                  # f_o . f_s = (r - vo)^T Mo^T Ms (r' - vs)
+    G = (T - vo[:, :, None] * mrs[:, None, :] - mro[:, :, None] * vs[:, None, :]
+         + vo[:, :, None] * vs[:, None, :] * m0[:, None, None])
+    return (K * G).sum((1, 2))

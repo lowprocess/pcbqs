@@ -75,7 +75,8 @@ def test_separated_pairs_at_any_angle_match_quadrature():
     rng = np.random.default_rng(3)
     m = 30
     base = np.array([[0, 0, 0], [0.3e-3, 0, 0], [0.1e-3, 35e-6, 0]])          # a wall-like sliver, 0.3 mm x 35 um
-    Vo = np.stack([base @ _rot(rng.normal(size=3), rng.uniform(0, np.pi)).T + rng.uniform(-1e-3, 1e-3, 3) for _ in range(m)])
+    Vo = np.stack([base @ _rot(rng.normal(size=3), rng.uniform(0, np.pi)).T + rng.uniform(-1e-3, 1e-3, 3)
+                   for _ in range(m)])
     Vs = np.stack([base @ _rot(rng.normal(size=3), rng.uniform(0, np.pi)).T + rng.uniform(-1e-3, 1e-3, 3) + [2e-3, 0, 0]
                    for _ in range(m)])
     a, b = pair_moments(Vo, Vs, outer_levels=2), _brute(Vo, Vs)
