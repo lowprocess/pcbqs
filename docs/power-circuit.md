@@ -298,6 +298,9 @@ current. Options alone on one fixed wpthb netlist (`tools/benchmark_circuit_opti
 | abstol 1e-6 (final) | 87 s | ≤ 0.03% | −0.02% |
 | trap | 83 s | ≤ 0.03% | +0.1% |
 
+Both tools now build their variants from `SOLVER_DEFAULTS` (abstol 1e-6); the
+`abstol1e-9` variant reproduces the old row.
+
 `tools/benchmark_circuit_solver.py` is a small wpthb-like converter for
 comparing ngspice settings and Xyce. Xyce ran its behavioural-switch version
 reliably where ngspice failed to converge, but was not faster (3.6 s against

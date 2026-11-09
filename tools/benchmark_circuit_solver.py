@@ -22,6 +22,9 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from pcbqs.power_spice import options_line  # noqa: E402
+
 HERE = Path('circuit-solver-bench')
 F = 110e3
 T = 1 / F
@@ -139,20 +142,20 @@ def run(sim, model, opts, cycles=40, tag=''):
     return res
 
 
-NG_BASE = 'method=gear maxord=2 reltol=1e-4 abstol=1e-9 vntol=1e-6 chgtol=1e-12 gmin=1e-10 rshunt=1e12'
+NG = lambda **changes: options_line(changes)    # pcbqs's SOLVER_DEFAULTS with these changes
 CASES = [
-    # ngspice, pcbqs's options and variations
-    ('ngspice', 'vdmos', dict(options=NG_BASE, samples=2048), 'reference'),       # reltol 1e-5/1e-6 do not converge
-    ('ngspice', 'vdmos', dict(options=NG_BASE), 'pcbqs-default'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE, klu=False), 'sparse'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE.replace('reltol=1e-4', 'reltol=1e-3')), 'reltol1e-3'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE.replace('chgtol=1e-12', 'chgtol=1e-14')), 'chgtol-default'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE.replace('method=gear maxord=2', 'method=trap')), 'trap'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE + ' trtol=7'), 'trtol7'),
-    ('ngspice', 'vdmos', dict(options=NG_BASE.replace('reltol=1e-4', 'reltol=1e-3') + ' trtol=7'), 'reltol1e-3-trtol7'),
-    ('ngspice', 'smooth', dict(options=NG_BASE.replace('reltol=1e-4', 'reltol=1e-6'), samples=1024), 'reference'),
-    ('ngspice', 'smooth', dict(options=NG_BASE), 'pcbqs-default'),
-    ('ngspice', 'smooth', dict(options=NG_BASE.replace('reltol=1e-4', 'reltol=1e-3')), 'reltol1e-3'),
+    # ngspice, pcbqs's options and variations; the references also tighten abstol
+    ('ngspice', 'vdmos', dict(options=NG(abstol=1e-9), samples=2048), 'reference'),       # reltol 1e-5/1e-6 do not converge
+    ('ngspice', 'vdmos', dict(options=NG()), 'pcbqs-default'),
+    ('ngspice', 'vdmos', dict(options=NG(), klu=False), 'sparse'),
+    ('ngspice', 'vdmos', dict(options=NG(reltol=1e-3)), 'reltol1e-3'),
+    ('ngspice', 'vdmos', dict(options=NG(chgtol=1e-14)), 'chgtol-default'),
+    ('ngspice', 'vdmos', dict(options=NG(method='trap')), 'trap'),
+    ('ngspice', 'vdmos', dict(options=NG() + ' trtol=7'), 'trtol7'),
+    ('ngspice', 'vdmos', dict(options=NG(reltol=1e-3) + ' trtol=7'), 'reltol1e-3-trtol7'),
+    ('ngspice', 'smooth', dict(options=NG(reltol=1e-6, abstol=1e-9), samples=1024), 'reference'),
+    ('ngspice', 'smooth', dict(options=NG()), 'pcbqs-default'),
+    ('ngspice', 'smooth', dict(options=NG(reltol=1e-3)), 'reltol1e-3'),
     # Xyce, smooth switch
     ('xyce', 'smooth', dict(options='reltol=1e-4 abstol=1e-9 method=gear maxord=2'), 'gear-1e-4'),
     ('xyce', 'smooth', dict(options='reltol=1e-3 abstol=1e-9 method=gear maxord=2'), 'gear-1e-3'),

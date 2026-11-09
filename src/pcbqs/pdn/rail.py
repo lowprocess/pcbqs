@@ -49,8 +49,7 @@ def part_value(fp):
     """The first value among a footprint's Val / Value fields and their '_'-separated pieces ('R_0R001_0805'), or
     None. fp: a footprint dict or a Part."""
     props, value = _pv(fp)
-    for key in ('Val', 'Value', 'value'):
-        v = props.get(key) if key != 'value' else value
+    for v in (props.get('Val'), props.get('Value'), value):
         if not v:
             continue
         for tok in [v] + re.split(r'[_\s]+', str(v)):
@@ -113,6 +112,11 @@ class Series:
     z100: float = None          # a bead's impedance at 100 MHz
     defaulted: bool = False
     L: float = 0.0              # a series inductor's inductance, H
+
+    def pads(self, side):
+        """Its pads on net a or b (side 'a' or 'b')."""
+        net = getattr(self, side)
+        return [q for q in self.part.pads if q.net == net]
 
 
 def parts_of(board):
@@ -236,6 +240,12 @@ class Rail:
         for r in self.loads:
             if not self.parts[r].on(self.nets):
                 raise ValueError(f"load {r} has no pad on the rail ({', '.join(sorted(self.nets))})")
+
+    def pads_of(self, part, role=None):
+        """(rail pads, ground pads) of a part: the source's are source_pads and ground_source_pads."""
+        if role == 'source':
+            return self.source_pads, self.ground_source_pads
+        return part.on(self.nets), part.on(set(self.ground))
 
     def describe(self):
         lines = [f"rail {self.net}: nets {', '.join(sorted(self.nets))}"]

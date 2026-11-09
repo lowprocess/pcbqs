@@ -35,9 +35,7 @@ from shapely.ops import unary_union
 from ._numerics.base import MU0, RWG, combine, qform, _BAR3, _W3, quad_pts
 from .static import edge_inductance as dense_edge_inductance, static_moments
 from .biot import rwg_currents, h_sheets, h_segments
-from .pdn.mesh import copper_of, mesh_sheet, simplify_copper, stack_z
-
-SIGMA_CU = 5.8e7
+from .pdn.mesh import copper_of, mesh_sheet, simplify_copper, stack_z, SIGMA_CU
 
 
 def filament_mutual(z0a, z1a, z0b, z1b, s):

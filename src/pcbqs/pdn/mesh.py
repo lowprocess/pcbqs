@@ -21,6 +21,8 @@ from scipy.sparse import coo_matrix
 
 from .._numerics.geo import mesh_polygons
 
+SIGMA_CU = 5.8e7                # copper, S/m (shared by mqs, dc, cavity, stack)
+
 
 @dataclass
 class Sheet:
@@ -40,7 +42,7 @@ class Sheet:
         return self.rings[self.key.index(i)] if i in self.key else []
 
     def region(self, k):
-        return (self.regions or [])[k] if self.regions and k < len(self.regions) else []
+        return self.regions[k] if self.regions and k < len(self.regions) else []
 
 
 def copper_of(board, net, layer):

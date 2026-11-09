@@ -18,48 +18,46 @@ import time
 
 import numpy as np
 
-DESCRIBE_FORMAT = 1
+from .._cli import add_options, describe as describe_options, load_board, print_describe
+
 G_RAIL, G_DC, G_PDN, G_MESH = 'Rail', 'DC', 'PDN impedance', 'Mesh'
 OPTIONS = [
-    # key, flag, kind, default, help, group, choices
-    ('rail', '--rail', 'str', '', "the rail's net (the tree grows from it through series parts)", G_RAIL, None),
-    ('ground', '--ground', 'str', 'GND', "its ground net(s), comma-separated", G_RAIL, None),
-    ('volts', '--volts', 'float', 3.3, "the rail's voltage at its source", G_RAIL, None),
-    ('source', '--source', 'str', '', "the part it is fed from (default: the power inductor feeding the tree)", G_RAIL, None),
-    ('ground_source', '--ground-source', 'str', '', "the part whose ground pads its return goes back to (default: "
-     "the parts on that inductor's switch node)", G_RAIL, None),
-    ('load', '--load', 'list', [], "a load: REF=AMPS (repeat)", G_RAIL, None),
-    ('spread_load', '--spread-load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
-     "(an assumption, for a first look when the loads are not known)", G_RAIL, None),
-    ('max_ohms', '--max-ohms', 'float', 1.0, "the largest resistor the tree follows (sense and 0 ohm links)", G_RAIL, None),
-    ('through', '--through', 'str', '', "parts the tree follows whatever they are, comma-separated (an inductor "
-     "named here is a series filter inductor: its inductance and DCR stay in the model)", G_RAIL, None),
-    ('dcr', '--dcr', 'list', [], "a series part's DC resistance: REF=OHMS (repeat); overrides its value or the "
-     "assumed default", G_RAIL, None),
-    ('cap', '--cap', 'list', [], "a capacitor's datasheet values: REF=C[,ESR[,ESL]] in F, ohms, H (repeat); overrides "
-     "its value field and the package defaults", G_PDN, None),
-    ('stop', '--stop', 'str', '', "parts the tree never follows, comma-separated", G_RAIL, None),
-    ('plating', '--plating', 'float', 0.025, "via plating thickness, mm", G_DC, None),
-    ('dmax', '--dmax', 'float', 1.0, "the largest mesh cell, mm (finer at the source and the loads)", G_MESH, None),
-    ('plane_min', '--plane-min', 'float', 0.0, "smallest rail or ground copper on a layer counted as a plane, mm^2 "
-     "(0: a tenth of the board's area; small rails need less)", G_PDN, None),
-    ('vrm_r', '--vrm-r', 'float', 1e-3, "the regulator's output resistance, ohms", G_PDN, None),
-    ('vrm_l', '--vrm-l', 'float', 30e-9, "the regulator's output inductance (its loop's bandwidth), H", G_PDN, None),
-    ('fmin', '--fmin', 'float', 1e4, "lowest frequency, Hz", G_PDN, None),
-    ('fmax', '--fmax', 'float', 2e9, "highest frequency, Hz", G_PDN, None),
-    ('points', '--points', 'int', 160, "frequencies (log-spaced)", G_PDN, None),
-    ('target', '--target', 'float', 0.0, "the target impedance, ohms (0: volts x ripple / step)", G_PDN, None),
-    ('ripple', '--ripple', 'float', 0.05, "the allowed ripple, a fraction of the voltage", G_PDN, None),
-    ('step', '--step', 'float', 0.0, "the load step, A (0: half the loads' current)", G_PDN, None),
-    ('no_pdn', '--no-pdn', 'bool', False, "the DC drop only", G_PDN, None),
+    # key, kind, default, help, group (pcbqs._cli: the flag is --key)
+    ('rail', 'str', '', "the rail's net (the tree grows from it through series parts)", G_RAIL),
+    ('ground', 'str', 'GND', "its ground net(s), comma-separated", G_RAIL),
+    ('volts', 'float', 3.3, "the rail's voltage at its source", G_RAIL),
+    ('source', 'str', '', "the part it is fed from (default: the power inductor feeding the tree)", G_RAIL),
+    ('ground_source', 'str', '', "the part whose ground pads its return goes back to (default: "
+     "the parts on that inductor's switch node)", G_RAIL),
+    ('load', 'list', [], "a load: REF=AMPS (repeat)", G_RAIL),
+    ('spread_load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
+     "(an assumption, for a first look when the loads are not known)", G_RAIL),
+    ('max_ohms', 'float', 1.0, "the largest resistor the tree follows (sense and 0 ohm links)", G_RAIL),
+    ('through', 'str', '', "parts the tree follows whatever they are, comma-separated (an inductor "
+     "named here is a series filter inductor: its inductance and DCR stay in the model)", G_RAIL),
+    ('dcr', 'list', [], "a series part's DC resistance: REF=OHMS (repeat); overrides its value or the "
+     "assumed default", G_RAIL),
+    ('cap', 'list', [], "a capacitor's datasheet values: REF=C[,ESR[,ESL]] in F, ohms, H (repeat); overrides "
+     "its value field and the package defaults", G_PDN),
+    ('stop', 'str', '', "parts the tree never follows, comma-separated", G_RAIL),
+    ('plating', 'float', 0.025, "via plating thickness, mm", G_DC),
+    ('dmax', 'float', 1.0, "the largest mesh cell, mm (finer at the source and the loads)", G_MESH),
+    ('plane_min', 'float', 0.0, "smallest rail or ground copper on a layer counted as a plane, mm^2 "
+     "(0: a tenth of the board's area; small rails need less)", G_PDN),
+    ('vrm_r', 'float', 1e-3, "the regulator's output resistance, ohms", G_PDN),
+    ('vrm_l', 'float', 30e-9, "the regulator's output inductance (its loop's bandwidth), H", G_PDN),
+    ('fmin', 'float', 1e4, "lowest frequency, Hz", G_PDN),
+    ('fmax', 'float', 2e9, "highest frequency, Hz", G_PDN),
+    ('points', 'int', 160, "frequencies (log-spaced)", G_PDN),
+    ('target', 'float', 0.0, "the target impedance, ohms (0: volts x ripple / step)", G_PDN),
+    ('ripple', 'float', 0.05, "the allowed ripple, a fraction of the voltage", G_PDN),
+    ('step', 'float', 0.0, "the load step, A (0: half the loads' current)", G_PDN),
+    ('no_pdn', 'bool', False, "the DC drop only", G_PDN),
 ]
 
 
 def describe():
-    import pcbqs
-    return dict(format=DESCRIBE_FORMAT, version=getattr(pcbqs, '__version__', '?'),
-                options=[dict(key=k, flag=f, kind=t, default=d, help=h, group=g, choices=c)
-                         for k, f, t, d, h, g, c in OPTIONS])
+    return describe_options(OPTIONS)
 
 
 def parser():
@@ -68,32 +66,13 @@ def parser():
     ap.add_argument('--out', default='pdn', help='output folder')
     ap.add_argument('--describe', action='store_true', help='print the options and exit')
     ap.add_argument('--json', action='store_true', help='with --describe: as JSON')
-    for k, f, t, d, h, g, c in OPTIONS:
-        if t == 'bool':
-            ap.add_argument(f, dest=k, action='store_true', help=h)
-        elif t == 'list':
-            ap.add_argument(f, dest=k, action='append', default=[], help=h)
-        else:
-            ap.add_argument(f, dest=k, type={'float': float, 'int': int, 'str': str}[t], default=d, help=h)
+    add_options(ap, OPTIONS)
     return ap
 
 
 def say(*a):
     print('pdn:', *a, flush=True)
 
-
-def load_board(path, nets):
-    """board.json's dict of `nets` (a set) from a .kicad_pcb (through kicad2ems) or a board.json."""
-    if path.endswith('.json'):
-        return json.load(open(path))
-    try:
-        from kicad2ems.importers import open_board
-        from kicad2ems.board import Board
-    except ImportError as exc:
-        raise RuntimeError('KiCad input requires pcbqs[kicad2ems]; JSON input works independently') from exc
-    raw = open_board(path)
-    b = Board(raw, nets=sorted(nets), parts='none', need_ports=False, log=lambda *a: None)
-    return b.to_dict()
 
 
 def spread(board, rail_net, amps):
@@ -102,6 +81,21 @@ def spread(board, rail_net, amps):
              and not f['ref'].upper().startswith(('C', 'R', 'L', 'FB'))}
     tot = sum(users.values())
     return {r: amps * n / tot for r, n in users.items()} if tot else {}
+
+
+def ref_values(items, flag, form, most=1):
+    """{REF: [values]} of REF=V[,V...] options (`most` values, each positive); SystemExit naming the bad one."""
+    out = {}
+    for item in items:
+        ref, _, rest = item.partition('=')
+        try:
+            vals = [float(x) for x in rest.split(',') if x.strip()]
+        except ValueError:
+            vals = []
+        if not ref.strip() or not 1 <= len(vals) <= most or any(not np.isfinite(v) or v <= 0 for v in vals):
+            raise SystemExit(f'pdn: error: {flag} {item!r}: expected {form}, positive')
+        out[ref.strip()] = vals
+    return out
 
 
 def bands(f, z, target):
@@ -118,26 +112,18 @@ def run(a):
     ground = tuple(x.strip() for x in a.ground.split(',') if x.strip())
     if not a.rail:
         raise SystemExit('pdn: --rail is required')
+    if a.plane_min < 0:                                 # every option checked before the (slow) board import
+        raise SystemExit('pdn: error: --plane-min must be nonnegative')
+    loads = {r: v[0] for r, v in ref_values(a.load, '--load', 'REF=AMPS').items()}
+    dcr = {r: v[0] for r, v in ref_values(a.dcr, '--dcr', 'REF=OHMS').items()}
+    caps = {r: dict(zip(('C', 'ESR', 'ESL'), v)) for r, v in ref_values(a.cap, '--cap', 'REF=C[,ESR[,ESL]]', 3).items()}
     say(f'reading {os.path.basename(a.board)}')
     board = load_board(a.board, {a.rail, *ground})
-    loads = {}
-    for s in a.load:
-        ref, _, amps = s.partition('=')
-        loads[ref.strip()] = float(amps)
     assumed = False
     if not loads and a.spread_load > 0:
         loads, assumed = spread(board, a.rail, a.spread_load), True
     if not loads:
         raise SystemExit('pdn: no loads: --load REF=AMPS, or --spread-load AMPS')
-    dcr = {}
-    for item in a.dcr:
-        ref, _, ohms = item.partition('=')
-        try:
-            dcr[ref.strip()] = float(ohms)
-        except ValueError:
-            raise SystemExit(f'pdn: error: --dcr {item!r}: expected REF=OHMS')
-        if dcr[ref.strip()] <= 0:
-            raise SystemExit(f'pdn: error: --dcr {item!r}: resistance must be positive')
     kw = dict(ground=ground, loads=loads, source=a.source or None, ground_source=a.ground_source or None,
               max_ohms=a.max_ohms, through=tuple(x for x in a.through.split(',') if x),
               stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr)
@@ -150,7 +136,7 @@ def run(a):
         say(line.strip())
     say('DC: meshing and solving')
     t = time.time()
-    dc = solve_rail(rail, a.volts, dmax=a.dmax, plating=a.plating, log=lambda m: say(m))
+    dc = solve_rail(rail, a.volts, dmax=a.dmax, plating=a.plating, log=say)
     t_dc = time.time() - t
     out = dict(format=1, rail=a.rail, nets=sorted(rail.nets), ground=list(ground), volts=a.volts, assumed_loads=assumed,
                settings={k: getattr(a, k) for k, *_ in OPTIONS},
@@ -158,10 +144,10 @@ def run(a):
                source=[p.ref for p in rail.source_parts],
                loads={r: dict(I=v['I'], V=v['V'], drop=v['drop'], power_drop=v['power_drop'], ground_rise=v['ground_rise'])
                       for r, v in dc['loads'].items()},
-               series={r: v for r, v in dc['series'].items()},
+               series=dict(dc['series']),
                loss_W=dc['power'].loss + dc['ground'].loss,
-               vias=dict(power=sorted([dict(x=v['x'], y=v['y'], I=v['I']) for v in dc['power'].vias], key=lambda v: -v['I'])[:20],
-                         ground=sorted([dict(x=v['x'], y=v['y'], I=v['I']) for v in dc['ground'].vias], key=lambda v: -v['I'])[:20]),
+               vias={side: sorted([dict(x=v['x'], y=v['y'], I=v['I']) for v in dc[side].vias], key=lambda v: -v['I'])[:20]
+                     for side in ('power', 'ground')},
                vertices=dict(power=dc['power'].nodes, ground=dc['ground'].nodes), seconds=dict(dc=round(t_dc, 1)),
                notes=list(rail.notes) + dc['notes'])
     say(f"DC done in {t_dc:.1f} s: worst drop {max(v['drop'] for v in out['loads'].values()) * 1e3:.2f} mV")
@@ -169,22 +155,10 @@ def run(a):
     out['figures'] = figs
     if not a.no_pdn:
         from .stack import RailPDN
+        from .cavity import capacitance
         say('PDN: plane pairs, parts, mesh')
         t = time.time()
-        if a.plane_min < 0:
-            raise SystemExit('pdn: error: --plane-min must be nonnegative')
-        caps = {}
-        for item in a.cap:
-            ref, _, rest = item.partition('=')
-            try:
-                vals = [float(x) for x in rest.split(',') if x.strip()]
-            except ValueError:
-                raise SystemExit(f'pdn: error: --cap {item!r}: expected REF=C[,ESR[,ESL]]')
-            if not 1 <= len(vals) <= 3 or any(v <= 0 for v in vals):
-                raise SystemExit(f'pdn: error: --cap {item!r}: one to three positive values, C[,ESR[,ESL]]')
-            caps[ref.strip()] = dict(zip(('C', 'ESR', 'ESL'), vals))
-        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps,
-                      log=lambda m: say(m))
+        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps, log=say)
         t_b = time.time() - t
         f = np.logspace(np.log10(a.fmin), np.log10(a.fmax), a.points)
         say(f'PDN: {len(f)} frequencies')
@@ -199,7 +173,7 @@ def run(a):
                           z={r: dict(mag=np.abs(Z[r]).tolist(), deg=np.degrees(np.angle(Z[r])).tolist(),
                                      bare=np.abs(Z0[r]).tolist(), over=bands(f, Z[r], target)) for r in obs},
                           cavities=[dict(rail=c.rail_layer, ground=c.ground_layer, d=c.d, er=c.er, area=c.geom.area,
-                                         C=8.854e-12 * c.er * c.geom.area * 1e-6 / (c.d * 1e-3)) for c in pdn.cavities],
+                                         C=capacitance(c.geom.area, c.d, c.er)) for c in pdn.cavities],
                           parts={n: dict(role=i['role'], mount_nH=i['mount'] * 1e9, node=i['rail'].node,
                                          rail=i['rail'].why, gnd=i['gnd'].why,
                                          element={k: v for k, v in (i['el'] or {}).items() if k != 'defaulted'},
@@ -240,7 +214,7 @@ def dc_figures(board, dc, volts, out):
     x0, y0, x1, y1 = shape(board['outline']).bounds
     files = []
     for side, res in (('power', dc['power']), ('ground', dc['ground'])):
-        carry = sorted(res.sheets.items(), key=lambda kv: -float(np.nansum(kv[1].J * 0 + kv[1].J)))
+        carry = sorted(res.sheets.items(), key=lambda kv: -float(np.nansum(kv[1].J)))
         for lay, sh in carry[:2]:
             tri = Triangulation(sh.nodes[:, 0], sh.nodes[:, 1], sh.tris)
             fig, ax = plt.subplots(1, 2, figsize=(14, 4.6 * (y1 - y0) / max(x1 - x0, 1) + 1.2))
@@ -283,8 +257,7 @@ def z_figure(f, Z, Z0, target, out):
 def main(argv=None):
     a = parser().parse_args(argv)
     if a.describe:
-        d = describe()
-        print(json.dumps(d, indent=1) if a.json else '\n'.join(f"{o['flag']:18s} {o['help']}" for o in d['options']))
+        print_describe(describe(), a.json)
         return 0
     if not a.board:
         parser().error('a board is required')

@@ -7,10 +7,12 @@ import argparse,hashlib,json,shutil,copy,time
 from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
-from .power_bridge import load_config,matching,predicted_phase,build,metrics,make_board_ports,end_state
+from .power_bridge import load_config,validate,matching,predicted_phase,build,metrics,make_board_ports,end_state
 from .power_spice import periodic_samples,cancel_active_runs,reset_runs
 from .wpt import link
-from .mqs_ports import CopperPorts,PortResponse,rl_equivalent,rl_error,foster_equivalent
+from .mqs_ports import CopperPorts,PortResponse,rl_error,foster_equivalent
+
+FIT_TOLERANCE=.03          # default mesh.circuit_fit_tolerance: copper-model reduction error
 
 
 def template():
@@ -31,13 +33,14 @@ def fingerprint(board,cfg):
     return h.hexdigest()
 
 
-def reduce_copper(model,response,tolerance=.03):
+def reduce_copper(model,response,tolerance=FIT_TOLERANCE):
     from .mqs_ports import model_impedance
     result=copy.deepcopy(model);s=2j*np.pi*response.frequencies;target=response.impedance
     norm=np.maximum(np.linalg.norm(target,axis=(1,2)),1e-30);current=model_impedance(result,response.frequencies)
+    matrix=lambda kind:np.asarray(result[kind] if isinstance(kind,str) else result['foster'][kind]['R_ohm'])
     candidates=[]
     for kind in ['L_H',*range(len(result.get('foster',[])))]:
-        A=np.asarray(result[kind] if isinstance(kind,str) else result['foster'][kind]['R_ohm']);e,V=np.linalg.eigh(A)
+        A=matrix(kind);e,V=np.linalg.eigh(A)
         factor=s if isinstance(kind,str) else s/(s+result['foster'][kind]['pole_rad_s'])
         for j,val in enumerate(e):
             if val<=max(e.max()*1e-8,1e-20):continue
@@ -46,7 +49,7 @@ def reduce_copper(model,response,tolerance=.03):
     removed=0
     for _,kind,part,delta in sorted(candidates,key=lambda t:t[0]):
         if np.max(np.linalg.norm(current-delta-target,axis=(1,2))/norm)<=tolerance:
-            current-=delta;A=np.asarray(result[kind] if isinstance(kind,str) else result['foster'][kind]['R_ohm'])-part
+            current-=delta;A=matrix(kind)-part
             if isinstance(kind,str):result[kind]=A.tolist()
             else:result['foster'][kind]['R_ohm']=A.tolist()
             removed+=1
@@ -59,21 +62,20 @@ def reduce_copper(model,response,tolerance=.03):
 
 
 def prepare(board,cfg,out,need_geometry=False,log=print):
-    key=fingerprint(board,cfg);cache=out/'copper-model.json';q=None;crop=None
+    key=fingerprint(board,cfg);cache=out/'copper-model.json';tolerance=cfg['mesh'].get('circuit_fit_tolerance',FIT_TOLERANCE)
     saved=json.loads(cache.read_text()) if cache.exists() else {}
-    if saved.get('fingerprint')==key and saved['model'].get('reduction_tolerance')!=cfg['mesh'].get('circuit_fit_tolerance',.03):
+    if saved.get('fingerprint')==key and saved['model'].get('reduction_tolerance')!=tolerance:
         frequencies=saved['model']['check_frequencies_Hz'];zz=[]
         for f in frequencies:
             with np.load(response_path(out,key,f)) as data:zz.append(data['impedance'])
         rr=PortResponse(np.asarray(frequencies),saved['model']['names'],np.asarray(zz),None)
-        saved['model']=reduce_copper(saved['model'],rr,cfg['mesh'].get('circuit_fit_tolerance',.03));cache.write_text(json.dumps(saved,indent=2))
+        saved['model']=reduce_copper(saved['model'],rr,tolerance);cache.write_text(json.dumps(saved,indent=2))
     if saved.get('fingerprint')==key and not need_geometry:return None,saved['ports'],saved['model'],None,key
     q,ports,crop=make_board_ports(board,cfg,log)
     if saved.get('fingerprint')==key:return q,ports,saved['model'],crop,key
     fs=sorted(set([0.,1e3,1e4,3e4,1e5,3e5,3e6,7e6,2e7,*cfg['frequencies_Hz'],*[f*10 for f in cfg['frequencies_Hz']]]))
     response=CopperPorts(q).extract(fs,log=log);model=foster_equivalent(response)
-    model=reduce_copper(model,response,cfg['mesh'].get('circuit_fit_tolerance',.03));errors=rl_error(model,response)
-    model.update(check_frequencies_Hz=fs,relative_impedance_error=errors)
+    model=reduce_copper(model,response,tolerance);model['check_frequencies_Hz']=fs   # reduce_copper sets relative_impedance_error
     saved=dict(fingerprint=key,ports=ports,model=model)
     cache.write_text(json.dumps(saved,indent=2))
     for i,f in enumerate(fs):save_response(out,key,f,response.impedance[i],response.currents[i])
@@ -100,7 +102,7 @@ def extract_cached(q,freqs,out,key,log=print):
 
 
 def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
-    started=time.perf_counter()
+    started=time.perf_counter();validate(cfg)          # once per case: build() does not
     from . import power_bridge,power_spice,wpt
     physics={k:v for k,v in cfg.items() if k not in ('frequencies_Hz','powers_W','assumptions','name','schematic')}
     h=hashlib.sha256(json.dumps(dict(config=physics,copper=copper,f=f,power=power),sort_keys=True).encode())
@@ -116,7 +118,9 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
             result['_measures']=json.loads((out/'measurements.json').read_text());log(f'Reusing {f/1000:g} kHz / {power:g} W');return saved,result
     cfg=copy.deepcopy(cfg);match=matching(cfg,f);phase=predicted_phase(cfg,f,power,match);settings=cfg.setdefault('transient',{})
     solver=dict(settings.get('solver',{}))
+    if settings.get('method'):solver.setdefault('method',settings['method'])   # transient.method: shorthand for solver.method
     strict=solver.get('reltol',1e-4)
+    periodic_tolerance=settings.get('periodic_tolerance',.01);power_tolerance=settings.get('power_tolerance',.005)
     # Phase-search trials at relaxed tolerances (4x faster on wpthb, <=0.04% power/current change); the
     # reported result comes from a short strict run continuing from the accepted state.
     search=dict(solver,reltol=max(settings.get('search_reltol',1e-3),strict),
@@ -130,6 +134,13 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
         if warm:state=end_state(pilot_result,cfg)          # its parts' states; copper ports keep the estimate
     cycles=settings.get('cycles',250);history=[];accepted=None
 
+    def settled(m):                                     # supply current: slow filter modes are not judged here (C8)
+        return max(v for k,v in m['periodic_error'].items() if k!='supply.I')<=periodic_tolerance
+
+    def record(folder,m,performance,cycles,reltol,**extra):
+        history.append(dict(phase_deg=phase,cycles=cycles,reltol=reltol,**extra,relative_power_error=(m['load_power_W']-power)/power,performance=performance,**m))
+        (folder/'metrics.json').write_text(json.dumps(history[-1],indent=2))
+
     def simulate(folder,phase,cycles,options,state):
         # Hard-switched edges occasionally defeat ngspice's step control ("timestep too small"):
         # retry with trapezoidal integration (as accurate at these tolerances), then from a cold start.
@@ -138,7 +149,7 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
         for k,(opts,start,n) in enumerate(attempts):
             circ=build(cfg,f,phase,match,copper,ports,state=start)
             try:
-                result=circ.run(folder,f,cycles=n,samples_per_cycle=settings.get('samples_per_cycle',256),ramp_s=cfg.get('supply',{}).get('ramp_s',100e-6),linear_solver=settings.get('linear_solver','klu'),method=settings.get('method'),threads=settings.get('ngspice_threads',1),options=opts)
+                result=circ.run(folder,f,cycles=n,samples_per_cycle=settings.get('samples_per_cycle',256),ramp_s=cfg.get('supply',{}).get('ramp_s',100e-6),linear_solver=settings.get('linear_solver','klu'),threads=settings.get('ngspice_threads',1),options=opts)
                 break
             except RuntimeError as exc:
                 if 'ngspice transient failed' not in str(exc) or k==len(attempts)-1:raise
@@ -154,15 +165,14 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
         log(f'{f/1000:g} kHz / {power:g} W: phase {phase:.3f}°, {cycles} cycles'+(' (warm start)' if state else ''))
         result,m,performance=simulate(folder,phase,cycles,search,state)
         periodic=max(m['periodic_error'].values());error=(m['load_power_W']-power)/power
-        history.append(dict(phase_deg=phase,cycles=cycles,reltol=search['reltol'],warm_start=state is not None,relative_power_error=error,performance=performance,**m))
-        (folder/'metrics.json').write_text(json.dumps(history[-1],indent=2))
+        record(folder,m,performance,cycles,search['reltol'],warm_start=state is not None)
         if warm:state=end_state(result,cfg,ports)          # the next run continues from here
-        if max(v for k,v in m['periodic_error'].items() if k!='supply.I')>settings.get('periodic_tolerance',.01) or (abs(error)<settings.get('power_tolerance',.005) and periodic>settings.get('periodic_tolerance',.01)):
+        if not settled(m) or (abs(error)<power_tolerance and periodic>periodic_tolerance):
             cycles=int(cycles*1.6)+1 if not warm else max(int(cycles*.8),8)   # warm: the next run already continues
             if cycles>2000:raise RuntimeError('input filter/circuit did not settle; see '+str(folder))
             continue
         if m['input_power_W']<=0 or m['terminal_power_balance_relative']>.01:raise RuntimeError('failed circuit power balance; see '+str(folder))
-        if abs(error)<settings.get('power_tolerance',.005):accepted=(folder,result,m);break
+        if abs(error)<power_tolerance:accepted=(folder,result,m);break
         sine=np.sin(np.deg2rad(phase)/2)*np.sqrt(power/max(m['load_power_W'],1e-12))
         newphase=float(np.degrees(2*np.arcsin(min(sine,.99999))))
         if phase>179 and error<0:raise RuntimeError(f'{power:g} W is unreachable at {f:g} Hz with this model')
@@ -176,9 +186,8 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
             folder=out/f'final-{attempt:02d}'
             log(f'{f/1000:g} kHz / {power:g} W: final, reltol {strict:g}, {final_cycles} cycles')
             result,m,performance=simulate(folder,phase,final_cycles,dict(solver,reltol=strict),state if warm else None)
-            history.append(dict(phase_deg=phase,cycles=final_cycles,reltol=strict,warm_start=warm,final=True,relative_power_error=(m['load_power_W']-power)/power,performance=performance,**m))
-            (folder/'metrics.json').write_text(json.dumps(history[-1],indent=2))
-            if max(v for k,v in m['periodic_error'].items() if k!='supply.I')<=settings.get('periodic_tolerance',.01):
+            record(folder,m,performance,final_cycles,strict,warm_start=warm,final=True)
+            if settled(m):
                 accepted=(folder,result,m);break
             if warm:state=end_state(result,cfg,ports)
             final_cycles*=2
@@ -302,12 +311,11 @@ def main(argv=None):
     if args.switch_type:cfg['switch_model']['type']=args.switch_type
     for opt,key in [(args.frequencies,'frequencies_Hz'),(args.powers,'powers_W')]:
         if opt:cfg[key]=[float(v) for v in opt.split(',')]
-    from .power_bridge import validate
-    validate(cfg);out=Path(args.out).resolve();out.mkdir(parents=True,exist_ok=True)
+    validate(cfg);out=Path(args.out).resolve();out.mkdir(parents=True,exist_ok=True)   # the overrides, before any extraction
     (out/'model.json').write_text(json.dumps(cfg,indent=2));q=None;ports=None;copper=None;crop=None;key=None
     if args.copper or args.fields or args.prepare:
         if not args.board:parser.error('--board is required for copper/fields')
-        from .mqs_cli import load_board
+        from ._cli import load_board
         board=load_board(args.board);q,ports,copper,crop,key=prepare(board,cfg,out,args.fields)
     if args.prepare:return
     if args.fields:prefetch_fields(q,cfg,out,key,args.field_harmonics)

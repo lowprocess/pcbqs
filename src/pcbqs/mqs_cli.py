@@ -7,8 +7,11 @@ import time
 from types import SimpleNamespace
 
 import numpy as np
+import shapely
 from shapely.geometry import shape
 from shapely.ops import unary_union
+
+from ._cli import add_options, describe as describe_options, load_board, print_describe
 
 OPTIONS = [
     ('converter', 'str', '', 'Regulator reference; empty selects a unique discovered converter', 'Converter'),
@@ -41,9 +44,7 @@ OPTIONS = [
 
 
 def describe():
-    from . import __version__
-    return dict(format=1, version=__version__, features=['preview', 'layout'], options=[dict(key=k, flag='--'+k.replace('_','-'), kind=t,
-                default=d, help=h, group=g, choices=None) for k,t,d,h,g in OPTIONS])
+    return describe_options(OPTIONS, features=['preview', 'layout'])
 
 
 def parser():
@@ -54,21 +55,8 @@ def parser():
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--preview', action='store_true', help='mesh and export layout without matrix filling or solving')
     ap.add_argument('--list-converters', action='store_true', help='describe candidate converters without meshing')
-    for k,t,d,h,g in OPTIONS:
-        ap.add_argument('--'+k.replace('_','-'),type={'str':str,'int':int,'float':float}[t],default=d,help=h)
+    add_options(ap, OPTIONS)
     return ap
-
-
-def load_board(path):
-    path=Path(path)
-    if path.suffix=='.json':
-        return json.loads(path.read_text())
-    try:
-        from kicad2ems.board import Board
-        from kicad2ems.importers import open_board
-    except ImportError as exc:
-        raise RuntimeError('KiCad input requires pcbqs[kicad2ems]; JSON input works independently') from exc
-    return Board(open_board(str(path)), need_ports=False, log=lambda *_:None).to_dict()
 
 
 def discover(board, ground='GND'):
@@ -154,10 +142,13 @@ def numbers(text, name):
     return np.sort(x)
 
 
-def validate(a):
-    for k in ['fsw','cap_radius','dmax','fine','margin','field_tol']:
+def validate(a, preview=False):
+    """(harmonics, heights, duty); a preview (mesh only) checks just the mesh settings and returns None."""
+    for k in ['cap_radius','dmax','fine','margin']+([] if preview else ['fsw','field_tol']):
         if not np.isfinite(getattr(a,k)) or getattr(a,k)<=0:
             raise ValueError(f'{k} must be positive and finite')
+    if preview:
+        return None
     for k in ['current','edge_time','esr','esl','part_height','vin_volts','vout']:
         if not np.isfinite(getattr(a,k)) or getattr(a,k)<0:
             raise ValueError(f'{k} must be nonnegative and finite')
@@ -211,18 +202,20 @@ def write_outputs(out, board, q, r, H, x, y, heights, summary):
         write_npz(exc/(dm.name+'.npz'),dict(x=x,y=y,z=z),r.f,np.moveaxis(H,-1,0))
         dumps.append(dm)
     from .mqs_layout import save_layout, geometry
-    layout=save_layout(out,board,q,shape(summary['crop']),summary['selection'])
+    crop=shape(summary['crop'])
+    layout=save_layout(out,board,q,crop,summary['selection'])
     copper={}
     for lay,records in board['copper'].items():
         polys=[]
         for record in records:
             if record['net'] not in q.nets:continue
-            g=shape(record['polygon']).intersection(shape(summary['crop']))
+            g=shape(record['polygon']).intersection(crop)
             polys.extend(p for p in getattr(g,'geoms',[g]) if p.geom_type=='Polygon' and not p.is_empty)
         copper[lay]=polys
-    m=SimpleNamespace(outline=shape(summary['crop']),cu_z={c['name']:c['z'] for c in board['stack']['copper']},
-        copper=copper,ports=[],vias=[(v['x'],v['y'],v['r'],v['z0'],v['z1']) for v in board['vias']
-                                    if v['net'] in q.nets and shape(summary['crop']).covers(shape({'type':'Point','coordinates':[v['x'],v['y']]}))],
+    vias=[v for v in board['vias'] if v['net'] in q.nets]
+    inside=shapely.intersects_xy(crop,[v['x'] for v in vias],[v['y'] for v in vias]) if vias else []
+    m=SimpleNamespace(outline=crop,cu_z={c['name']:c['z'] for c in board['stack']['copper']},
+        copper=copper,ports=[],vias=[(v['x'],v['y'],v['r'],v['z0'],v['z1']) for v,keep in zip(vias,inside) if keep],
         thickness=board['stack'].get('thickness',top))
     # The frontend also discovers files absent from the metadata. Remove only
     # obsolete generated H dumps in this command's reserved excitation folder.
@@ -255,11 +248,10 @@ def run(a):
     from shapely.geometry import mapping
     start=time.perf_counter()
     preview=getattr(a,'preview',False)
-    if preview:
-        for key in ['cap_radius','margin','dmax','fine']:
-            if not np.isfinite(getattr(a,key)) or getattr(a,key)<=0:raise ValueError(f'{key} must be positive and finite')
-    else:
+    if not preview:
         n,heights,duty=validate(a)
+    else:
+        validate(a,preview=True)
     print('mqs: reading board',flush=True)
     board=load_board(a.board)
     selected,terms=select(board,a,require_values=not preview)
@@ -313,7 +305,7 @@ def run(a):
 def main(argv=None):
     ap=parser();a=ap.parse_args(argv)
     if a.describe:
-        d=describe();print(json.dumps(d) if a.json else '\n'.join(f"{o['flag']}: {o['help']}" for o in d['options']));return 0
+        print_describe(describe(),a.json);return 0
     if not a.board:ap.error('a board is required')
     try:
         if a.list_converters:

@@ -17,10 +17,9 @@ from .wpt import coil_capacitance,series_resistance,core_resistance
 SOLVER_DEFAULTS=dict(method='gear',maxord=2,reltol=1e-4,abstol=1e-6,vntol=1e-6,chgtol=1e-12,gmin=1e-10,rshunt=1e12)
 
 
-def solver_options(options=None,method=None):
-    """Validated ngspice .options, defaults overridden by `options` (and a legacy `method`)."""
+def solver_options(options=None):
+    """Validated ngspice .options: SOLVER_DEFAULTS overridden by `options`."""
     merged={**SOLVER_DEFAULTS,**(options or {})}
-    if method is not None:merged['method']=method
     unknown=set(merged)-set(SOLVER_DEFAULTS)
     if unknown:raise ValueError('unknown solver options: '+', '.join(sorted(unknown)))
     if merged['method'] not in ('gear','trap'):raise ValueError('method must be gear or trap')
@@ -31,6 +30,11 @@ def solver_options(options=None,method=None):
             raise ValueError(key+' must be a positive number')
     if merged['reltol']>=.1:raise ValueError('reltol must be below 0.1')
     return merged
+
+
+def options_line(options=None):
+    """The ngspice .options values ('method=gear maxord=2 reltol=0.0001 ...') of solver_options(options)."""
+    return ' '.join(f'{k}={v:.6g}' if isinstance(v,float) else f'{k}={v}' for k,v in solver_options(options).items())
 
 
 _children=set()
@@ -132,15 +136,15 @@ class Circuit:
                 else:s=nxt
         ron=model.get('Ron_ohm',.008 if kind!='ideal' else 1e-6);roff=model.get('Roff_ohm',1e10)
         _positive(ron,ref+'.Ron');_positive(roff,ref+'.Roff')
+        vt=model.get('Vth_V',3.);kp=model.get('Kp_A_V2',1/(ron*max(vgate-vt,.1)))   # MOSFET/VDMOS channel
         if kind in ('ideal','switch'):
             logoff=np.log(1/roff);logspan=np.log(roff/ron)
             self.lines.append(f'B_{ref} {d} {s} I=V({d},{s})*exp({logoff:.17g}+({logspan:.17g})*(0.5+0.5*tanh((V({g},{s})-{vgate/2:.17g})/{model.get("transition_V",.5):.17g})))')
         elif kind=='mosfet':
-            vt=model.get('Vth_V',3.);kp=model.get('Kp_A_V2',1/(ron*max(vgate-vt,.1)))
             if not 0<vt<vgate:raise ValueError('MOSFET threshold must be below gate voltage')
             self.lines.extend([f'.model NM_{ref} NMOS(level=1 VTO={vt:.17g} KP={kp:.17g} LAMBDA={model.get("lambda_per_V",0):.17g} IS=1e-12)',f'M_{ref} {d} {g} {s} {s} NM_{ref} W=100u L=100u'])
         elif kind=='vdmos':
-            params=dict(VTO=model.get('Vth_V',3.),KP=model.get('Kp_A_V2',1/(ron*max(vgate-model.get('Vth_V',3.),.1))),
+            params=dict(VTO=vt,KP=kp,
                         RDS=roff,CGDMIN=model.get('Cgd_F',0),CGDMAX=model.get('Cgd_F',0),CGS=model.get('Cgs_F',0),
                         CJO=model.get('Cds_F',0),TT=model.get('diode_TT_s',0),RB=model.get('diode_R_ohm',.02),IS=1e-12)
             params.update(model.get('vdmos_parameters',{}))
@@ -204,8 +208,8 @@ class Circuit:
                 if abs(gain[i])>1e-14:self.lines.append(f'GSUM{i}_{j} 0 {summed} {mode} 0 {gain[i]:.17g}')
             self.lines.append(f'EPCB{i} {n} {self.node(b)} {summed} 0 1')
 
-    def run(self,out,f,cycles=250,samples_per_cycle=128,ramp_s=100e-6,timeout=600,linear_solver='klu',method=None,threads=1,options=None):
-        solver=solver_options(options,method)
+    def run(self,out,f,cycles=250,samples_per_cycle=128,ramp_s=100e-6,timeout=600,linear_solver='klu',threads=1,options=None):
+        solver=solver_options(options)
         if linear_solver not in ('klu','sparse'):raise ValueError('linear_solver must be klu or sparse')
         if not isinstance(threads,int) or threads<1:raise ValueError('threads must be a positive integer')
         executable=shutil.which('ngspice')
@@ -227,7 +231,7 @@ class Circuit:
             measures.extend([f'let measure{i}={expr}',f'meas tran m{i} {kind} measure{i} from={stop-1/f:.17g} to={stop:.17g}'])
         port_vectors=[name for name,label in zip(output_names,labels) if re.fullmatch(r'PCB\d+\.I',label)]
         adaptive_export=['set filetype=binary','write adaptive-ports.raw '+' '.join(port_vectors),'set filetype=ascii'] if port_vectors else []
-        lines=['Transient power circuit',*self.lines,'.options '+' '.join(f'{k}={v:.6g}' if isinstance(v,float) else f'{k}={v}' for k,v in solver.items()),
+        lines=['Transient power circuit',*self.lines,'.options '+options_line(solver),
                '.control',*(['set klu'] if linear_solver=='klu' else []),f'set num_threads={threads}','set wr_singlescale','set wr_vecnames','save '+' '.join(sorted(save_vectors)),f'tran {1/f/samples_per_cycle:.17g} {stop:.17g} 0 {1/f/samples_per_cycle:.17g}'+(' uic' if self.uic else ''),
                *lets,*measures,*adaptive_export,'linearize '+' '.join(output_names),'wrdata transient.dat '+' '.join(output_names),'rusage all','quit','.endc','.end']
         (out/'circuit.cir').write_text('\n'.join(lines)+'\n')
@@ -243,15 +247,13 @@ class Circuit:
                 try:child.wait(timeout=2)
                 except subprocess.TimeoutExpired:child.kill();child.wait()
                 raise
-            from types import SimpleNamespace
-            proc=SimpleNamespace(stdout=stdout,stderr=stderr,returncode=child.returncode)
         finally:
             with _children_lock:_children.discard(child)
             child.stdout.close();child.stderr.close()
         solved=time.perf_counter()
-        (out/'ngspice.log').write_text(proc.stdout+'\n'+proc.stderr)
+        (out/'ngspice.log').write_text(stdout+'\n'+stderr)
         data=out/'transient.dat'
-        if proc.returncode or not data.is_file() or 'simulation(s) aborted' in proc.stderr:raise RuntimeError('ngspice transient failed; see '+str(out/'ngspice.log'))
+        if child.returncode or not data.is_file() or 'simulation(s) aborted' in stderr:raise RuntimeError('ngspice transient failed; see '+str(out/'ngspice.log'))
         table=np.loadtxt(data,skiprows=1)
         if table.ndim!=2 or table.shape[1]!=len(labels)+1 or not np.isfinite(table).all() or table[-1,0]<stop*(1-1e-6):raise RuntimeError('invalid transient data')
         res={'time_s':table[:,0],**{k:table[:,i+1]*self.signal_signs.get(k,1) for i,k in enumerate(labels)}}
@@ -259,7 +261,7 @@ class Circuit:
         (out/'signals.json').write_text(json.dumps(dict(zip(labels,vectors)),indent=2))
         measured={}
         for i,label in enumerate(self.measures):
-            match=re.search(rf'^m{i}\s*=\s*([+\-0-9.eE]+)',proc.stdout,re.M)
+            match=re.search(rf'^m{i}\s*=\s*([+\-0-9.eE]+)',stdout,re.M)
             if not match:raise RuntimeError('ngspice measure failed: '+label)
             measured[label]=float(match[1])
         (out/'measurements.json').write_text(json.dumps(measured,indent=2))

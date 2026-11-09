@@ -47,20 +47,17 @@ def end_state(result,config,ports=None):
 
     Capacitors: the voltage on the capacitance itself (terminal voltage less the ESR drop); inductors,
     the source inductance, windings: their currents; coil self-capacitance: the terminal voltage; the
-    copper model: its port currents. build(..., state=) starts the next run from it (a warm start).
+    copper model: its port currents and modal currents. build(..., state=) starts the next run from it (a warm start).
     """
     last=lambda key:float(result[key][-1])
+    stores=[p for p in config['components'] if p.get('enabled',True)]
+    stores+=[dict(ref='LSOURCE',type='inductor'),dict(ref='CSECONDARY',type='capacitor',ESR_ohm=config.get('secondary_cap_ESR_ohm',0))]
     parts={}
-    for p in config['components']:
+    for p in stores:
         ref=p['ref']
-        if not p.get('enabled',True) or ref+'.I' not in result:continue
+        if ref+'.I' not in result:continue
         if p['type']=='capacitor':parts[ref]=dict(initial_V=last(ref+'.V')-p.get('ESR_ohm',0)*last(ref+'.I'),initial_I=last(ref+'.I'))
         elif p['type']=='inductor':parts[ref]=dict(initial_A=last(ref+'.I'))
-    for ref in ('LSOURCE',):
-        if ref+'.I' in result:parts[ref]=dict(initial_A=last(ref+'.I'))
-    if 'CSECONDARY.I' in result:
-        parts['CSECONDARY']=dict(initial_V=last('CSECONDARY.V')-config.get('secondary_cap_ESR_ohm',0)*last('CSECONDARY.I'),
-                                 initial_I=last('CSECONDARY.I'))
     switches={sw['ref']:last(sw['ref']+'.I') for sw in config.get('switches',[]) if sw['ref']+'.I' in result}
     modes=None                                              # the copper model's modal inductor currents
     if 'MODE0.I' in result:
@@ -68,15 +65,14 @@ def end_state(result,config,ports=None):
         while f'MODE{k}.I' in result:modes.append(last(f'MODE{k}.I'));k+=1
     coils={name:dict(initial_A=last(name+'.winding_I'),initial_V=last(name+'.V')) for name in ('PRIMARY','SECONDARY')
            if name+'.winding_I' in result}
-    nodes={net:last(key) for net,key in (('VHB','bus.V'),('VBUS','input.V')) if key in result}
     port_currents=[last(f'PCB{i}.I') for i in range(len(ports or []))] if ports and all(f'PCB{i}.I' in result for i in range(len(ports))) else None
-    return dict(parts=parts,coils=coils,nodes=nodes,ports=port_currents,switches=switches,modes=modes)
+    return dict(parts=parts,coils=coils,ports=port_currents,switches=switches,modes=modes)
 
 
 def build(config,f,phase,match,copper=None,ports=None,state=None):
     """The ngspice circuit at `phase`. state (end_state of a previous run) warm-starts it: every capacitor,
-    inductor, winding and copper mode begins where that run ended, instead of the precharge estimate."""
-    validate(config)
+    inductor, winding and copper mode begins where that run ended, instead of the precharge estimate.
+    The config is validated by load_config/run_case, not here (build runs once per phase trial)."""
     if not np.isfinite(phase) or not 0<=phase<=180:raise ValueError('phase must be in [0,180]')
     config=copy.deepcopy(config);c=Circuit();ports=ports or []
     precharged=config.get('transient',{}).get('initialization','ramp')=='precharged' or state is not None
@@ -107,8 +103,7 @@ def build(config,f,phase,match,copper=None,ports=None,state=None):
             cap2_v=state['parts'].get('CSECONDARY',{}).get('initial_V',cap2_v)
         c.uic=True
     # Every selected pad is explicit. Unselected upstream parts connect at net references.
-    terminal_net={t:net for t,net in config.get('terminals',{}).items()}
-    nodes={t:'NET:'+net for t,net in terminal_net.items()}
+    nodes={t:'NET:'+net for t,net in config.get('terminals',{}).items()}
     for p in ports:nodes[p['terminal']]='PAD:'+p['terminal']
     def node(t):
         if t.startswith('NET:') or t=='0':return t
@@ -142,14 +137,16 @@ def build(config,f,phase,match,copper=None,ports=None,state=None):
     c.nodes['SEC:A']='0'  # receiver voltage gauge; no environmental coupling is modeled
     c.coil('SECONDARY','SEC:A','SEC:B',config['secondary'])
     c.lines.append(f'KLINK L_PRIMARY L_SECONDARY {config["coupling"]:.17g}')
-    c.passive('CSECONDARY','SEC:B','SEC:LOAD',dict(type='capacitor',value=match['C2_F'],ESR_ohm=config.get('secondary_cap_ESR_ohm',0),ESL_H=config.get('secondary_cap_ESL_H',0),**({'initial_V':cap2_v} if precharged else {}),**({'initial_I':state['parts']['CSECONDARY']['initial_I']} if state is not None and 'CSECONDARY' in state['parts'] else {})))
+    secondary_cap=dict(type='capacitor',value=match['C2_F'],ESR_ohm=config.get('secondary_cap_ESR_ohm',0),ESL_H=config.get('secondary_cap_ESL_H',0))
+    if precharged:secondary_cap['initial_V']=cap2_v
+    if state is not None:secondary_cap.update({k:v for k,v in state['parts'].get('CSECONDARY',{}).items() if k=='initial_I'})
+    c.passive('CSECONDARY','SEC:B','SEC:LOAD',secondary_cap)
     c.passive('LOAD','SEC:LOAD','SEC:A',dict(type='resistor',value=match['load_ohm']))
     c.voltage('load.V','SEC:LOAD','SEC:A');c.voltage('bus.V','NET:VHB');c.voltage('input.V','NET:VBUS')
     c.voltage('bridge.V',node(config['bridge_terminals'][0]),node(config['bridge_terminals'][1]))
     if precharged and state is None:                         # a warm start's capacitors already set these nodes
         for net,drop in [('VBUS',.055),('VHB',.085)]:
-            value=(state or {}).get('nodes',{}).get(net,config["voltage_V"]-drop*initial_input)
-            c.lines.append(f'.ic V({c.node("NET:"+net)})={value:.17g}')
+            c.lines.append(f'.ic V({c.node("NET:"+net)})={config["voltage_V"]-drop*initial_input:.17g}')
     c.measures=dict(input_power_W=('AVG','-@supply.V@*@supply.I@'),load_power_W=('AVG',f'@load.V@^2/{match["load_ohm"]:.17g}'),primary_rms_A=('RMS','@PRIMARY.winding_I@'),secondary_rms_A=('RMS','@SECONDARY.winding_I@'),primary_peak_A=('MAX','abs(@PRIMARY.winding_I@)'),bus_ripple_V=('PP','@bus.V@'))
     gate_expr='+'.join(f'-@{s["ref"]}.gate_V@*@{s["ref"]}.gate_I@' for s in config['switches'])
     c.measures['gate_drive_power_W']=('AVG',gate_expr)
@@ -158,26 +155,15 @@ def build(config,f,phase,match,copper=None,ports=None,state=None):
 
 
 def metrics(result,f,match,samples=512):
-    t,v,errors=periodic_samples(result,f,samples=samples)
-    # Integrate on the adaptive solver grid to avoid missing narrow input/diode pulses.
-    raw_t=result['time_s'];start=t[-1,0];end=start+1/f
-    def avg(values):
-        inside=(raw_t>start)&(raw_t<end);tt=np.r_[start,raw_t[inside],end]
-        yy=np.interp(tt,raw_t,values);return float(np.trapezoid(yy,tt)*f)
-    power=avg(result['load.V']**2/match['load_ohm'])
-    pin=avg(-result['supply.V']*result['supply.I'])
-    gate=sum(avg(result[k]*-result[k.replace('gate_V','gate_I')]) for k in result if k.endswith('.gate_V'))
-    signals=['PRIMARY.winding_I','SECONDARY.winding_I','bus.V','supply.I','load.V']
-    measured=result.get('_measures',{})
-    power=measured.get('load_power_W',power);pin=measured.get('input_power_W',pin);gate=measured.get('gate_drive_power_W',gate)
+    """Results of a run: ngspice's measurements over the final cycle (on its adaptive grid, so narrow
+    input/diode pulses count) and the cycle-to-cycle change of the main signals."""
+    _,_,errors=periodic_samples(result,f,samples=samples)
+    measured=result['_measures'];power=measured['load_power_W'];pin=measured['input_power_W'];gate=measured['gate_drive_power_W']
     part_power={k.split('.',1)[1]:v for k,v in measured.items() if k.startswith('part_power.')}
     return dict(component_power_W=part_power,terminal_power_balance_relative=abs(pin-sum(part_power.values()))/max(abs(pin),1e-12) if part_power else None,load_power_W=power,input_power_W=pin,gate_drive_power_W=gate,
                 efficiency=power/(pin+gate) if pin+gate>0 else None,
-                primary_rms_A=measured.get('primary_rms_A',float(np.sqrt(avg(result['PRIMARY.winding_I']**2)))),
-                secondary_rms_A=measured.get('secondary_rms_A',float(np.sqrt(avg(result['SECONDARY.winding_I']**2)))),
-                primary_peak_A=measured.get('primary_peak_A',float(abs(v['PRIMARY.winding_I'][-1]).max())),
-                bus_ripple_V=measured.get('bus_ripple_V',float(np.ptp(v['bus.V'][-1]))),
-                periodic_error={k:errors[k] for k in signals})
+                **{k:measured[k] for k in ('primary_rms_A','secondary_rms_A','primary_peak_A','bus_ripple_V')},
+                periodic_error={k:errors[k] for k in ['PRIMARY.winding_I','SECONDARY.winding_I','bus.V','supply.I','load.V']})
 
 
 def make_board_ports(board,config,log=print):

@@ -26,12 +26,12 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.sparse import coo_matrix, diags
 from scipy.sparse.linalg import splu
-from shapely.geometry import Point, box, shape
+from shapely.geometry import Point, shape
 from shapely.ops import unary_union
 
-from .._numerics.base import MU0, EPS0
-from .cavity import fill_holes, surface_resistance, SIGMA_CU
-from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z
+from .._numerics.base import MU0
+from .cavity import fill_holes, dielectric, capacitance, plane_admittance, element_z, mount_inductance
+from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z, SIGMA_CU
 from .rail import terminal, part_value, field_value
 
 ESL_PKG = {'0201': 0.25e-9, '0402': 0.35e-9, '0603': 0.45e-9, '0805': 0.6e-9, '1206': 0.8e-9, '1210': 0.9e-9,
@@ -91,14 +91,17 @@ class RailPDN:
         rv = [v for v in b['vias'] if v['net'] in nets]
         gv = [v for v in b['vias'] if v['net'] in g]
         self.rail_vias, self.gnd_vias = rv, gv
-        rcover = unary_union([Point(v['x'], v['y']).buffer(v['r'] + CLEAR, quad_segs=4) for v in rv]) if rv else None
-        gcover = unary_union([Point(v['x'], v['y']).buffer(v['r'] + CLEAR, quad_segs=4) for v in gv]) if gv else None
-        rail_planes = {l: copper_of(b, nets, l) for l in self.layers}
-        rail_planes = {l: q for l, q in rail_planes.items() if q is not None and q.area > plane_min}
-        gnd_planes = {l: copper_of(b, g, l) for l in self.layers}
-        gnd_planes = {l: q for l, q in gnd_planes.items() if q is not None and q.area > plane_min}
-        self.plane_nets = {n for n in nets if any(copper_of(b, n, l) is not None and copper_of(b, n, l).area > plane_min
-                                                 for l in rail_planes)}
+
+        def antipads(vias):                             # the holes those vias leave in the other net's plane
+            return unary_union([Point(v['x'], v['y']).buffer(v['r'] + CLEAR, quad_segs=4) for v in vias]) if vias else None
+
+        def planes(of, layers):                         # {layer: copper of `of` big enough to be a plane}
+            found = {l: copper_of(b, of, l) for l in layers}
+            return {l: q for l, q in found.items() if q is not None and q.area > plane_min}
+        rcover, gcover = antipads(rv), antipads(gv)
+        rail_planes, gnd_planes = planes(nets, self.layers), planes(g, self.layers)
+        # a lone net is a plane net whenever there is a rail plane (without one the constructor raises below)
+        self.plane_nets = set(nets) if len(nets) == 1 else {n for n in nets if planes(n, rail_planes)}
         self.cavities, self.notes = [], list(rail.notes)
         for rl, rg in rail_planes.items():
             zr = zt[rl][0]
@@ -113,13 +116,7 @@ class RailPDN:
                 geom = fill_holes(rg, hole_fill, gcover).intersection(fill_holes(gnd_planes[gl], hole_fill, rcover)).buffer(0)
                 if geom.is_empty or geom.area < 0.05 * plane_min:
                     continue
-                za, zb = sorted([zr, zt[gl][0]])
-                slabs = [(max(l['z0'], za), min(l['z1'], zb), l['er'], l.get('tand', 0.0))
-                         for l in b['stack']['layers'] if min(l['z1'], zb) > max(l['z0'], za)]
-                d = sum(q - p for p, q, _, _ in slabs)
-                er = d / sum((q - p) / e for p, q, e, _ in slabs)
-                tand = sum((q - p) / e * tn for p, q, e, tn in slabs) / sum((q - p) / e for p, q, e, _ in slabs)
-                self.cavities.append(Cavity(rl, gl, geom, d, er, tand, min(zt[rl][1], zt[gl][1])))
+                self.cavities.append(Cavity(rl, gl, geom, *dielectric(b, zr, zt[gl][0]), min(zt[rl][1], zt[gl][1])))
         if not self.cavities:
             raise ValueError(f"{rail.net}: no plane pair (rail and ground planes over {plane_min:.0f} mm2); "
                              "lower plane_min (--plane-min) for a small rail")
@@ -130,14 +127,11 @@ class RailPDN:
         for p in rail.decaps:
             given = (caps or {}).get(p.ref, {})              # explicit values (datasheet): override fields and defaults
             C = given.get('C') or (part_value(p) if p.props.get('Val') or p.value else None)
-            if C is None or C <= 0 or C > 1:
-                C = None
-            if C is None:
+            if C is None or not 0 < C <= 1:
                 self.notes.append(f"{p.ref}: no capacitance in its value ({p.value!r}): left out")
                 continue
             pkg = package(p.lib)
-            esr, esl = field_value(p, 'ESR', 'esr'), field_value(p, 'ESL', 'esl')
-            esr, esl = given.get('ESR', esr), given.get('ESL', esl)
+            esr, esl = given.get('ESR', field_value(p, 'ESR', 'esr')), given.get('ESL', field_value(p, 'ESL', 'esl'))
             esr_default = ESR_PKG.get(pkg, 0.02 if C < 1e-6 else 0.005)
             el = dict(C=C, ESR=esr if esr is not None else esr_default,
                       ESL=esl if esl is not None else ESL_PKG.get(pkg, 0.5e-9), defaulted=esr is None or esl is None, pkg=pkg)
@@ -146,17 +140,12 @@ class RailPDN:
             self.parts[p.ref] = dict(role='source', el=dict(self.vrm), part=p)
         for ref in rail.loads:
             self.parts[ref] = dict(role='load', el=None, part=rail.parts[ref])
-        for name, info in self.parts.items():
-            p = info['part']
-            pads = p.on(nets) if info['role'] != 'source' else rail.source_pads
-            info['rail'] = self._connect(pads, nets, rv, window)
-            info['gnd'] = self._connect(p.on(g), g, gv, window) if info['role'] != 'source' else \
-                self._connect(rail.ground_source_pads, g, gv, window)
-        self.series = []
-        for s in rail.series:
-            za = self._connect([q for q in s.part.pads if q.net == s.a], nets, rv, window)
-            zb = self._connect([q for q in s.part.pads if q.net == s.b], nets, rv, window)
-            self.series.append(dict(s=s, a=za, b=zb, esl=ESL_PKG.get(package(s.part.lib), 0.5e-9)))
+        for info in self.parts.values():
+            rail_pads, gnd_pads = rail.pads_of(info['part'], info['role'])
+            info['rail'] = self._connect(rail_pads, nets, rv, window)
+            info['gnd'] = self._connect(gnd_pads, g, gv, window)
+        self.series = [dict(s=s, a=self._connect(s.pads('a'), nets, rv, window), b=self._connect(s.pads('b'), nets, rv, window),
+                            esl=ESL_PKG.get(package(s.part.lib), 0.5e-9)) for s in rail.series]
         for info in self.parts.values():
             info['mount'] = self._mount(info['rail'], info['gnd'])
         self._assemble(dmax)
@@ -204,7 +193,7 @@ class RailPDN:
             nw = Network(bd, '_isl', terms, dmax=max(0.15, min(0.5, isl.area ** 0.5 / 20)), log=lambda *a: None)
             r = nw.solve({'pad': 1.0, **{f'v{k}': 0.0 for k in range(len(reach))}}, {})
             squares = (1.0 / max(r.loss, 1e-12)) * SIGMA_CU * self.zt[lay][1] * 1e-3
-        except Exception as e:                          # a pad on its via (via in pad): no path
+        except Exception:                               # a pad on its via (via in pad): no path
             squares = 0.0
         return Conn(vias=[(v['x'], v['y'], v['r']) for v in reach], L_path=MU0 * h * 1e-3 * squares, h=h,
                     why=f'{len(reach)} via(s), {squares:.2f} squares over {h:.2f} mm')
@@ -218,7 +207,7 @@ class RailPDN:
             s = min(np.hypot(a[0] - c[0], a[1] - c[1]) for a in rc.vias for c in gc.vias)
             r = min(a[2] for a in rc.vias)
             h = 0.5 * (rc.h + gc.h) + 0.5 * min(c.d for c in self.cavities)
-            L += MU0 * h * 1e-3 / np.pi * np.log(max(s, 2.5 * r) / r) / max(1, min(len(rc.vias), len(gc.vias)))
+            L += mount_inductance(h, max(s, 2.5 * r), r) / max(1, min(len(rc.vias), len(gc.vias)))
         return L
 
     # ---- the cavities, the ports, the nodes -------------------------------------------------------------------
@@ -283,7 +272,7 @@ class RailPDN:
                     union(key, ('v', off + q))
             off += len(nodes)
             self.log(f"cavity {c.rail_layer}/{c.ground_layer}: {c.geom.area:.0f} mm2, d {c.d:.3g} mm, er {c.er:.3g}, "
-                     f"C {EPS0 * c.er * c.geom.area * 1e-6 / (c.d * 1e-3) * 1e9:.3g} nF; {len(nodes):,} vertices")
+                     f"C {capacitance(c.geom.area, c.d, c.er) * 1e9:.3g} nF; {len(nodes):,} vertices")
         nv = off
         roots = {}
         idx = np.empty(nv, int)
@@ -319,16 +308,11 @@ class RailPDN:
             Lb = s.z100 / (2 * np.pi * 1e8)
             zl = 1j * w * Lb
             return s.R + zl * s.z100 / (zl + s.z100) + 1j * w * sr['esl']
-        return s.R + 1j * w * (getattr(s, 'L', 0.0) + sr['esl'])        # a series inductor's own L, and its package
+        return s.R + 1j * w * (s.L + sr['esl'])        # a series inductor's own L, and its package
 
     def matrix(self, f, bare=False):
         w = 2 * np.pi * f
-        Y = None
-        for c in self.cavities:
-            zs = 2 * surface_resistance(f, c.t * 1e-3) + 1j * w * MU0 * c.d * 1e-3
-            ysh = 1j * w * EPS0 * c.er * (1 - 1j * c.tand) / (c.d * 1e-3)
-            y = c.Kg / zs + c.Mg * ysh
-            Y = y if Y is None else Y + y
+        Y = sum(plane_admittance(c.Kg, c.Mg, f, c.d, c.er, c.tand, c.t) for c in self.cavities)
         y = np.zeros(self.n, complex)
         rows, cols, vals = [], [], []
         if not bare:
@@ -338,14 +322,10 @@ class RailPDN:
                 if d is None or el is None:
                     continue
                 m = info['mount'] + (0.5e-9 if info['rail'].node else 0.0)     # a lumped node's part: a nominal 0.5 nH
-                if 'C' in el:
-                    z = el['ESR'] + 1j * w * (el['ESL'] + m) + 1 / (1j * w * el['C'])
-                else:
-                    z = el.get('R', 0.0) + 1j * w * (el.get('L', 0.0) + m)
-                y[d] += 1 / z
+                y[d] += 1 / element_z(el, w, m)
         for k, sr in enumerate(self.series):                    # the series parts join their two sides
-            da = sr['a'].node and self.node_dof[sr['a'].node] if sr['a'].node else self.port_dof.get(f'~{k}a')
-            db = sr['b'].node and self.node_dof[sr['b'].node] if sr['b'].node else self.port_dof.get(f'~{k}b')
+            da = self.node_dof[sr['a'].node] if sr['a'].node else self.port_dof.get(f'~{k}a')
+            db = self.node_dof[sr['b'].node] if sr['b'].node else self.port_dof.get(f'~{k}b')
             if da is None or db is None or da == db:
                 continue
             g = 1 / self._series_z(sr, w)

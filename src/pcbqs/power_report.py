@@ -16,7 +16,7 @@ def render(out,animation=True):
     for f in frequencies:
         rr=sorted([r for r in rows if r['frequency_Hz']==f],key=lambda r:r['target_W']);p=[r['load_power_W'] for r in rr];label=f'{f/1000:g} kHz'
         for ax,key,scale in [(axs[0,0],'primary_rms_A',1),(axs[0,1],'phase_deg',1),(axs[1,0],'efficiency',100),(axs[1,1],'secondary_rms_A',1)]:ax.plot(p,[r[key]*scale for r in rr],'o-',label=label)
-    for ax,title,label in [(axs[0,0],'Primary winding current','RMS A'),(axs[0,1],'Phase required at 24 V','Degrees'),(axs[1,0],'Electrical source + ideal gate-source efficiency','Percent'),(axs[1,1],'Secondary winding current','RMS A')]:ax.set(title=title,xlabel='Delivered AC load power (W)',ylabel=label);ax.grid(alpha=.25);ax.legend()
+    for ax,title,label in [(axs[0,0],'Primary winding current','RMS A'),(axs[0,1],f'Phase required at {cfg["voltage_V"]:g} V','Degrees'),(axs[1,0],'Electrical source + ideal gate-source efficiency','Percent'),(axs[1,1],'Secondary winding current','RMS A')]:ax.set(title=title,xlabel='Delivered AC load power (W)',ylabel=label);ax.grid(alpha=.25);ax.legend()
     rx=f'fixed {cfg["secondary_C_F"]*1e9:g} nF' if cfg.get('secondary_C_F') is not None else 'tuned per frequency'
     fig.suptitle(f'Coupled receiver, k={cfg["coupling"]:g} · Primary {cfg["primary"]["L_H"]*1e6:g} µH / {cfg["primary_C_F"]*1e9:g} nF · Secondary {rx}')
     fig.savefig(out/'coupled-comparison.png',dpi=150);plt.close(fig)
@@ -57,7 +57,7 @@ def render(out,animation=True):
     fig.text(.5,.003,'Copper/via fields only · Coil/receiver/lead/package field geometry omitted · Bandwidth limited to retained harmonics',ha='center',fontsize=9)
     def update(k):
         for im,v,line in zip(images,mag,cursors):im.set_data(v[k].T);line.set_xdata([k/64,k/64])
-        header.set_text(f'Coupled-load driver fields · 24 V, k=0.4 · t/T = {k/64:.3f}')
+        header.set_text(f'Coupled-load driver fields · {cfg["voltage_V"]:g} V, k={cfg["coupling"]:g} · t/T = {k/64:.3f}')
         return [*images,*cursors,header]
     update(20);fig.savefig(out/'coupled-fields.png',dpi=150)
     if animation:FuncAnimation(fig,update,frames=64,interval=80).save(out/'coupled-fields.gif',writer=PillowWriter(fps=12),dpi=85)

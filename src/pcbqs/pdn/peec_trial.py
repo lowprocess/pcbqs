@@ -26,8 +26,7 @@ class PEECPDN:
         terms = {}
         self.terminals = {}
         for ref, info in legacy.parts.items():
-            power = rail.source_pads if info['role']=='source' else info['part'].on(rail.nets)
-            ground = rail.ground_source_pads if info['role']=='source' else info['part'].on(set(rail.ground))
+            power, ground = rail.pads_of(info['part'], info['role'])
             a, b = ref+':power', ref+':ground'
             terms[a], terms[b] = terminal(power, layers), terminal(ground, layers)
             if not terms[a] or not terms[b]:
@@ -35,8 +34,8 @@ class PEECPDN:
             self.terminals[ref] = a, b
         for link in rail.series:
             a,b=link.part.ref+':a',link.part.ref+':b'
-            terms[a]=terminal([p for p in link.part.pads if p.net==link.a],layers)
-            terms[b]=terminal([p for p in link.part.pads if p.net==link.b],layers)
+            terms[a]=terminal(link.pads('a'),layers)
+            terms[b]=terminal(link.pads('b'),layers)
             if not terms[a] or not terms[b]:raise ValueError(link.part.ref+': missing series-part pads')
         fine = None
         if contact_spacing is not None:

@@ -28,9 +28,7 @@ from scipy.sparse.linalg import spsolve
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
-from .mesh import net_sheets, stiffness, gradient, stack_z
-
-SIGMA_CU = 5.8e7                # S/m
+from .mesh import net_sheets, stiffness, gradient, stack_z, SIGMA_CU
 TIE_G = 1e6                     # S: a terminal or a via end to its vertices, in all (1 uOhm: equipotential)
 
 
@@ -186,35 +184,20 @@ def _disc(p):
 def solve(board, net, source, loads, dmax=1.0, sigma=SIGMA_CU, plating=0.025, ground=False, log=print, coarsen=None,
           fine=True):
     """The one-net form (see the module docstring); pads are discs (x, y, r) on a layer."""
-    terms = {'_source': _disc(source)}
-    terms.update({l.get('name', f'L{j + 1}'): _disc(l) for j, l in enumerate(loads)})
+    pads = {'_source': source, **{l.get('name', f'L{j + 1}'): l for j, l in enumerate(loads)}}
+    terms = {name: _disc(p) for name, p in pads.items()}
     nw = Network(board, net, terms, dmax=dmax, sigma=sigma, plating=plating, log=log,
                  fine=list(terms) if fine else ())
-    for t in terms:
-        if t not in nw.tj:
-            raise ValueError(f"pad {t} at ({(source if t == '_source' else next(l for l in loads if l.get('name') == t))['x']}, "
-                             f"...) is not on {net} copper")
+    for name, p in pads.items():
+        if name not in nw.tj:
+            raise ValueError(f"pad {name} at ({p['x']}, {p['y']}) is not on {net} copper")
     s = 1 if ground else -1
-    r = nw.solve({'_source': 0.0 if ground else float(source['V'])},
-                 {l.get('name', f'L{j + 1}'): s * l['I'] for j, l in enumerate(loads)})
-    r.loads = {l.get('name', f'L{j + 1}'): dict(V=r.terminals[l.get('name', f'L{j + 1}')], I=l['I'], layer=l['layer'])
-               for j, l in enumerate(loads)}
+    named = list(pads.items())[1:]
+    r = nw.solve({'_source': 0.0 if ground else float(source['V'])}, {name: s * l['I'] for name, l in named})
+    r.loads = {name: dict(V=r.terminals[name], I=l['I'], layer=l['layer']) for name, l in named}
     r.source = dict(source)
     log(f"dc {net}: {r.loss * 1e3:.2f} mW in the copper")
     return r
-
-
-def supply(board, net, ground_net, source, loads, ground_source=None, ground_loads=None, **kw):
-    """The one-net power and return solved, and what each load sees: ({name: dict(V, drop, power_drop, ground_rise, I)},
-    power DCResult, ground DCResult)."""
-    p = solve(board, net, source, loads, **kw)
-    g = solve(board, ground_net, ground_source or source, ground_loads or loads, ground=True, **kw)
-    seen = {}
-    for name, lp in p.loads.items():
-        lg = g.loads[name]
-        seen[name] = dict(V=lp['V'] - lg['V'], drop=source['V'] - (lp['V'] - lg['V']),
-                          power_drop=source['V'] - lp['V'], ground_rise=lg['V'], I=lp['I'])
-    return seen, p, g
 
 
 def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, fine=True):
@@ -226,8 +209,8 @@ def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, 
     g = set(rail.ground)
     pt = {'source': terminal(rail.source_pads, layers)}
     for s in rail.series:
-        pt[f'{s.part.ref}:a'] = terminal([q for q in s.part.pads if q.net == s.a], layers)
-        pt[f'{s.part.ref}:b'] = terminal([q for q in s.part.pads if q.net == s.b], layers)
+        pt[f'{s.part.ref}:a'] = terminal(s.pads('a'), layers)
+        pt[f'{s.part.ref}:b'] = terminal(s.pads('b'), layers)
     for ref in rail.loads:
         pt[ref] = terminal(rail.parts[ref].on(rail.nets), layers)
     pw = Network(rail.board, rail.nets, pt, dmax=dmax, sigma=sigma, plating=plating, log=log,
@@ -248,6 +231,7 @@ def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, 
         vp, vg = rp.terminals.get(ref, np.nan), rg.terminals.get(ref, 0.0)
         loads[ref] = dict(V=vp - vg, drop=volts - (vp - vg), power_drop=volts - vp, ground_rise=vg, I=i)
     notes = rp.notes + rg.notes + [f"{r}: no ground pad (its return not modelled)" for r in no_gnd]
-    log(f"dc rail {rail.net}: {(rp.loss + rg.loss) * 1e3:.1f} mW in the copper; worst drop "
-        f"{max(l['drop'] for l in loads.values()) * 1e3:.2f} mV" if loads else '')
+    if loads:
+        log(f"dc rail {rail.net}: {(rp.loss + rg.loss) * 1e3:.1f} mW in the copper; worst drop "
+            f"{max(l['drop'] for l in loads.values()) * 1e3:.2f} mV")
     return dict(loads=loads, series=rp.series, power=rp, ground=rg, notes=notes)

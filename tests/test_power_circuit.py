@@ -50,7 +50,7 @@ def test_transient_rc_against_closed_form(tmp_path,method):
     c=Circuit();c.lines.append(f'VIN {c.node("VIN")} 0 PULSE(0 1 0 1n 1n 1 2)')
     c.passive('R','VIN','OUT',dict(type='resistor',value=1000))
     c.passive('C','OUT','0',dict(type='capacitor',value=1e-6,ESR_ohm=0))
-    c.voltage('Vout','OUT');r=c.run(tmp_path,1000,cycles=5,samples_per_cycle=100,method=method)
+    c.voltage('Vout','OUT');r=c.run(tmp_path,1000,cycles=5,samples_per_cycle=100,options=dict(method=method))
     expected=1-np.exp(-r['time_s']/.001)
     np.testing.assert_allclose(r['Vout'],expected,atol=1e-4)
 
@@ -217,7 +217,7 @@ def test_field_prefetch_releases_dense_matrices_and_preserves_responses(tmp_path
 def test_solver_options_defaults_overrides_and_validation():
     from pcbqs.power_spice import solver_options, SOLVER_DEFAULTS
     assert solver_options() == SOLVER_DEFAULTS and SOLVER_DEFAULTS['abstol'] == 1e-6
-    assert solver_options(dict(reltol=1e-3), method='trap')['method'] == 'trap'
+    assert solver_options(dict(reltol=1e-3, method='trap'))['method'] == 'trap'
     for bad in (dict(reltol=0), dict(reltol=0.5), dict(method='euler'), dict(maxord=9), dict(unknown=1), dict(abstol=True)):
         with pytest.raises(ValueError):
             solver_options(bad)

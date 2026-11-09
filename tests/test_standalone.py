@@ -49,7 +49,7 @@ def test_no_rf_or_application_dependency_in_core():
         for node in ast.walk(ast.parse(file.read_text())):
             if isinstance(node,ast.ImportFrom) and node.module:
                 assert not node.module.startswith('mom25d'),file
-                if node.module.startswith('kicad2ems'):assert file.name=='cli.py' or file.name=='mqs_cli.py',file
+                if node.module.startswith('kicad2ems'):assert file.name=='_cli.py',file   # the one KiCad import path
             elif isinstance(node,ast.Import):
                 assert not any(n.name.startswith('mom25d') for n in node.names),file
 

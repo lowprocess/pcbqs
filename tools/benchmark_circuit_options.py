@@ -13,16 +13,18 @@ import sys
 import time
 from pathlib import Path
 
-BASE = 'method=gear maxord=2 reltol=1e-4 abstol=1e-9 vntol=1e-6 chgtol=1e-12 gmin=1e-10 rshunt=1e12'
-VARIANTS = {
-    'default': BASE,
-    'reltol1e-3': BASE.replace('reltol=1e-4', 'reltol=1e-3'),
-    'reltol3e-4': BASE.replace('reltol=1e-4', 'reltol=3e-4'),
-    'chgtol1e-14': BASE.replace('chgtol=1e-12', 'chgtol=1e-14'),
-    'trap': BASE.replace('method=gear maxord=2', 'method=trap'),
-    'trap-reltol1e-3': BASE.replace('method=gear maxord=2', 'method=trap').replace('reltol=1e-4', 'reltol=1e-3'),
-    'abstol1e-6': BASE.replace('abstol=1e-9', 'abstol=1e-6'),
-    'reltol1e-3-abstol1e-6': BASE.replace('reltol=1e-4', 'reltol=1e-3').replace('abstol=1e-9', 'abstol=1e-6'),
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from pcbqs.power_spice import options_line  # noqa: E402  (pcbqs's defaults, SOLVER_DEFAULTS)
+
+VARIANTS = {                                     # each: SOLVER_DEFAULTS with these changes
+    'default': options_line(),
+    'reltol1e-3': options_line(dict(reltol=1e-3)),
+    'reltol3e-4': options_line(dict(reltol=3e-4)),
+    'chgtol1e-14': options_line(dict(chgtol=1e-14)),
+    'trap': options_line(dict(method='trap')),
+    'trap-reltol1e-3': options_line(dict(method='trap', reltol=1e-3)),
+    'abstol1e-9': options_line(dict(abstol=1e-9)),
+    'reltol1e-3-abstol1e-9': options_line(dict(reltol=1e-3, abstol=1e-9)),
 }
 KEYS = ['input_power_W', 'load_power_W', 'primary_rms_A', 'secondary_rms_A', 'primary_peak_A', 'bus_ripple_V']
 

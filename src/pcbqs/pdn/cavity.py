@@ -30,9 +30,7 @@ from scipy.sparse import coo_matrix, diags
 from scipy.sparse.linalg import splu
 
 from .._numerics.base import MU0, EPS0
-from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z
-
-SIGMA_CU = 5.8e7
+from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z, SIGMA_CU
 
 
 def fill_holes(geom, area, cover=None):
@@ -62,12 +60,37 @@ def surface_resistance(f, t_m, sigma=SIGMA_CU):
     return 1.0 / (sigma * delta * (1 - np.exp(-t_m / delta)))
 
 
-def element_z(p, w):
-    """The series impedance of a port's element at angular frequency w (np.inf: none)."""
+def dielectric(board, za, zb):
+    """(d mm, er, tand) of the stack's dielectric between heights za and zb (mm): the series (effective) er."""
+    za, zb = sorted([za, zb])
+    slabs = [(min(l['z1'], zb) - max(l['z0'], za), l['er'], l.get('tand', 0.0))
+             for l in board['stack']['layers'] if min(l['z1'], zb) > max(l['z0'], za)]
+    d = sum(h for h, _, _ in slabs)
+    elastance = sum(h / e for h, e, _ in slabs)
+    return d, d / elastance, sum(h / e * tn for h, e, tn in slabs) / elastance
+
+
+def capacitance(area_mm2, d_mm, er):
+    """A plane pair's static capacitance, F."""
+    return EPS0 * er * area_mm2 * 1e-6 / (d_mm * 1e-3)
+
+
+def plane_admittance(K, M, f, d, er, tand, t, sigma=SIGMA_CU):
+    """The cavity's admittance matrix at f: K / Z + M Y (K: stiffness, M: mass in m2; d, t in mm), Z the planes'
+    series impedance per square, Y the dielectric's shunt admittance per m2 (the module docstring)."""
+    w = 2 * np.pi * f
+    zs = 2 * surface_resistance(f, t * 1e-3, sigma) + 1j * w * MU0 * d * 1e-3
+    ysh = 1j * w * EPS0 * er * (1 - 1j * tand) / (d * 1e-3)
+    return K / zs + M * ysh
+
+
+def element_z(p, w, mount=0.0):
+    """The series impedance of a port's element at angular frequency w (np.inf: none), plus `mount` H."""
+    mount += p.get('mount', 0.0)
     if 'C' in p:
-        return p.get('ESR', 0.0) + 1j * w * (p.get('ESL', 0.0) + p.get('mount', 0.0)) + 1.0 / (1j * w * p['C'])
+        return p.get('ESR', 0.0) + 1j * w * (p.get('ESL', 0.0) + mount) + 1.0 / (1j * w * p['C'])
     if 'R' in p or 'L' in p:
-        return p.get('R', 0.0) + 1j * w * (p.get('L', 0.0) + p.get('mount', 0.0))
+        return p.get('R', 0.0) + 1j * w * (p.get('L', 0.0) + mount)
     return np.inf
 
 
@@ -85,12 +108,7 @@ class PlanePair:
             # the antipads (the holes vias pass through) filled: a via through the cavity is a port at its point,
             # and a small hole changes the plane's inductance little
             geom = fill_holes(gp, hole_fill).intersection(fill_holes(gg, hole_fill)).buffer(0)
-            za, zb = sorted([zt[power_layer][0], zt[ground_layer][0]])
-            slabs = [(max(l['z0'], za), min(l['z1'], zb), l['er'], l.get('tand', 0.0))
-                     for l in board['stack']['layers'] if min(l['z1'], zb) > max(l['z0'], za)]
-            d = sum(b - a for a, b, _, _ in slabs)
-            er = d / sum((b - a) / e for a, b, e, _ in slabs)                  # the series (effective) permittivity
-            tand = sum((b - a) / e * tn for a, b, e, tn in slabs) / sum((b - a) / e for a, b, e, _ in slabs)
+            d, er, tand = dielectric(board, zt[power_layer][0], zt[ground_layer][0])
             t = min(zt[power_layer][1], zt[ground_layer][1])
         self.geom, self.d, self.er, self.tand, self.t, self.sigma = geom, d, er, tand, t, sigma
         self.ports = [dict(p) for p in ports]
@@ -111,15 +129,12 @@ class PlanePair:
         self.K = (P.T @ stiffness(nodes, tris) @ P).tocsc()                    # dimensionless (2D)
         self.M = (P.T @ mass(nodes, tris) @ P).tocsc() * 1e-6                  # m2
         self.area = float(self.M.sum())
-        self.C = EPS0 * er * self.area / (d * 1e-3)
+        self.C = capacitance(self.area * 1e6, d, er)
         log(f"plane pair: {geom.area:.0f} mm2, d {d:.3g} mm, er {er:.3g}, C {self.C * 1e9:.3g} nF; "
             f"{len(nodes):,} vertices, {len(self.ports)} ports")
 
     def y_planes(self, f):
-        w = 2 * np.pi * f
-        zs = 2 * surface_resistance(f, self.t * 1e-3, self.sigma) + 1j * w * MU0 * self.d * 1e-3
-        ysh = 1j * w * EPS0 * self.er * (1 - 1j * self.tand) / (self.d * 1e-3)
-        return self.K / zs + self.M * ysh
+        return plane_admittance(self.K, self.M, f, self.d, self.er, self.tand, self.t, self.sigma)
 
     def z(self, f, bare=False, observe=None):
         """(nf, k, k) impedance matrix between the planes at the ports (observe: their names, default every port),
