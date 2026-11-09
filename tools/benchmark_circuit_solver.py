@@ -11,8 +11,6 @@ Results (wall time, accepted/rejected steps, Newton iterations, last-cycle input
 <out>/results.json. Xyce cases are skipped when Xyce is not installed.
 """
 import json
-import math
-import os
 import re
 import shutil
 import subprocess
@@ -20,7 +18,6 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from pcbqs.power_spice import options_line  # noqa: E402

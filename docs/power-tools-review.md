@@ -45,9 +45,11 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 | U3 | Circuit results table lacks input power, VHB spike, supply ripple, settling and run time; the Power Integrity summary does not show a series inductor's inductance. | `powercircuittab.py`, `pdntab.py:112` | Fixed in kicad2ems-gui branch (table columns, L in the tree) |
 | U4 | No path from a converter on Near field to its switching circuit, or from Circuit's input current to a PDN load. The PDN↔Near field transfer exists. | pages | ROADMAP |
 | U5 | The Circuit page's switch list offers the behavioural `switch` model first; ngspice did not converge it on the benchmark converter at reltol 1e-3/1e-4 (Xyce did). | `powercircuittab.py:24` | ROADMAP: default to the template's VDMOS, warn |
+| U6 | The Power Integrity page split list options at every comma, so `--cap CA1=47e-6,0.02,1e-9` reached the tool as three broken arguments. | `pdntab.py` `pdn_argv` | Fixed: only a comma before a new `REF=` separates items |
 
 ## Maintainability
 
-- The `power_*` modules are written as dense one-line statements (e.g. `power_bridge.py`, `power_circuit.py`), which makes review and diffs harder than the rest of pcbqs. Reformatting would be a pure-style change worth doing before larger work there.
+- The `power_*` modules were written as dense one-line statements, which made review and diffs harder than the rest of pcbqs. Reformatted with ruff (120 columns, quotes preserved; `[tool.ruff]` in pyproject.toml).
+- Duplication removed: plane-pair physics (`pdn/cavity.py` functions now used by `RailPDN`), CLI options/`--describe`/board loading (`pcbqs/_cli.py`), series-part pad selection (`Series.pads`, `Rail.pads_of`), and the window's describe/process code (`toolprocess.py`). Dead code removed (unused end-state nodes, metric fallbacks, `dc.supply`, unused imports and arrays).
 - Tests cover circuit physics with small netlists and now warm starts; there is no end-to-end regression of a real board's results (wpthb or CM5) to catch drift such as C4–C6. Adding one coarse, cached case is cheap.
 - Template-specific logic (C7, U1) and the generic engine are mixed in `power_bridge.py`.

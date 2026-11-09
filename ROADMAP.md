@@ -17,6 +17,10 @@ Estimates are working days. Last updated 2026-11-09.
   summary shows series inductance; waveform views tolerate boards without L3/R9.
 - Mesh simplification (lone pads, regular pads/holes, polygonal vias) and the
   coaxial via-segment mutual fix; native H-matrix construction and products.
+- Code cleanup: dead code removed; the cavity physics, the CLI options/board
+  loader (`pcbqs._cli`) and the window's tool processes (`toolprocess.py`)
+  shared instead of duplicated; `power_*` modules reformatted (ruff, 120
+  columns, quotes preserved).
 
 ## Next: correctness and reporting (≈ 4 days)
 
@@ -68,4 +72,4 @@ Today a 30 W wpthb case is ~56 s: about two strict-equivalent transients of a
   warm start can initialise them.
 - Mesh/crop convergence studies per board; VNA PDN and near-field probe
   measurements to calibrate.
-- Reformat the `power_*` modules (one statement per line) before larger changes.
+

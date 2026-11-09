@@ -37,3 +37,9 @@ testpaths = ["tests"]
 
 [tool.setuptools.exclude-package-data]
 pcbqs = ["*.so", "*.pyd"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+quote-style = "preserve"

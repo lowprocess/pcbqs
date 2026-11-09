@@ -32,7 +32,7 @@ from shapely.ops import unary_union
 from .._numerics.base import MU0
 from .cavity import fill_holes, dielectric, capacitance, plane_admittance, element_z, mount_inductance
 from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z, SIGMA_CU
-from .rail import terminal, part_value, field_value
+from .rail import part_value, field_value
 
 ESL_PKG = {'0201': 0.25e-9, '0402': 0.35e-9, '0603': 0.45e-9, '0805': 0.6e-9, '1206': 0.8e-9, '1210': 0.9e-9,
            'elec_smd': 2.0e-9, 'radial': 3.0e-9}     # electrolytic/polymer cans: assumed, flagged as defaults
