@@ -249,7 +249,7 @@ def gap_zones(geom, gmax, step, tol=1e-9):
 # ---- Mesher -----------------------------------------------------------------
 def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), amax=None,
                   max_offset_frac=0.45, tol=1e-9, fine=None, dmax_fine=None, edge_zone=None, split_chains=False,
-                  coarsen=None, grow=0.5, structured=False, struct_w_max=20e-3, gap_rings=None):
+                  coarsen=None, grow=0.5, structured=False, struct_w_max=20e-3, gap_rings=None, quality=None):
     """
     geom   : shapely (Multi)Polygon of one metal layer
     dmax   : max edge length along conductors / in open regions
@@ -301,6 +301,10 @@ def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), ama
         fine_parts = [q for q in getattr(fg, 'geoms', [fg]) if q.geom_type == 'Polygon' and q.area > (2 * dmax_fine) ** 2]
         linework += [r for q in fine_parts for r in _rings(q)]          # region boundaries as constraints
     fine_u = unary_union(fine_parts).buffer(tol) if fine_parts else None
+    # quality (degrees): Triangle's minimum angle. Off by default (the edge-ring strips of the RF meshes would split
+    # into fans); without it a small feature (a via's octagon) fans out to far vertices in long slivers, and the
+    # linear elements then underestimate the log spreading around it (DC: ~0.1 mOhm per via junction)
+    q = f'q{quality:g}' if quality else ''
     hfield = None
     if coarsen and coarsen > 1:
         F = _features(geom, lines, vias, min(dmax, dmax_fine or dmax))
@@ -407,9 +411,9 @@ def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), ama
                 if q.geom_type == 'Polygon' and not q.is_empty]
         A['regions'] = np.array([[(pt.x - org[0]) / dmax, (pt.y - org[1]) / dmax, i + 1, a]
                                  for i, (pt, a) in enumerate(reg)])
-        T = tr.triangulate(A, "pQa")
+        T = tr.triangulate(A, f"p{q}Qa")
     else:
-        T = tr.triangulate(A, f"pQa{amax:.8f}")
+        T = tr.triangulate(A, f"p{q}Qa{amax:.8f}")
     nodes, tris = T['vertices'] * dmax + org, T['triangles']
     cent = nodes[tris].mean(1)
     tris = tris[shapely.contains_xy(geom.buffer(tol), cent[:, 0], cent[:, 1])]

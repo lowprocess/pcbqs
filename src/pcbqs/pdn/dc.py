@@ -29,7 +29,10 @@ from shapely.geometry import Point
 from shapely.ops import unary_union
 
 from .mesh import net_sheets, stiffness, gradient, stack_z, SIGMA_CU
-TIE_G = 1e6                     # S: a terminal or a via end to its vertices, in all (1 uOhm: equipotential)
+# S, from a terminal's or a via end's junction to EACH of its vertices. Per vertex, not shared: current enters a
+# pad through the few vertices on its edge, and a total of 1e6 S split over thousands of vertices left a pad
+# ~20 uV from equipotential per amp (+1% on a 40 mm strip, growing with mesh refinement; validation/dc_elmer.py).
+TIE_G = 1e6
 
 
 def _barrel_g(r_mm, dz_mm, plating_mm, sigma):
@@ -43,7 +46,7 @@ class Network:
     names of terminals meshed finer around (within `fine_r` mm, at dmax_fine), the current crowding into them."""
 
     def __init__(self, board, nets, terminals, dmax=1.0, sigma=SIGMA_CU, plating=0.025, fine=(), fine_r=2.0,
-                 dmax_fine=None, log=print):
+                 dmax_fine=None, log=print, quality=25):
         self.board, self.nets = board, {nets} if isinstance(nets, str) else set(nets)
         self.sigma, self.terms = sigma, dict(terminals)
         layers = list(stack_z(board))
@@ -58,8 +61,10 @@ class Network:
         fz = [poly.buffer(fine_r) for n in fine for _, poly in self.terms.get(n, [])]
         fzone = unary_union(fz) if fz else None
         pts = [(v['x'], v['y'], v['r']) for v in self.vias]
+        # quality: a minimum angle, so the cells grow out from each via's ring instead of reaching from it to far
+        # vertices in slivers (which underestimated every via junction's spreading: validation/dc_elmer.py)
         self.sheets = net_sheets(board, self.nets, pts, dmax=dmax, regions=regions, fine=fzone,
-                                 dmax_fine=dmax_fine or (dmax / 4 if fzone is not None else None))
+                                 dmax_fine=dmax_fine or (dmax / 4 if fzone is not None else None), quality=quality)
         if not self.sheets:
             raise ValueError(f"no copper of {', '.join(sorted(self.nets))}")
         off = 0
@@ -87,7 +92,7 @@ class Network:
                 sh = self.sheets[lay]
                 ring = sh.at(k)[1:] or sh.at(k)
                 for q in ring:
-                    link(j, sh.off + q, TIE_G / len(ring))
+                    link(j, sh.off + q, TIE_G)
                 js.append((j, lay, z))
                 j += 1
             segs = []
@@ -103,7 +108,7 @@ class Network:
                 self.notes.append(f"terminal {name}: on none of the copper of {', '.join(sorted(self.nets))}")
                 continue
             for q in ids:
-                link(j, q, TIE_G / len(ids))
+                link(j, q, TIE_G)
             self.tj[name] = j
             j += 1
         self.links = []                         # series parts: (name, terminal a, terminal b, R)
@@ -148,7 +153,9 @@ class Network:
         free = np.flatnonzero(live & ~np.isin(np.arange(self.n), fx))
         V[free] = spsolve(G[free][:, free].tocsc(), inj[free] - G[free][:, fx] @ V[fx])
         Vz = np.nan_to_num(V)
-        out = DCResult(self.nets, self.sheets, [], {}, float(Vz @ (G @ Vz)), self.n_mesh, notes)
+        # the loss as the power the terminals put in (Tellegen): V.G.V cancels across the stiff ties
+        loss = float(Vz[fx] @ (G[fx] @ Vz) + Vz[free] @ inj[free])
+        out = DCResult(self.nets, self.sheets, [], {}, loss, self.n_mesh, notes)
         for lay, sh in self.sheets.items():
             sh.V = V[sh.off:sh.off + len(sh.nodes)]
             gv = gradient(sh.nodes, sh.tris, np.nan_to_num(sh.V))      # V/mm

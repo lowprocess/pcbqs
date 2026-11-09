@@ -129,7 +129,7 @@ def simplify_copper(geom, keep=(), points=(), drop_lone=True, area=1.0, sides=8)
 
 
 def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), fine=None, dmax_fine=None,
-               grow=0.5, edge_rings=1, edge_zone=None, via_sides=None):
+               grow=0.5, edge_rings=1, edge_zone=None, via_sides=None, quality=None):
     """Mesh one piece of copper (mm): (nodes mm, tris, [vertex ids of each point: centre + ring], [vertex ids of
     each region]) for the points (x, y, r) inside it (None where one is not) and the regions (shapely polygons, mm:
     pads), whose outlines are made mesh edges (a region on none of this copper: []). fine (shapely, mm) is meshed at
@@ -158,7 +158,8 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
         kw = dict(fine=scale(fine, 1e-3, 1e-3, origin=(0, 0)), dmax_fine=dmax_fine * 1e-3)
     zone = scale(edge_zone,1e-3,1e-3,origin=(0,0)) if edge_zone is not None else None
     nodes, tris, vid = mesh_polygons(g, dmax * 1e-3, (w_ref or dmax) * 1e-3, ncross=edge_rings,
-                                     vias=vias, coarsen=coarsen, grow=grow, edge_zone=zone, lines=lines, **kw)
+                                     vias=vias, coarsen=coarsen, grow=grow, edge_zone=zone, lines=lines, quality=quality,
+                                     **kw)
     nodes = nodes * 1e3
     rings = [None] * len(points)
     for i, v in zip(inside, vid):
@@ -178,7 +179,8 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
     return nodes, tris, rings, reg
 
 
-def net_sheets(board, net, points=(), dmax=1.0, layers=None, coarsen=None, regions=None, fine=None, dmax_fine=None):
+def net_sheets(board, net, points=(), dmax=1.0, layers=None, coarsen=None, regions=None, fine=None, dmax_fine=None,
+               quality=None):
     """{layer: Sheet} of the copper of `net` (a name or a set: a rail tree) on each copper layer (or `layers`), every
     point (x, y, r) of `points` that lies on a layer's copper made a vertex with its ring. regions: {layer:
     [polygon]} (pads) whose outlines become mesh edges; Sheet.region(k) their vertex ids. fine, dmax_fine: a region
@@ -191,7 +193,7 @@ def net_sheets(board, net, points=(), dmax=1.0, layers=None, coarsen=None, regio
             continue
         rg = (regions or {}).get(lay, [])
         nodes, tris, rings, reg = mesh_sheet(g, points, dmax, coarsen=coarsen, regions=rg, fine=fine,
-                                             dmax_fine=dmax_fine)
+                                             dmax_fine=dmax_fine, quality=quality)
         key = [i for i, r in enumerate(rings) if r is not None]
         out[lay] = Sheet(lay, zt[lay][0], zt[lay][1], g, nodes, tris, [points[i] for i in key],
                          [rings[i] for i in key], key, reg)

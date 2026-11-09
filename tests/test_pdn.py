@@ -95,3 +95,32 @@ def test_decap_pulls_the_impedance_down_and_resonates_with_its_esl():
     k = np.argmin(z[f < 1e8])
     assert f[k] == pytest.approx(fsr, rel=0.15)                         # its series resonance, near the ESR
     assert z[k] == pytest.approx(5e-3, rel=0.6)
+
+
+def test_full_width_pads_are_equipotential():
+    """Pads across a strip's whole width: R is exactly L / (sigma t W) between their inner edges, at every mesh
+    density. (The terminal ties were once a total of 1e6 S split over the pad's vertices: current entering through
+    the edge vertices left the pads ~1% off equipotential, worse with refinement; validation/dc_elmer.py.)"""
+    b = board([('F.Cu', 0.0, 0.035)], {'F.Cu': [('P', box(0, 0, 50, 5))]})
+    R0 = 40e-3 / (5.8e7 * 35e-6 * 5e-3)
+    for dmax in (1.0, 0.5, 0.25):
+        nw = dc.Network(b, 'P', {'a': [('F.Cu', box(0, 0, 5, 5))], 'b': [('F.Cu', box(45, 0, 50, 5))]}, dmax=dmax,
+                        fine=['a', 'b'], log=lambda *a: None)
+        r = nw.solve({'a': 0.0}, {'b': -1.0})
+        assert -r.terminals['b'] == pytest.approx(R0, rel=2e-4)
+
+
+def test_a_via_spreads_like_a_pad_of_its_radius():
+    """The spreading from a via's ring into a plate equals that from a round pad of the via's radius (the mesh
+    graded out from the ring: without a minimum angle, slivers from the ring to far vertices lost ~25% of it)."""
+    from shapely.geometry import Point
+    plate = {'F.Cu': [('P', box(0, 0, 10, 10))], 'B.Cu': [('P', box(0, 0, 10, 10))]}
+    b = board([('B.Cu', 0.0, 0.035), ('F.Cu', 1.6, 0.035)], plate, vias=[(5, 5, 0.15, 0.0, 1.6, 'P')])
+    nw = dc.Network(b, 'P', {'s': [('F.Cu', box(0, 0, 1, 10))], 'l': [('B.Cu', box(9, 0, 10, 10))]}, dmax=0.5,
+                    plating=0.025, fine=['s', 'l'], log=lambda *a: None)
+    via = -nw.solve({'s': 0.0}, {'l': -1.0}).terminals['l'] - 1 / dc._barrel_g(0.15, 1.6, 0.025, 5.8e7)
+    one = board([('F.Cu', 0.0, 0.035)], {'F.Cu': [('P', box(0, 0, 10, 10))]})
+    pad = dc.Network(one, 'P', {'s': [('F.Cu', box(0, 0, 1, 10))], 'p': [('F.Cu', Point(5, 5).buffer(0.15, quad_segs=16))]},
+                     dmax=0.5, fine=['s', 'p'], log=lambda *a: None)
+    spread = -pad.solve({'s': 0.0}, {'p': -1.0}).terminals['p']
+    assert via / 2 == pytest.approx(spread, rel=0.06)
