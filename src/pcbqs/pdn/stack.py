@@ -34,11 +34,17 @@ from .cavity import fill_holes, surface_resistance, SIGMA_CU
 from .mesh import copper_of, mesh_sheet, stiffness, mass, stack_z
 from .rail import terminal, part_value, field_value
 
-ESL_PKG = {'0201': 0.25e-9, '0402': 0.35e-9, '0603': 0.45e-9, '0805': 0.6e-9, '1206': 0.8e-9, '1210': 0.9e-9}
+ESL_PKG = {'0201': 0.25e-9, '0402': 0.35e-9, '0603': 0.45e-9, '0805': 0.6e-9, '1206': 0.8e-9, '1210': 0.9e-9,
+           'elec_smd': 2.0e-9, 'radial': 3.0e-9}     # electrolytic/polymer cans: assumed, flagged as defaults
+ESR_PKG = {'elec_smd': 0.05, 'radial': 0.05}        # an electrolytic's ESR without a datasheet value: assumed
 CLEAR = 0.3                 # mm beyond a via's radius: its antipad, filled in the cavity (a via through it is a port)
 
 
 def package(lib):
+    if re.search(r'CP_Radial|C_Radial|Radial_D', lib or ''):
+        return 'radial'
+    if re.search(r'CP_Elec|C_Elec|Elec_\d', lib or ''):
+        return 'elec_smd'
     m = re.search(r'(?<!\d)(0201|0402|0603|0805|1206|1210)(?!\d)', lib or '')
     if m:
         return m.group(1)
@@ -74,7 +80,7 @@ class Conn:
 
 
 class RailPDN:
-    def __init__(self, rail, dmax=1.0, plane_min=None, vrm=None, hole_fill=2.0, window=6.0, log=print):
+    def __init__(self, rail, dmax=1.0, plane_min=None, vrm=None, hole_fill=2.0, window=6.0, log=print, caps=None):
         self.rail, self.log, self.vrm = rail, log, dict(vrm or dict(R=1e-3, L=30e-9))
         b = self.board = rail.board
         zt = self.zt = stack_z(b)
@@ -122,7 +128,8 @@ class RailPDN:
         # the parts and how each side meets the PDN
         self.parts = {}
         for p in rail.decaps:
-            C = part_value(p) if p.props.get('Val') or p.value else None
+            given = (caps or {}).get(p.ref, {})              # explicit values (datasheet): override fields and defaults
+            C = given.get('C') or (part_value(p) if p.props.get('Val') or p.value else None)
             if C is None or C <= 0 or C > 1:
                 C = None
             if C is None:
@@ -130,7 +137,9 @@ class RailPDN:
                 continue
             pkg = package(p.lib)
             esr, esl = field_value(p, 'ESR', 'esr'), field_value(p, 'ESL', 'esl')
-            el = dict(C=C, ESR=esr if esr is not None else (0.02 if C < 1e-6 else 0.005),
+            esr, esl = given.get('ESR', esr), given.get('ESL', esl)
+            esr_default = ESR_PKG.get(pkg, 0.02 if C < 1e-6 else 0.005)
+            el = dict(C=C, ESR=esr if esr is not None else esr_default,
                       ESL=esl if esl is not None else ESL_PKG.get(pkg, 0.5e-9), defaulted=esr is None or esl is None, pkg=pkg)
             self.parts[p.ref] = dict(role='decap', el=el, part=p)
         for p in rail.source_parts:
@@ -310,7 +319,7 @@ class RailPDN:
             Lb = s.z100 / (2 * np.pi * 1e8)
             zl = 1j * w * Lb
             return s.R + zl * s.z100 / (zl + s.z100) + 1j * w * sr['esl']
-        return s.R + 1j * w * sr['esl']
+        return s.R + 1j * w * (getattr(s, 'L', 0.0) + sr['esl'])        # a series inductor's own L, and its package
 
     def matrix(self, f, bare=False):
         w = 2 * np.pi * f

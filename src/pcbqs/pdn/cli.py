@@ -32,7 +32,12 @@ OPTIONS = [
     ('spread_load', '--spread-load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
      "(an assumption, for a first look when the loads are not known)", G_RAIL, None),
     ('max_ohms', '--max-ohms', 'float', 1.0, "the largest resistor the tree follows (sense and 0 ohm links)", G_RAIL, None),
-    ('through', '--through', 'str', '', "parts the tree follows whatever they are, comma-separated", G_RAIL, None),
+    ('through', '--through', 'str', '', "parts the tree follows whatever they are, comma-separated (an inductor "
+     "named here is a series filter inductor: its inductance and DCR stay in the model)", G_RAIL, None),
+    ('dcr', '--dcr', 'list', [], "a series part's DC resistance: REF=OHMS (repeat); overrides its value or the "
+     "assumed default", G_RAIL, None),
+    ('cap', '--cap', 'list', [], "a capacitor's datasheet values: REF=C[,ESR[,ESL]] in F, ohms, H (repeat); overrides "
+     "its value field and the package defaults", G_PDN, None),
     ('stop', '--stop', 'str', '', "parts the tree never follows, comma-separated", G_RAIL, None),
     ('plating', '--plating', 'float', 0.025, "via plating thickness, mm", G_DC, None),
     ('dmax', '--dmax', 'float', 1.0, "the largest mesh cell, mm (finer at the source and the loads)", G_MESH, None),
@@ -124,9 +129,18 @@ def run(a):
         loads, assumed = spread(board, a.rail, a.spread_load), True
     if not loads:
         raise SystemExit('pdn: no loads: --load REF=AMPS, or --spread-load AMPS')
+    dcr = {}
+    for item in a.dcr:
+        ref, _, ohms = item.partition('=')
+        try:
+            dcr[ref.strip()] = float(ohms)
+        except ValueError:
+            raise SystemExit(f'pdn: error: --dcr {item!r}: expected REF=OHMS')
+        if dcr[ref.strip()] <= 0:
+            raise SystemExit(f'pdn: error: --dcr {item!r}: resistance must be positive')
     kw = dict(ground=ground, loads=loads, source=a.source or None, ground_source=a.ground_source or None,
               max_ohms=a.max_ohms, through=tuple(x for x in a.through.split(',') if x),
-              stop=tuple(x for x in a.stop.split(',') if x))
+              stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr)
     rail = Rail(board, a.rail, **kw)
     if not a.board.endswith('.json') and not rail.nets <= {a.rail}:      # the tree's other nets: read with it
         say(f'rail tree: {len(rail.nets)} nets; reading their copper')
@@ -140,7 +154,7 @@ def run(a):
     t_dc = time.time() - t
     out = dict(format=1, rail=a.rail, nets=sorted(rail.nets), ground=list(ground), volts=a.volts, assumed_loads=assumed,
                settings={k: getattr(a, k) for k, *_ in OPTIONS},
-               tree=[dict(ref=s.part.ref, kind=s.kind, R=s.R, a=s.a, b=s.b, defaulted=s.defaulted) for s in rail.series],
+               tree=[dict(ref=s.part.ref, kind=s.kind, R=s.R, L=s.L, a=s.a, b=s.b, defaulted=s.defaulted) for s in rail.series],
                source=[p.ref for p in rail.source_parts],
                loads={r: dict(I=v['I'], V=v['V'], drop=v['drop'], power_drop=v['power_drop'], ground_rise=v['ground_rise'])
                       for r, v in dc['loads'].items()},
@@ -159,7 +173,17 @@ def run(a):
         t = time.time()
         if a.plane_min < 0:
             raise SystemExit('pdn: error: --plane-min must be nonnegative')
-        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l),
+        caps = {}
+        for item in a.cap:
+            ref, _, rest = item.partition('=')
+            try:
+                vals = [float(x) for x in rest.split(',') if x.strip()]
+            except ValueError:
+                raise SystemExit(f'pdn: error: --cap {item!r}: expected REF=C[,ESR[,ESL]]')
+            if not 1 <= len(vals) <= 3 or any(v <= 0 for v in vals):
+                raise SystemExit(f'pdn: error: --cap {item!r}: one to three positive values, C[,ESR[,ESL]]')
+            caps[ref.strip()] = dict(zip(('C', 'ESR', 'ESL'), vals))
+        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps,
                       log=lambda m: say(m))
         t_b = time.time() - t
         f = np.logspace(np.log10(a.fmin), np.log10(a.fmax), a.points)

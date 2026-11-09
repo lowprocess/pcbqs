@@ -163,3 +163,55 @@ def test_cli_describes_plane_min():
     options = {o['key']: o for o in cli.describe()['options']}
     assert options['plane_min']['flag'] == '--plane-min' and options['plane_min']['default'] == 0.0
     assert options['plane_min']['group'] == 'PDN impedance'
+
+
+def test_followed_inductor_keeps_its_inductance_and_dcr():
+    # An inductor named in through= is a series filter inductor: its henries and
+    # DCR stay in the model (DC drop and PDN impedance), not a 10 uOhm link.
+    import numpy as np
+    from pcbqs.pdn.rail import DEFAULT_INDUCTOR_DCR
+    from pcbqs.pdn.stack import RailPDN
+    r = Rail(board(), 'P', loads={'U1': 2.0, 'U2': 0.5}, source='U3', through=('L1',), dcr={'L1': 0.02, 'R1': 0.012})
+    series = {s.part.ref: s for s in r.series}
+    assert r.nets == {'P', 'VOUT', 'PF', 'SW'}
+    L1 = series['L1']
+    assert (L1.kind, L1.L, L1.R, L1.defaulted) == ('inductor', pytest.approx(2.2e-6), 0.02, False)
+    assert series['R1'].R == 0.012 and series['R1'].L == 0.0
+    assert any('L1 inductor 2.2 uH 0.02 ohm' in line for line in r.describe())
+    w = 2 * np.pi * 1e5
+    z = RailPDN._series_z(None, dict(s=L1, esl=0.5e-9), w)
+    assert z == pytest.approx(0.02 + 1j * w * (2.2e-6 + 0.5e-9))
+    assumed = {s.part.ref: s for s in Rail(board(), 'P', loads={'U1': 2.0}, source='U3', through=('L1',)).series}['L1']
+    assert assumed.R == DEFAULT_INDUCTOR_DCR and assumed.defaulted
+
+
+def test_cli_describes_dcr():
+    import pcbqs.pdn.cli as cli
+    options = {o['key']: o for o in cli.describe()['options']}
+    assert options['dcr']['kind'] == 'list' and options['dcr']['flag'] == '--dcr'
+
+
+def test_prefixed_capacitors_are_decaps_with_their_values():
+    # Bulk electrolytics are often CA*/CE*/CP*: they must be decaps, with
+    # electrolytic package defaults (flagged) unless datasheet values are given.
+    from pcbqs.pdn.stack import RailPDN, package
+    assert package('CP_Radial_D8.0mm_P3.50mm') == 'radial' and package('CP_Elec_6.3x5.9') == 'elec_smd'
+    b = board()
+    c2 = next(f for f in b['prims']['footprints'] if f['ref'] == 'C2')
+    c2['ref'], c2['lib'] = 'CA2', 'CP_Radial_D8.0mm_P3.50mm'
+    for p in c2['pads']:
+        p['ref'] = 'CA2'
+    r = Rail(b, 'P', loads={'U1': 2.0, 'U2': 0.5})
+    assert 'CA2' in {p.ref for p in r.decaps}
+    pdn = RailPDN(r, dmax=1.0, vrm=dict(R=2e-3, L=20e-9), log=lambda *a: None)
+    el = pdn.parts['CA2']['el']
+    assert (el['C'], el['ESR'], el['ESL'], el['defaulted']) == (pytest.approx(10e-6), 0.05, 3e-9, True)
+    given = RailPDN(r, dmax=1.0, vrm=dict(R=2e-3, L=20e-9), log=lambda *a: None,
+                    caps={'CA2': dict(C=47e-6, ESR=0.02, ESL=1e-9)}).parts['CA2']['el']
+    assert (given['C'], given['ESR'], given['ESL'], given['defaulted']) == (47e-6, 0.02, 1e-9, False)
+
+
+def test_cli_describes_cap():
+    import pcbqs.pdn.cli as cli
+    options = {o['key']: o for o in cli.describe()['options']}
+    assert options['cap']['kind'] == 'list' and options['cap']['flag'] == '--cap'

@@ -12,6 +12,9 @@ The tree is grown from `net` through two-pad parts between two non-ground nets t
   ferrite beads (FB*, or an L* whose value reads like one: 600R@100MHz, BLM..., bead), jumpers and net ties (JP*, NT*),
 and any part named in through=; never one in stop=. A power inductor (an L* in henries) is where it ends: the
 regulator's output, and the default source (its pad on the tree, the regulator's ground pads the return's source).
+An inductor named in through= is instead a series inductor of the tree (an input filter): its inductance and its
+DC resistance (dcr=, else a DCR field, else an assumed DEFAULT_INDUCTOR_DCR) both stay in the model. dcr= {ref: ohms}
+also overrides any series part's resistance.
 
 The board is board.json's dict with its footprints (prims.footprints: ref, value, props, lib, side, dnp, pads with
 name, net, layers, geom). A terminal is a part's pads on some nets: [(layer, shapely polygon)] per pad, a
@@ -27,6 +30,7 @@ _SI = {'f': 1e-15, 'p': 1e-12, 'n': 1e-9, 'u': 1e-6, 'µ': 1e-6, 'μ': 1e-6, 'm'
 _NUM = re.compile(r'^(\d*)(?:[.,](\d+))?([fpnuµμmkKMGRrE]?)(\d*)\s*(F|H|Ω|ohms?|OHMS?|R)?$')
 BEAD = re.compile(r'(\d+\s*(R|Ω|ohm)\s*@|bead|ferrite|^BLM|^MPZ|^FB)', re.I)
 DEFAULT_BEAD_DCR, DEFAULT_BEAD_Z100 = 0.05, 600.0
+DEFAULT_INDUCTOR_DCR = 0.01                 # a followed series inductor without a DCR: assumed, and flagged
 
 
 def parse_value(text):
@@ -104,10 +108,11 @@ class Series:
     part: Part
     a: str                      # the net nearer the rail's net
     b: str
-    kind: str                   # 'R', 'bead', 'jumper', 'through'
+    kind: str                   # 'R', 'bead', 'jumper', 'through', 'inductor'
     R: float                    # DC resistance, ohms
     z100: float = None          # a bead's impedance at 100 MHz
     defaulted: bool = False
+    L: float = 0.0              # a series inductor's inductance, H
 
 
 def parts_of(board):
@@ -153,6 +158,7 @@ class Rail:
     max_ohms: float = 1.0
     through: tuple = ()
     stop: tuple = ()
+    dcr: dict = field(default_factory=dict)         # {ref: ohms}: series parts' DC resistance
 
     def __post_init__(self):
         self.parts = {p.ref: p for p in parts_of(self.board)}
@@ -166,15 +172,26 @@ class Rail:
                 if n not in p.nets() or p.ref in self.stop or any(s.part is p for s in self.series):
                     continue
                 other = next(x for x in p.nets() if x != n)
-                c = ('through', field_value(p, 'DCR', 'dcr') or 1e-5, None, False) if p.ref in self.through else \
-                    classify(p, self.max_ohms)
+                L = 0.0
+                if p.ref in self.through:
+                    found = classify(p, float('inf'))
+                    dcr = field_value(p, 'DCR', 'dcr')
+                    if found is not None and found[0] == 'inductor':      # a series filter inductor
+                        L = found[1]
+                        c = ('inductor', dcr or DEFAULT_INDUCTOR_DCR, None, dcr is None)
+                    else:
+                        c = ('through', dcr or 1e-5, None, False)
+                else:
+                    c = classify(p, self.max_ohms)
                 if c is None:
                     continue
-                if c[0] == 'inductor':
+                if c[0] == 'inductor' and p.ref not in self.through:
                     if not any(q is p for q, _ in self.inductors):
                         self.inductors.append((p, n))
                     continue
-                self.series.append(Series(p, n, other, c[0], c[1], c[2], c[3]))
+                if p.ref in self.dcr:
+                    c = (c[0], float(self.dcr[p.ref]), c[2], False)
+                self.series.append(Series(p, n, other, c[0], c[1], c[2], c[3], L))
                 if other not in self.nets:
                     self.nets.add(other)
                     todo.append(other)
@@ -206,11 +223,12 @@ class Rail:
         if not gp:
             raise ValueError(f"{self.net}: no ground pads for the return's source: name ground_source = <ref>")
         self.ground_source_pads = gp
-        # decaps: two-pad capacitors from the tree to ground
+        # decaps: two-pad capacitors from the tree to ground (C1, and prefixed series such as CA1 / CE1 / CP1;
+        # one whose value is not a capacitance is reported and left out by the PDN model)
         self.decaps = []
         for p in self.parts.values():
             ns = p.nets()
-            if re.match(r'C\d', p.ref.upper()) and len(p.pads) == 2 and ns & self.nets and ns & g and len(ns) == 2:
+            if re.match(r'C[A-Z]{0,2}\d', p.ref.upper()) and len(p.pads) == 2 and ns & self.nets and ns & g and len(ns) == 2:
                 self.decaps.append(p)
         missing = [r for r in self.loads if r not in self.parts]
         if missing:
@@ -222,7 +240,8 @@ class Rail:
     def describe(self):
         lines = [f"rail {self.net}: nets {', '.join(sorted(self.nets))}"]
         for s in self.series:
-            lines.append(f"  {s.part.ref} {s.kind} {s.R:.3g} ohm{' (default DCR)' if s.defaulted else ''}: {s.a} -> {s.b}")
+            lh = f" {s.L * 1e6:.3g} uH" if s.L else ''
+            lines.append(f"  {s.part.ref} {s.kind}{lh} {s.R:.3g} ohm{' (default DCR)' if s.defaulted else ''}: {s.a} -> {s.b}")
         lines.append(f"  source {', '.join(p.ref for p in self.source_parts)} ({len(self.source_pads)} pads), return "
                      f"source {len(self.ground_source_pads)} ground pads; {len(self.decaps)} decaps, "
                      f"{len(self.loads)} loads")
