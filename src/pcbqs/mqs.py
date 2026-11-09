@@ -594,6 +594,8 @@ class MQS:
     def capacitance_matrix(self):
         """Maxwell capacitance (F), node conductor labels, terminal labels.
         Requires capacitance=True; see pcbqs.peec.capacitance_matrix.
+        Keep terminals small: a terminal's triangles share one charge density, so a terminal covering a whole
+        conductor forbids its edge charge (a 0.3 mm trace lost half its capacitance; validation/cap_fastercap.py).
         """
         if not self.capacitance:
             raise ValueError('capacitance_matrix requires capacitance=True')

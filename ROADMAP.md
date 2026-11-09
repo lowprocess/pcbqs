@@ -82,13 +82,13 @@ In order:
    - Memory: twice the unknowns. The compressed backend needs to work without `capacitance=True`.
    - `dielectric='stack'` with face sheets.
    - Validate on the CM5 loop, then make it the slab default.
-2. **Capacitance against FasterCap, in progress (1 day).** FasterCap 5 is built at
-   `~/opt/src/FasterCap-build`; `validation/cap_fastercap.py` (work in progress). Plates in air agree to ~1.5%.
-   - Traces over a plane in air: pcbqs is 20% low on self capacitance and 45% low on trace-to-trace.
-     Run FasterCap with zero-thickness copper to separate the 35 µm side walls from pcbqs error.
-   - FasterCap's FR-4 input is wrong (non-physical matrix): fix the dielectric interface where copper sits on it.
-   - Terminals: a pcbqs terminal has one charge density, so it must stay small. Note this in `capacitance_matrix`.
-   - Then pcbqs's layered-stack images on FR-4, and side-wall capacitance once face sheets carry charge.
+2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
+   microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
+   permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the
+   closed form. Copper thickness adds +12% to a 0.3 mm microstrip 0.2 mm over its plane, and pcbqs omits it.
+   - Narrow gaps: edge-charge resolution within memory (compressed backend, or graded edge rings).
+   - Thickness: side-wall and both-face charge once face sheets carry charge (with item 1).
+
 3. **Real converter loop (1 day).** CM5 U702 against Palace and FastHenry, with regulator and capacitor pads
    modelled alike (C13: a pcbqs terminal is one node, so large pads shorten a small loop).
 4. **Parts on pads (C13, 1 day).** Attach parts along their pad edges, not at one node.

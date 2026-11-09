@@ -39,7 +39,25 @@ def traces(er):
                         'B.Cu': [('G', box(-5, -12, 5, 12))]}, h=0.2, er=er, extent=box(-5, -12, 5, 12))
 
 
-CASES = dict(plates=plates, traces_air=lambda: traces(1.0), traces_fr4=lambda: traces(4.4))
+def microstrip(er):
+    """One 0.3 mm trace, 20 mm long, 0.2 mm over a 10 x 24 mm plane: Hammerstad-Jensen gives C per length."""
+    return dict(copper={'F.Cu': [('T', box(-0.15, -10, 0.15, 10))], 'B.Cu': [('G', box(-5, -12, 5, 12))]}, h=0.2,
+                er=er, extent=box(-5, -12, 5, 12))
+
+
+def hammerstad(w, h, er, t=0.0):
+    """Microstrip C per metre (Hammerstad-Jensen, zero thickness): sqrt(eeff) / (c Z0)."""
+    u = w / h
+    a = 1 + np.log((u ** 4 + (u / 52) ** 2) / (u ** 4 + 0.432)) / 49 + np.log(1 + (u / 18.1) ** 3) / 18.7
+    b = 0.564 * ((er - 0.9) / (er + 3)) ** 0.053
+    eeff = (er + 1) / 2 + (er - 1) / 2 * (1 + 10 / u) ** (-a * b)
+    f = 6 + (2 * np.pi - 6) * np.exp(-(30.666 / u) ** 0.7528)
+    z01 = 60 * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))      # air
+    return np.sqrt(eeff) / (299792458.0 * z01 / np.sqrt(eeff))
+
+
+CASES = dict(plates=plates, traces_air=lambda: traces(1.0), traces_fr4=lambda: traces(4.4),
+             microstrip_air=lambda: microstrip(1.0), microstrip_fr4=lambda: microstrip(4.4))
 
 
 def board_of(c):
@@ -86,7 +104,7 @@ def _quads_of(poly, z):
         A = dict(vertices=verts, segments=np.array(segs))
         if p.interiors:
             A['holes'] = np.array([list(h.representative_point().coords)[0] for h in map(type(p), p.interiors)])
-        T_ = tr.triangulate(A, 'pQ')
+        T_ = tr.triangulate(A, 'pq25Q')                 # a minimum angle: FasterCap struggles with slivers
         out += [[(*T_['vertices'][i], z) for i in tri] for tri in T_['triangles']]
     return out
 
@@ -128,7 +146,8 @@ def fastercap_input(c, t=T):
             files[f'{name}_fr4'] = [_panel('T', name, p) for p in in_fr4]
             main += [f'C {name}_air 1.0 0 0 0 +', f'C {name}_fr4 {er:g} 0 0 0']
     if er != 1.0:                                              # the slab's faces, less the copper on them
-        slab = c['extent'].buffer(5)
+        slab = c['extent']           # the plane's footprint, as in FastFieldSolvers' WP130527 example B: the plane
+                                     # covers the slab's bottom; a wider slab meant ~0.2 mm panels over much more area
         from shapely.ops import unary_union
         topcu = unary_union([p for _, p in c['copper'].get('F.Cu', [])])
         botcu = unary_union([p for _, p in c['copper'].get('B.Cu', [])])
@@ -145,17 +164,23 @@ def fastercap_input(c, t=T):
     return text
 
 
-def fastercap_c(c, folder, rel=0.005, t=T):
+def fastercap_c(c, folder, rel=0.002, t=T):        # 0.5% stopped ~3% low on a microstrip
     """Maxwell C from FasterCap (auto refinement to `rel`), the conductor names in its order, and the time."""
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'case.lst').write_text(fastercap_input(c, t))
     t = time.perf_counter()
+    # its out-of-core files go to TMPDIR (default /tmp: RAM here, so big runs aborted with "File error"): the run's
+    # own folder on disk, emptied after; -f1: out of core only when the links exceed the free memory
+    tmp = folder / 'tmp'
+    tmp.mkdir(exist_ok=True)
     with open(folder / 'fastercap.log', 'w') as log:              # streamed: a long refinement shows progress
-        p = subprocess.run([FASTERCAP, '-b', 'case.lst', f'-a{rel}', '-ap'], cwd=folder, stdout=log,
-                           stderr=subprocess.STDOUT, text=True, timeout=14400)
+        p = subprocess.run([FASTERCAP, '-b', 'case.lst', f'-a{rel}', '-ap', '-f1'], cwd=folder, stdout=log,
+                           stderr=subprocess.STDOUT, text=True, timeout=14400, env=dict(os.environ, TMPDIR=str(tmp)))
+    for stale in tmp.glob('frc*.tmp'):
+        stale.unlink()
     out = (folder / 'fastercap.log').read_text()
     blocks = out.split('Capacitance matrix is:')
-    if len(blocks) < 2:            # it exits non-zero ("File error") after printing a good result, even on its samples
+    if p.returncode or len(blocks) < 2:
         raise RuntimeError('FasterCap failed; see ' + str(folder / 'fastercap.log'))
     lines = blocks[-1].strip().splitlines()
     n = int(re.search(r'Dimension (\d+) x', lines[0])[1])

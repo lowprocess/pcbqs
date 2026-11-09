@@ -74,11 +74,28 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 
 ## In progress
 
-- **Capacitance against FasterCap** (`cap_fastercap.py`; FasterCap 5 built headless; wxWidgets 3.2 needs the
-  version in its CMakeLists changed). Plates in air agree to ~1.5%. On traces over a plane pcbqs is 20–45% low,
-  probably partly FasterCap's 35 µm side walls; a zero-thickness run will tell. The FR-4 input still gives a
-  non-physical matrix. Give pcbqs small terminals: a terminal has one charge density, and a whole-conductor
-  terminal removed half of a narrow trace's capacitance.
+- **Capacitance against FasterCap** (`cap_fastercap.py`; FasterCap 6.0.7 built headless at
+  `~/opt/src/FasterCap-build`). Zero-thickness copper in FasterCap matches pcbqs's sheets:
+
+  | Case | pcbqs (dmax 0.25) | FasterCap | Difference |
+  |---|---|---|---|
+  | Plates 10 × 10 mm, 0.5 mm apart, air | 2.170 / −1.953 pF | 2.168 / −1.952 pF | < 0.1% |
+  | Microstrip 0.3 mm over 0.2 mm, 20 mm, air | 0.623 pF to ground −0.612 | 0.638 / −0.627 (0.05% tol.) | −2.4% |
+  | Two traces, 0.1 mm apart, air: self / mutual / to ground | 0.666 / −0.152 / −0.505 | 0.696 / −0.171 / −0.516 (±3%) | −4 / −11 / −2% |
+  | Microstrip, FR-4 / air ratio (effective permittivity) | 3.23 | Hammerstad–Jensen 3.26 | −1% |
+
+  - pcbqs is a little low on narrow traces, most where they face each other across a small gap. Its
+    constant charge per triangle can't fully resolve the edge charge within the dense solver's memory limits.
+  - Copper thickness is not small here. 35 µm boxes in FasterCap give the air microstrip 0.713 pF, +12% over the
+    sheets, and that is capacitance pcbqs leaves out.
+  - Gotchas:
+    - A pcbqs terminal has one charge density, so keep it small: a whole-conductor terminal removed half of a
+      narrow trace's capacitance.
+    - FasterCap needs `-a` ≤ 0.002 (0.5% stopped ~3% low).
+    - FasterCap's out-of-core files go to TMPDIR, which is RAM here; full, it aborted with "File error". The
+      script uses each run's folder.
+    - FasterCap on FR-4 (copper on the interface) stayed non-physical, even with the slab trimmed to the plane
+      as in FastFieldSolvers' white paper WP130527, so FR-4 is checked against Hammerstad–Jensen instead.
 - **Two face sheets for AC resistance** (`MQS(thickness_sheets=2)`, C14): the strip loop's 10–100 MHz error
   falls from −20% to −12%. Mesh limits remain.
 
