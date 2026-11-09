@@ -74,14 +74,16 @@ EP NP0 NP1 w=1.2 h={T}
 CASES = dict(loop=loop_inp, plane_return=plane_return_inp)
 
 
-def fasthenry(name, inp, f, folder):
+def fasthenry(name, inp, f, folder, timeout=None):
+    """Run FastHenry on `inp` in `folder`; its console output goes to fasthenry.log as it runs (a board-sized model
+    takes hours: watch it there). Returns (f, R, L) from Zc.mat."""
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'Zc.mat').unlink(missing_ok=True)      # never read a previous run's result
     # FastHenry reads the first line as the title: without one it swallows `.units mm` (and solves in metres)
     (folder / f'{name}.inp').write_text(f'* pcbqs validation: {name}\n' + inp
                                         + f'.freq fmin={f[0]:g} fmax={f[-1]:g} ndec=1\n.end\n')
-    p = subprocess.run([FASTHENRY, f'{name}.inp'], cwd=folder, capture_output=True, text=True, timeout=7200)
-    (folder / 'fasthenry.log').write_text(p.stdout + p.stderr)
+    with open(folder / 'fasthenry.log', 'w') as log:
+        subprocess.run([FASTHENRY, f'{name}.inp'], cwd=folder, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
     text = (folder / 'Zc.mat').read_text()           # FastHenry exits non-zero even when it has finished
     rows = [tuple(map(float, m)) for m in
             re.findall(r'frequency = ([0-9.e+-]+) 1 x 1\s+([-0-9.e+]+)\s+([-0-9.e+]+)j', text)]

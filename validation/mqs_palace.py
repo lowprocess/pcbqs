@@ -133,8 +133,13 @@ def palace_mesh(b, nets, gap, path, margin=25.0, h_cu=0.25, h_air=6.0, extra_she
             up = gmsh.model.getAdjacencies(2, t)[0]
             if len(up) < 2:                        # a face of one air volume only: a rod's wall or cap
                 rod_faces.add(t)
-    # sheet pieces inside a rod were removed with it; keep those still bounding air
-    live = {t for dd, t in gmsh.model.getEntities(2)}
+    # sheet pieces inside a rod were removed with it, or left behind as a disc bounding no volume (Palace rejects
+    # those: MFEM's STable3D abort). Embedded sheets bound no volume either, so the discs are found by position.
+    def in_rod(t):
+        x, y, z = occ.getCenterOfMass(2, t)
+        return any(np.hypot(x - v['x'], y - v['y']) < v['r'] - 1e-6 and v['z0'] - 1e-6 <= z <= v['z1'] + 1e-6
+                   for v in vias)
+    live = {t for dd, t in gmsh.model.getEntities(2) if not in_rod(t)}
     gmsh.model.addPhysicalGroup(3, air_vols, 1)
     gmsh.model.addPhysicalGroup(2, sorted((sheet_faces | rod_faces) & live), 2)
     gmsh.model.addPhysicalGroup(2, sorted(port_faces & live), 3)

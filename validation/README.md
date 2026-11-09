@@ -98,11 +98,32 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
       as in FastFieldSolvers' white paper WP130527, so FR-4 is checked against Hammerstad–Jensen instead.
 - **Two face sheets for AC resistance** (`MQS(thickness_sheets=2)`, C14): the strip loop's 10–100 MHz error
   falls from −20% to −12%. Mesh limits remain.
+  - The face correction removed each pair's own opposite-mode inductance but not the coupling between
+    neighbouring pairs. On CM5 the opposite modes were then nearly free and coupled, and GMRES stalled at 1–10 MHz
+    (residual 1e-3 after 500 iterations). `face_correction='overlap'` (experimental) also removes the coupling of
+    pairs whose edges share a triangle, as the slab's Gram terms do. CM5 then converges at every frequency
+    (220–325 iterations). The plane return's 100 MHz resistance goes from −12.9% to −7.2% against FastHenry; the
+    strip loop is unchanged.
+- **A real converter loop: CM5 MINIMA's U702 input loop** (`mqs_cm5.py`, `images/mqs_cm5.png`). Six layers of
+  +5V and GND copper inside 9.4 x 13.7 mm, 17 vias. Each capacitor is a copper bridge across its pads, and the
+  port is across the 0.2 mm gap between U702's VIN pad and the GND pad beside it, so all three tools see the same
+  copper and no pad is shorted (C13). Loop L at 100 MHz:
+
+  | | mesh ladder | finest |
+  |---|---|---|
+  | Palace, PEC sheets (h 0.5 → 0.25) | 0.336, 0.353, 0.356 nH (rising) | 286k tets, 260 s |
+  | pcbqs, one sheet (dmax 0.8 → 0.35) | 0.430, 0.404, 0.383, 0.371 nH (falling) | 38k triangles, 48 s, 4.6 GB |
+  | pcbqs, two face sheets, overlap | 0.344, 0.320, 0.300, 0.292 nH (falling) | 76k triangles, 320 s |
+
+  One sheet and Palace's zero-thickness sheets close in from either side (4% apart). Two face sheets sit lower;
+  part of that is real (the faces narrow the 0.1 mm B.Cu–In4 gap to 0.074 mm). R at 100 MHz is 9.9 mOhm with one
+  sheet and 18.2 with two. FastHenry (`mqs_cm5.py fasthenry 0.2`: the copper rasterised to a 0.2 mm grid of
+  segments, 28k segments) decides between them; that run is in progress. The compressed backend matched dense to
+  four digits here, in a tenth of the memory.
+  - Palace needed one fix in `mqs_palace.palace_mesh`: copper inside a via rod was left behind as a disc bounding
+    no volume (MFEM's STable3D abort). Such surfaces are now found by position and dropped.
 
 ## Not done yet
-
-- **A real converter loop (CM5 U702) against Palace.** It needs the regulator's VIN and GND pads and the
-  capacitors described the same way in both tools, with the terminal-pad effect above taken into account.
 
 - **Measurement.** VNA shunt-through on a PDN, and a near-field probe at 1–3 mm, on wpthb.
 
@@ -114,6 +135,7 @@ python validation/dc_elmer.py [strip via_single via_hop wpthb_vhb jetson_1v15]  
 python validation/pdn_palace.py [rect lshape jetson_1v15]                          # Palace (podman image or native)
 python validation/mqs_palace.py [loop plane_return]
 python validation/mqs_fasthenry.py [loop plane_return]                             # after mqs_palace.py
+python validation/mqs_cm5.py geometry|pcbqs DMAX [SHEETS] [hier] [overlap]|palace H...|fasthenry P...|figure|report
 python validation/dc_elmer.py --plot        # redraw from saved results (also mqs_palace.py --plot)
 ```
 

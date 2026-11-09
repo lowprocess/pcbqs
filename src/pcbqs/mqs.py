@@ -358,30 +358,45 @@ class MQS:
             zself, zmutual = face_impedance(f, t, self.sigma, vacuum=False)
             delta = delta + (zself - 2 / (self.sigma * t)) * Gs + zmutual * Gx
         if getattr(self, '_face_terms', None):
-            e, g, c = self._face_opposite()
-            n = self.ne
-            V = coo_matrix((np.r_[c, c, -c, -c], (np.r_[e, g, e, g], np.r_[e, g, g, e])), shape=(n, n)).tocsr()
+            rows, cols, vals = self._face_opposite()
+            V = coo_matrix((vals, (rows, cols)), shape=(self.ne, self.ne)).tocsr()
             delta = delta - 1j * 2 * np.pi * f * V
         return block_diag((delta, csr_matrix((nb-self.ne, nb-self.ne))), format='csr')
 
     def _face_opposite(self):
-        """(bottom edges, top edges, c): each face-sheet pair's own opposite-mode inductance (L_ee + L_gg - 2 L_eg)/4,
-        from the copper inductance as filled (dense, or the compressed matrix's exact entries)."""
+        """The partial inductance's share of the between-the-faces field, removed from face-sheet pairs (the slab
+        two-port carries it): (rows, cols, values) of V, subtracted as j w V. With d_i = (bottom edge - top edge) of
+        pair i, V = sum c_ij d_i d_j^T, c_ij = d_i^T L d_j / 4, which zeroes the partial inductance's opposite-mode
+        coupling of i and j. face_correction 'pair' (default) takes each pair alone (i = j); 'overlap'
+        (experimental) also every two pairs whose bottom edges share a triangle, as the slab's Gram terms do."""
         if getattr(self, '_face_c', None) is None:
             Le = self._copper[1] if self._copper is not None else self._assemble()['L'][0]
             e, g = np.hstack(self._face_pairs)
-            c = np.zeros(len(e))
-            for k in range(0, len(e), 256):
-                a, b = e[k:k + 256], g[k:k + 256]
+            if hasattr(Le, 'entry') and Le.entry is None:
+                raise ValueError('thickness_sheets=2 needs a freshly filled inductance (a cached, unpickled '
+                                 'operator keeps no exact entries)')
+            if getattr(self, 'face_correction', 'pair') == 'overlap':
+                pair_of = np.full(self.ne, -1)
+                pair_of[e] = np.arange(len(e))
+                r = self.rwg
+                edges_of = [[] for _ in range(len(self.tris))]
+                for k, (a, b) in enumerate(zip(r.tp, r.tm)):
+                    if pair_of[k] >= 0:
+                        edges_of[a].append(pair_of[k])
+                        edges_of[b].append(pair_of[k])
+                couples = {(i, j) for es in edges_of for i in es for j in es}
+                i, j = np.array(sorted(couples)).T
+            else:
+                i = j = np.arange(len(e))
+            c = np.zeros(len(i))
+            for k in range(0, len(i), 256):
+                a, b = i[k:k + 256], j[k:k + 256]
                 if hasattr(Le, 'entry'):
-                    if Le.entry is None:
-                        raise ValueError('thickness_sheets=2 needs a freshly filled inductance (a cached, unpickled '
-                                         'operator keeps no exact entries)')
-                    block = lambda r, s: np.diagonal(np.asarray(Le.entry(r, s)))
+                    look = lambda x, y: np.array([np.asarray(Le.entry([u], [v]))[0, 0] for u, v in zip(x, y)])
                 else:
-                    block = lambda r, s: np.asarray(Le)[r, s]
-                c[k:k + 256] = (block(a, a) + block(b, b) - 2 * block(a, b)) / 4
-            self._face_c = (e, g, c)
+                    look = lambda x, y: np.asarray(Le)[x, y]
+                c[k:k + 256] = (look(e[a], e[b]) + look(g[a], g[b]) - look(e[a], g[b]) - look(g[a], e[b])) / 4
+            self._face_c = (np.r_[e[i], g[i], e[i], g[i]], np.r_[e[j], g[j], g[j], e[j]], np.r_[c, c, -c, -c])
         return self._face_c
 
     def _set_potential(self, M0, er=None):

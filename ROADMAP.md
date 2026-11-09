@@ -90,6 +90,14 @@ In order:
    - Charge on the face sheets (capacitance with thickness), then `dielectric='stack'` with faces.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
+
+   Started (2026-11-09):
+   - `panels3d.py`: the 1/R moments between triangles of any orientation, which side walls need. It reproduces the
+     horizontal kernel exactly, and is checked against rotations and brute-force quadrature (`test_panels3d.py`).
+     Still to do: wall panels in the mesh, 3D RWG functions across face–wall edges, the walls' resistance (it must
+     leave DC unchanged), and their entries in the compressed backend.
+   - `face_correction='overlap'`: two face sheets now converge on a real six-layer board (CM5); see
+     validation/README.md. Whether it becomes the default waits on FastHenry's CM5 result.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
    permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the
@@ -97,8 +105,9 @@ In order:
    - Narrow gaps: edge-charge resolution within memory (compressed backend, or graded edge rings).
    - Thickness: side-wall and both-face charge once face sheets carry charge (with item 1).
 
-3. **Real converter loop (1 day).** CM5 U702 against Palace and FastHenry, with regulator and capacitor pads
-   modelled alike (C13: a pcbqs terminal is one node, so large pads shorten a small loop).
+3. **Real converter loop, in progress.** CM5 U702 (`validation/mqs_cm5.py`): pcbqs with one sheet is within 4%
+   of Palace's PEC sheets at the finest meshes, both still converging. FastHenry (R, and L with thickness) is
+   running; it decides between one and two face sheets.
 4. **Parts on pads (C13, 1 day).** Attach parts along their pad edges, not at one node.
 5. **Measurements.** VNA shunt-through on the wpthb DC link, and a near-field probe at 1–3 mm.
 
