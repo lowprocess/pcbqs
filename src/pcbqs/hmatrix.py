@@ -73,6 +73,7 @@ class HMatrix(LinearOperator):
             raise ValueError('leaf must be a positive integer')
         super().__init__(np.dtype(dtype),(len(lo),len(lo)))
         self.blocks=[];self.entries=0;self.diagonal=np.zeros(len(lo),dtype=dtype)
+        self.entry=entry                 # exact entries on demand (face-sheet pairs); not pickled: a local closure
         rng=np.random.default_rng(0)
         next_log=time.monotonic()+15;payload=0;row_hits=0
 
@@ -310,7 +311,8 @@ class HMatrix(LinearOperator):
 
     def __getstate__(self):
         # The packed copy is a cache; it is rebuilt from blocks after loading.
-        state=super().__getstate__();state.pop('_packed',None)
+        # The entry closure cannot be pickled: a loaded matrix has no exact entries.
+        state=super().__getstate__();state.pop('_packed',None);state['entry']=None
         return state
 
     def _matvec(self,x):return self._matmat(np.asarray(x).reshape(-1,1))[:,0]

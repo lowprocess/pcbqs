@@ -191,33 +191,53 @@ solution. Via barrel resistance remains DC. Both MQS and PEEC use this option.
 ### Two face sheets (experimental)
 
 ```python
-q = MQS(board, nets=nets, terminals=terminals, conductor_loss='slab', thickness_sheets=2)
+q = MQS(board, nets=nets, terminals=terminals, conductor_loss='slab', thickness_sheets=2,
+        matrix_backend='hierarchical')
 ```
 
 Each layer's copper becomes two sheets, at its faces (z ∓ t/2). The copies of a
 triangle share one node and each RWG edge carries two parallel currents. The
 faces are coupled through the copper by the slab's exact 1D two-port,
 `Zs*[[coth kt, csch kt], [csch kt, coth kt]]` with `k = sqrt(j*w*mu0*sigma)` and
-`Zs = k/sigma` (`conductor.face_impedance`). From that, the vacuum field between
-the two sheets is subtracted, because their partial inductance already counts
-it (`j*w*mu0*t/4` for the opposite-current mode). The external field then
-decides how the current divides between the faces, which is the proximity
-effect a single sheet's slab cannot give. The DC resistance and low-frequency
-internal inductance (`mu0*t/12`) are unchanged.
+`Zs = k/sigma` (`conductor.face_impedance(..., vacuum=False)`). The partial
+inductance's own share of the field between the faces is removed per edge
+pair: `(L_ee + L_gg - 2 L_eg)/4 * [[1, -1], [-1, 1]]`.
 
-Against FastHenry (`validation/mqs_fasthenry.py`, review C14) the AC resistance
-improves:
+That share is only 67–79% of the analytic `mu0*t/2`. Triangles of a few times t
+don't confine the field between the sheets. So subtracting the analytic value
+over-subtracted: the opposite mode then took too much current, giving +30% loss
+over a plane at 100 MHz. The external field decides how the current divides
+between the faces, which is the proximity effect a single sheet's slab cannot
+give. DC resistance and low-frequency inductance are unchanged.
 
-| Case | Mesh | 10 MHz error, 1 → 2 sheets | 100 MHz error, 1 → 2 sheets |
-|---|---|---|---|
-| Strip loop | dmax 0.25 | −19 → −12% | −20 → −12% |
-| Trace over a plane | dmax 0.5 | −27 → −22% | −38 → +22% |
+AC resistance against FastHenry (`validation/mqs_fasthenry.py`, review C14),
+10 / 100 MHz:
 
-Inductance is within 1.4% in both. The rest of the error is in-plane resolution:
-current crowding to strip edges and under the trace. The doubled unknowns limit
-how fine the dense solver can go. Not yet supported with `dielectric='stack'`.
-Capacitance splits each node's charge evenly between the faces, which has not
-been validated.
+| Case | One sheet | Two face sheets |
+|---|---|---|
+| Strip loop, dmax 0.0625 | −9.5 / −9.1% | −1.1 / +3.5% |
+| Trace over plane, dmax 0.18 | −18.8 / −29.7% | −12.5 / −12.5% |
+
+Inductance is 2–3% low with two sheets, against under 1% with one. The rest of
+the plane case is current on the copper's edges and side walls, which the faces
+don't carry. It doubles the unknowns, so use the compressed backend. Not yet
+supported with `dielectric='stack'`. Capacitance splits each node's charge
+evenly between the faces, which has not been validated.
+
+### Compressed backend without capacitance
+
+`matrix_backend='hierarchical'` now also solves the inductance-only model
+(`mqs_iterative.py`). It runs GMRES on the loop currents, applying the compressed
+inductance as products, with no dense loop matrices. The preconditioner inverts
+the loop system exactly for a block-diagonal branch impedance through one sparse
+graph-Laplacian solve per frequency. The blocks are each branch's own impedance,
+or a face pair's 2×2 block. It matches the dense solve to 1e-5 or better.
+
+| Case | Dense | Compressed |
+|---|---|---|
+| Strip loop, 11,854 triangles | 20.5 s | 2 s, 0.4 GB |
+| Strip loop, 47,548 triangles | out of memory (32 GB) | 13 s, 1.7 GB |
+| Two face sheets, 96k triangles | — | 2 min, 7.5 GB |
 
 ## Validation and limits
 

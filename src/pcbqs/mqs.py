@@ -29,8 +29,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy.sparse import coo_matrix, diags, block_diag, csr_matrix
-from shapely.geometry import Point, box, shape
-from shapely.ops import unary_union
+from shapely.geometry import Point, box
 
 from ._numerics.base import MU0, RWG, combine, qform, _BAR3, _W3, quad_pts
 from .static import edge_inductance as dense_edge_inductance, static_moments
@@ -80,8 +79,9 @@ class MQS:
         `coarsen` permits bulk cells up to coarsen*dmax, growing at `grow`
         away from features. `edge_rings` is the transverse subdivision count
         (1 disables inward rings); `edge_width` and `edge_zone` are in mm.
-        Experimental `matrix_backend='hierarchical'` requires PEEC, keeps
-        near blocks dense and compresses far blocks at `compression_tol`.
+        Experimental `matrix_backend='hierarchical'` keeps near blocks dense
+        and compresses far blocks at `compression_tol`; with or without PEEC
+        capacitance (inductance only: mqs_iterative.py, no dense loop matrices).
         GMRES uses `solver_tol` and raises on nonconvergence; `solve_info`
         records residuals. Compression tolerance is not a port-error bound.
         Mesh simplification: copper pieces under `pad_area` mm^2 touching no
@@ -94,8 +94,7 @@ class MQS:
         """
         if matrix_backend not in ('dense','hierarchical'):
             raise ValueError('matrix_backend must be dense or hierarchical')
-        if matrix_backend == 'hierarchical' and not capacitance:
-            raise ValueError('hierarchical backend currently requires capacitance=True')
+
         for name,value in [('compression_tol',compression_tol),('solver_tol',solver_tol)]:
             if not np.isfinite(value) or not 0 < value < 1:
                 raise ValueError(name+' must be between 0 and 1')
@@ -254,6 +253,8 @@ class MQS:
         self._copper = None
         self._potential = None
         self._peec = None
+        self._mqs_iter = None
+        self._face_c = None
         log(f"mqs: {Nt:,} triangles on {len(self.layer_tris)} layer(s), {self.ne:,} edges, {self.nv} via segments, "
             f"{len(self.terms)} terminals")
 
@@ -263,6 +264,8 @@ class MQS:
         self.parts.append(dict(name=name, a=a, b=b, kind='I', part_h=part_h))
         self._mats = None
         self._peec = None
+        self._mqs_iter = None
+        self._face_c = None
 
     def element(self, name, a, b, R=0.0, L=0.0, C=None, ESR=None, ESL=None, part_h=0.5):
         """A series R, L (and C) through a part between terminals a and b."""
@@ -270,6 +273,8 @@ class MQS:
                                L=ESL if ESL is not None else L, C=C, part_h=part_h))
         self._mats = None
         self._peec = None
+        self._mqs_iter = None
+        self._face_c = None
 
     # ---- the matrices ----
     def _edge_matrices(self):
@@ -318,12 +323,14 @@ class MQS:
             # face sheets: each layer's two copies, the Gram matrices of each and between them (edge e of the
             # bottom face <-> the same edge of the top face, found by its triangles' offset)
             edge = {(int(a), int(b)): k for k, (a, b) in enumerate(zip(r.tp, r.tm))}
+            self._face_pairs = []                            # (bottom edge, top edge): the preconditioner's 2x2 blocks
             for lay in dict.fromkeys(self.sheet_layer.values()):
                 bottom, top = self.layer_tris[lay], self.layer_tris[f'{lay}#1']
                 d = int(top[0] - bottom[0])
                 pairs = [(e, edge.get((a + d, b + d), edge.get((b + d, a + d))))
                          for e, (a, b) in enumerate(zip(r.tp, r.tm)) if bottom[0] <= a <= bottom[-1]]
                 rows, cols = zip(*[(e, f) for e, f in pairs if f is not None])
+                self._face_pairs.append(np.array([rows, cols]))
                 P = csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(r.Ne, r.Ne))
                 G = []
                 for idx in (bottom, top):
@@ -344,9 +351,38 @@ class MQS:
             ratio = surface_impedance(f, t, self.sigma, faces) * self.sigma * t
             delta = delta + (ratio - 1) * R
         for t, Gs, Gx in getattr(self, '_face_terms', []):
-            zself, zmutual = face_impedance(f, t, self.sigma)
+            # the raw slab two-port carries the whole opposite-mode (between-the-faces) impedance; the partial
+            # inductance's own share of it, per edge pair, is removed below. (Subtracting the analytic vacuum term
+            # instead over-subtracted: the discrete share is only 67-79% of mu0 t / 2 at these meshes, and the
+            # opposite mode then took too much current: +30% loss over a plane at 100 MHz against FastHenry.)
+            zself, zmutual = face_impedance(f, t, self.sigma, vacuum=False)
             delta = delta + (zself - 2 / (self.sigma * t)) * Gs + zmutual * Gx
+        if getattr(self, '_face_terms', None):
+            e, g, c = self._face_opposite()
+            n = self.ne
+            V = coo_matrix((np.r_[c, c, -c, -c], (np.r_[e, g, e, g], np.r_[e, g, g, e])), shape=(n, n)).tocsr()
+            delta = delta - 1j * 2 * np.pi * f * V
         return block_diag((delta, csr_matrix((nb-self.ne, nb-self.ne))), format='csr')
+
+    def _face_opposite(self):
+        """(bottom edges, top edges, c): each face-sheet pair's own opposite-mode inductance (L_ee + L_gg - 2 L_eg)/4,
+        from the copper inductance as filled (dense, or the compressed matrix's exact entries)."""
+        if getattr(self, '_face_c', None) is None:
+            Le = self._copper[1] if self._copper is not None else self._assemble()['L'][0]
+            e, g = np.hstack(self._face_pairs)
+            c = np.zeros(len(e))
+            for k in range(0, len(e), 256):
+                a, b = e[k:k + 256], g[k:k + 256]
+                if hasattr(Le, 'entry'):
+                    if Le.entry is None:
+                        raise ValueError('thickness_sheets=2 needs a freshly filled inductance (a cached, unpickled '
+                                         'operator keeps no exact entries)')
+                    block = lambda r, s: np.diagonal(np.asarray(Le.entry(r, s)))
+                else:
+                    block = lambda r, s: np.asarray(Le)[r, s]
+                c[k:k + 256] = (block(a, a) + block(b, b) - 2 * block(a, b)) / 4
+            self._face_c = (e, g, c)
+        return self._face_c
 
     def _set_potential(self, M0, er=None):
         from ._numerics.base import EPS0
@@ -493,7 +529,8 @@ class MQS:
         # carry their explicit RLC impedance separately, without padding L.
         L = (Le, Lv)
         C, src_cols, is_src, tree = self._loops(allow_open=self.capacitance, return_tree=True)
-        Rl, Ll = (None, None) if self.capacitance else (
+        # PEEC and the compressed backend never project onto the loops densely (peec*.py, mqs_iterative.py)
+        Rl, Ll = (None, None) if self.capacitance or self.matrix_backend == 'hierarchical' else (
             (C.T @ R @ C).toarray(), self._project_inductance(C, Le, Lv))
         self._mats = dict(R=R, L=L, C=C, Rl=Rl, Ll=Ll, src=src_cols, is_src=is_src, nb=nb, tree=tree)
         self.log(f"mqs: {C.shape[1]:,} loops; matrices in {time.time() - t:.1f} s")
@@ -519,6 +556,9 @@ class MQS:
                 from .peec_iterative import solve
                 return solve(self,freqs,amps)
             from .peec import solve
+            return solve(self, freqs, amps)
+        if self.matrix_backend == 'hierarchical':
+            from .mqs_iterative import solve
             return solve(self, freqs, amps)
         f = np.atleast_1d(np.asarray(freqs, float))
         if f.ndim != 1 or not np.isfinite(f).all() or (f <= 0).any():

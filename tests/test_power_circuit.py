@@ -306,3 +306,25 @@ def test_face_sheets_keep_dc_and_low_frequency_inductance():
         Z.append(np.asarray(q.solve([1e2, 1e5]).zc['p']))
     assert Z[1][0].real == pytest.approx(Z[0][0].real, rel=2e-3)
     assert Z[1][1].imag == pytest.approx(Z[0][1].imag, rel=0.02)
+
+
+def test_compressed_mqs_matches_dense_without_capacitance():
+    """matrix_backend='hierarchical' with capacitance=False (mqs_iterative.py): the same port impedances as the dense
+    loop solve, one sheet and two face sheets."""
+    from pcbqs.mqs import MQS
+    from shapely.geometry import box, mapping
+    ring = box(-5, -3, 5, 3).difference(box(-4, -2, 4, 2)).difference(box(-0.2, -3, 0.2, -2))
+    b = dict(stack=dict(copper=[dict(name='F.Cu', z=0.0, t=0.035)], layers=[]),
+             copper={'F.Cu': [dict(net='N', polygon=mapping(ring))]}, vias=[])
+    terms = {'A': [('F.Cu', box(-0.3, -3, -0.2, -2))], 'B': [('F.Cu', box(0.2, -3, 0.3, -2))]}
+    f = [1e3, 1e6, 1e8]
+    for n in (1, 2):
+        Z = {}
+        for backend in ('dense', 'hierarchical'):
+            q = MQS(b, 'N', terminals=terms, dmax=0.5, conductor_loss='slab', thickness_sheets=n,
+                    matrix_backend=backend, log=lambda *a: None)
+            q.source('p', 'A', 'B', part_h=0)
+            r = q.solve(f)
+            Z[backend] = (np.asarray(r.z['p']), np.asarray(r.zc['p']))
+        for k in range(2):
+            np.testing.assert_allclose(Z['hierarchical'][k], Z['dense'][k], rtol=1e-5)

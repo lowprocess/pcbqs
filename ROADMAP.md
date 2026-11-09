@@ -76,12 +76,20 @@ Done (`validation/`, 2026-11-09):
 
 In order:
 
-1. **AC resistance (C14), started (2 days).** `MQS(thickness_sheets=2)`: face sheets coupled by the slab
-   two-port; the strip loop's 10–100 MHz error against FastHenry falls from −19/−20% to −12%.
-   - Edge refinement: current crowds to strip edges; FastHenry uses 31 filaments across a 1 mm strip.
-   - Memory: twice the unknowns. The compressed backend needs to work without `capacitance=True`.
-   - `dielectric='stack'` with face sheets.
-   - Validate on the CM5 loop, then make it the slab default.
+1. **Thick copper and AC resistance (C14), in progress.** Done:
+   - `MQS(thickness_sheets=2)`: face sheets coupled by the slab two-port, with the partial inductance's own
+     between-the-faces share removed per edge pair.
+   - The compressed backend without capacitance (`mqs_iterative.py`, same answers as dense, no dense loop
+     matrices: 48k triangles in 1.7 GB).
+
+   Against FastHenry the strip loop's 10/100 MHz resistance is within −1/+3.5% (one sheet: −9%). The trace over a
+   plane is −12.5% (one sheet: −19/−30%). Next, about 1–2 weeks:
+   - Side walls: vertical strips joining the faces along copper edges. These need vertical-panel kernels,
+     because today's integrals assume horizontal triangles. That covers the plane case's remaining current
+     and the thin-trace capacitance (+12% missing).
+   - Charge on the face sheets (capacitance with thickness), then `dielectric='stack'` with faces.
+   - The 2–3% inductance drop with face sheets.
+   - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
    permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the
