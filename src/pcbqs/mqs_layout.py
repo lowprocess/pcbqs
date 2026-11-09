@@ -70,6 +70,8 @@ def geometry(layout):
 def mesh_stats(q):
     stats = {}
     for layer, ids in q.layer_tris.items():
+        if getattr(q, 'sheet_layer', {}).get(layer, layer) != layer:
+            continue                                     # a copy through the thickness: the same triangles
         v = q.nodes[q.tris[ids]] * 1000
         edges = np.linalg.norm(v - np.roll(v, 1, axis=1), axis=2)
         angles = []

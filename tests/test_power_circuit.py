@@ -271,3 +271,38 @@ def test_warm_start_continues_the_previous_run(tmp_path):
     # VDMOS internal capacitances cannot take initial conditions: they charge from VHB in the first
     # samples (a brief blip, little energy); the bus is back on the previous run's value right after.
     assert second['C20.V'][2] == pytest.approx(first['C20.V'][-1], rel=2e-3)
+
+
+def test_face_impedance_limits():
+    """The two-face slab: DC 1/(sigma t) for both terms; the uniform mode's low-frequency reactance the slab's internal
+    inductance mu0 t/12; the opposite mode's, with the vacuum term the partial inductance adds back, mu0 t; high
+    frequency, the self term's resistance the one-face skin value 1/(sigma delta)."""
+    from pcbqs.conductor import face_impedance
+    s, t, mu0 = 5.8e7, 35e-6, 4e-7 * np.pi
+    zs, zm = face_impedance(0.0, t, s)
+    assert zs == pytest.approx(1 / (s * t)) and zm == pytest.approx(1 / (s * t))
+    f = 1e3
+    w = 2 * np.pi * f
+    zs, zm = face_impedance(f, t, s)
+    assert ((zs + zm) / 2).imag / w == pytest.approx(mu0 * t / 12, rel=1e-3)          # K1 = K2 = K/2
+    assert (2 * (zs - zm) + 1j * w * mu0 * t).imag / w == pytest.approx(mu0 * t, rel=1e-3)   # K1 = -K2
+    f = 1e9
+    delta = 1 / np.sqrt(np.pi * f * mu0 * s)
+    assert face_impedance(f, t, s)[0].real == pytest.approx(1 / (s * delta), rel=1e-3)
+
+
+def test_face_sheets_keep_dc_and_low_frequency_inductance():
+    """Two face sheets: the same DC resistance and nearly the same low-frequency inductance as one sheet."""
+    from pcbqs.mqs import MQS
+    from shapely.geometry import box, mapping
+    b = dict(stack=dict(copper=[dict(name='F.Cu', z=0.0, t=0.035)], layers=[]),
+             copper={'F.Cu': [dict(net='N', polygon=mapping(box(0, 0, 20, 1).union(box(0, 4, 20, 5)).union(box(19, 0, 20, 5))))]},
+             vias=[])
+    terms = {'A': [('F.Cu', box(0, 0, 0.2, 1))], 'B': [('F.Cu', box(0, 4, 0.2, 5))]}
+    Z = []
+    for n in (1, 2):
+        q = MQS(b, 'N', terminals=terms, dmax=0.5, conductor_loss='slab', thickness_sheets=n, log=lambda *a: None)
+        q.source('p', 'A', 'B', part_h=0)
+        Z.append(np.asarray(q.solve([1e2, 1e5]).zc['p']))
+    assert Z[1][0].real == pytest.approx(Z[0][0].real, rel=2e-3)
+    assert Z[1][1].imag == pytest.approx(Z[0][1].imag, rel=0.02)

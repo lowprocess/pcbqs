@@ -23,3 +23,24 @@ def surface_impedance(f, thickness, sigma=5.8e7, faces=2):
     safe = np.where(small, 1.0, u)
     ratio = np.where(small, 1 + u*u/3 - u**4/45, safe / np.tanh(safe))
     return ratio / (sigma * thickness)
+
+
+def face_impedance(f, thickness, sigma=5.8e7):
+    """(self, mutual) ohms per square between a slab's two face sheets (currents per width K1, K2 on the faces of a
+    slab `thickness` m thick): the exact 1D two-port Zs [coth kt, csch kt], k = sqrt(j w mu0 sigma), Zs = k / sigma,
+    less the vacuum field between two sheets t apart (j w mu0 t / 4 [[1, -1], [-1, 1]]) that a partial-inductance
+    model of the faces already counts. DC: both 1 / (sigma t) (the total current's resistance, however it divides);
+    low frequency: the slab's internal inductance mu0 t / 12 for a uniform current."""
+    f, t = float(f), float(thickness)
+    w = 2 * np.pi * f
+    u = np.sqrt(1j * w * MU0 * sigma) * t                  # kt
+    if abs(u) < 1e-3:
+        coth = 1 / u + u / 3 - u ** 3 / 45 if u else np.inf
+        csch = 1 / u - u / 6 + 7 * u ** 3 / 360 if u else np.inf
+        zs_coth = 1 / (sigma * t) + 1j * w * MU0 * t / 3 if u else 1 / (sigma * t)
+        zs_csch = 1 / (sigma * t) - 1j * w * MU0 * t / 6 if u else 1 / (sigma * t)
+    else:
+        zs = u / (sigma * t)
+        zs_coth, zs_csch = zs / np.tanh(u), zs / np.sinh(u)
+    vac = 1j * w * MU0 * t / 4
+    return zs_coth - vac, zs_csch + vac

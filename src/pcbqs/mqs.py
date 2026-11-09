@@ -66,7 +66,7 @@ class MQS:
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
                  solver_tol=1e-8, solver_maxiter=500, drop_lone_pads=True, pad_area=1.0, pad_sides=8,
-                 via_sides=6):
+                 via_sides=6, thickness_sheets=1):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -127,6 +127,18 @@ class MQS:
         self.conductor_loss, self.conductor_faces = conductor_loss, conductor_faces
         if dielectric not in ('homogeneous', 'stack'):
             raise ValueError('dielectric must be homogeneous or stack')
+        # thickness_sheets=2 (experimental): each layer's copper as two sheets at its faces (z -+ t/2), each copy of
+        # a triangle one node, each RWG edge two parallel branches, coupled through the copper by the slab's exact
+        # 1D two-port, Zs [[coth kt, csch kt], [csch kt, coth kt]], less the vacuum field the partial inductance
+        # already puts between the faces. The external field then sets how the current divides between the faces:
+        # the proximity effect a single sheet's slab cannot give (C14, validation/mqs_fasthenry.py).
+        if thickness_sheets not in (1, 2) or isinstance(thickness_sheets, bool):
+            raise ValueError('thickness_sheets must be 1 or 2')
+        if thickness_sheets == 2 and conductor_loss != 'slab':
+            raise ValueError("thickness_sheets=2 needs conductor_loss='slab' (the faces are coupled through the slab)")
+        if thickness_sheets == 2 and dielectric == 'stack':
+            raise NotImplementedError('thickness_sheets=2 with dielectric=stack (the images need copper on interfaces)')
+        self.thickness_sheets = int(thickness_sheets)
         if dielectric == 'stack' and er != 1:
             raise ValueError('er applies to homogeneous dielectric; stack uses board permittivities')
         self.dielectric = dielectric
@@ -143,6 +155,8 @@ class MQS:
         pts = [(v['x'], v['y'], v['r']) for v in vias]
         nodes, tris, layer_of, z_of, t_of = [], [], [], [], []
         self.layer_tris, self.term_tris, ring_tris = {}, {n: [] for n in self.terms}, {}
+        self.sheet_layer = {}                                # layer_tris key -> its copper layer (copies: 'F.Cu#1')
+        copies = []                                          # (first triangle of a layer's copy 0, of copy k, count)
         self.mesh_info = dict(dropped_pads=0, regular_pads=0, regular_holes=0, drop_lone_pads=bool(drop_lone_pads),
                               pad_area_mm2=float(pad_area), pad_sides=pad_sides or None, via_sides=via_sides or None)
         off = 0
@@ -167,21 +181,27 @@ class MQS:
                                              edge_zone=edge_zone,via_sides=via_sides or None)
             if not len(tr):
                 continue
-            nt0 = sum(len(t) for t in tris)
             cen = nd[tr].mean(1)
-            for (n, poly), ids in zip(polys, regs):
-                inside = np.flatnonzero(_inside(poly, cen))
-                self.term_tris[n] += list(nt0 + inside)
-            for k, ring in enumerate(rings):
-                if ring is None:
-                    continue
-                fan = np.flatnonzero(np.isin(tr, ring[:1]).any(1))        # the triangles around its centre
-                ring_tris[(k, lay)] = list(nt0 + fan)
-            nodes.append(nd * 1e-3)
-            tris.append(tr + off)
-            off += len(nd)
-            self.layer_tris[lay] = np.arange(nt0, nt0 + len(tr))
-            layer_of += [lay] * len(tr); z_of += [zt[lay][0] * 1e-3] * len(tr); t_of += [zt[lay][1] * 1e-3] * len(tr)
+            inside = [np.flatnonzero(_inside(poly, cen)) for n, poly in polys]
+            fans = {k: np.flatnonzero(np.isin(tr, ring[:1]).any(1)) for k, ring in enumerate(rings) if ring is not None}
+            n_s, (z, t) = self.thickness_sheets, zt[lay]
+            first = sum(len(t_) for t_ in tris)
+            for s in range(n_s):                             # n_s = 1: the sheet itself at the layer's z
+                nt0 = sum(len(t_) for t_ in tris)
+                key = lay if s == 0 else f'{lay}#{s}'
+                for (n, _), ids in zip(polys, inside):
+                    self.term_tris[n] += list(nt0 + ids)
+                for k, fan in fans.items():                  # a via's fan: in every copy, one node
+                    ring_tris.setdefault((k, lay), []).extend(nt0 + fan)
+                nodes.append(nd * 1e-3)
+                tris.append(tr + off)
+                off += len(nd)
+                self.layer_tris[key] = np.arange(nt0, nt0 + len(tr))
+                self.sheet_layer[key] = lay
+                zs = z + (s - 0.5) * t if n_s == 2 else z    # two sheets: the copper's faces, centred on its z
+                layer_of += [lay] * len(tr); z_of += [zs * 1e-3] * len(tr); t_of += [t / n_s * 1e-3] * len(tr)
+                if s:
+                    copies.append((first, nt0, len(tr)))
         if not tris:
             raise ValueError(f"no copper of {', '.join(sorted(self.nets))} in the region")
         self.nodes, self.tris = np.vstack(nodes), np.vstack(tris)
@@ -209,6 +229,9 @@ class MQS:
         for ts in ring_tris.values():
             if ts:
                 merge(ts)
+        for a, b, n in copies:                               # a triangle's copies through the thickness: one node
+            for j in range(n):
+                parent[find(b + j)] = find(a + j)
         roots = np.array([find(t) for t in range(Nt)])
         _, self.node_of = np.unique(roots, return_inverse=True)
         self.n_nodes = self.node_of.max() + 1
@@ -218,8 +241,8 @@ class MQS:
         self.br = [(int(self.node_of[a]), int(self.node_of[b])) for a, b in zip(r.tp, r.tm)]
         self.vseg = []                                       # (x, y, r, z0, z1) m, per via segment
         for k, v in enumerate(vias):
-            on = sorted([(zt[l][0], l) for l in self.layer_tris if (k, l) in ring_tris and ring_tris[(k, l)]
-                         and v['z0'] - 1e-6 <= zt[l][0] <= v['z1'] + 1e-6])
+            on = sorted([(zt[l][0], l) for l in dict.fromkeys(self.sheet_layer.values())
+                         if (k, l) in ring_tris and ring_tris[(k, l)] and v['z0'] - 1e-6 <= zt[l][0] <= v['z1'] + 1e-6])
             for (za, la), (zb, lb) in zip(on, on[1:]):
                 na, nb = int(self.node_of[ring_tris[(k, la)][0]]), int(self.node_of[ring_tris[(k, lb)][0]])
                 self.br.append((na, nb))
@@ -286,21 +309,43 @@ class MQS:
         s = 1.0 / r.l
         scale = diags(s)
         self._sheet_terms = []
-        if self.conductor_loss == 'slab':
+        self._face_terms = []
+        if self.conductor_loss == 'slab' and self.thickness_sheets == 1:
             for idx in self.layer_tris.values():
                 weights = np.zeros(len(self.tris)); weights[idx] = rs[idx]
-                self._sheet_terms.append((self.t_of[idx[0]], (scale @ gram(weights) @ scale).tocsr()))
+                self._sheet_terms.append((self.t_of[idx[0]], self.conductor_faces, (scale @ gram(weights) @ scale).tocsr()))
+        elif self.conductor_loss == 'slab':
+            # face sheets: each layer's two copies, the Gram matrices of each and between them (edge e of the
+            # bottom face <-> the same edge of the top face, found by its triangles' offset)
+            edge = {(int(a), int(b)): k for k, (a, b) in enumerate(zip(r.tp, r.tm))}
+            for lay in dict.fromkeys(self.sheet_layer.values()):
+                bottom, top = self.layer_tris[lay], self.layer_tris[f'{lay}#1']
+                d = int(top[0] - bottom[0])
+                pairs = [(e, edge.get((a + d, b + d), edge.get((b + d, a + d))))
+                         for e, (a, b) in enumerate(zip(r.tp, r.tm)) if bottom[0] <= a <= bottom[-1]]
+                rows, cols = zip(*[(e, f) for e, f in pairs if f is not None])
+                P = csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(r.Ne, r.Ne))
+                G = []
+                for idx in (bottom, top):
+                    w = np.zeros(len(self.tris)); w[idx] = 1.0
+                    G.append(gram(w))
+                X = G[0] @ P
+                self._face_terms.append((2 * self.t_of[bottom[0]], (scale @ (G[0] + G[1]) @ scale).tocsr(),
+                                         (scale @ (X + X.T) @ scale).tocsr()))
         return (scale @ R @ scale).tocsr()
 
     def _resistance_delta(self, f):
-        from .conductor import surface_impedance
+        from .conductor import surface_impedance, face_impedance
         nb = len(self.br) + len(self.parts)
         if self.conductor_loss == 'dc':
             return csr_matrix((nb, nb), dtype=complex)
         delta = csr_matrix((self.ne, self.ne), dtype=complex)
-        for t, R in self._sheet_terms:
-            ratio = surface_impedance(f, t, self.sigma, self.conductor_faces) * self.sigma * t
+        for t, faces, R in self._sheet_terms:
+            ratio = surface_impedance(f, t, self.sigma, faces) * self.sigma * t
             delta = delta + (ratio - 1) * R
+        for t, Gs, Gx in getattr(self, '_face_terms', []):
+            zself, zmutual = face_impedance(f, t, self.sigma)
+            delta = delta + (zself - 2 / (self.sigma * t)) * Gs + zmutual * Gx
         return block_diag((delta, csr_matrix((nb-self.ne, nb-self.ne))), format='csr')
 
     def _set_potential(self, M0, er=None):

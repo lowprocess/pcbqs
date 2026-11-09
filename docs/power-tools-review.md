@@ -27,7 +27,7 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 | C11 | DC pads were not equipotential: a 1e6 S tie shared over all of a pad's vertices, with current entering at its edge, left pads ~20 µV/A off (+1% on a strip, growing with refinement). Found by `validation/dc_elmer.py`. | `pdn/dc.py` | Fixed: 1e6 S per vertex |
 | C12 | DC meshes had slivers from each via's ring to vertices ~2 mm away (Triangle without a minimum angle), underestimating every via junction's spreading by ~0.1 mΩ, regardless of `dmax`. Jetson +1V15 drop 5.78 → 6.18 mV, its PDN peak +5.7% once fixed. | `_numerics/geo.py`, `pdn/dc.py` | Fixed: 25° minimum angle for DC meshes |
 | C13 | A terminal is one node, so a part crosses its pads instantly and large pads lower a small loop's inductance (20 × 10 mm loop: 37.4 nH with 1 mm pads, 38.8 nH with 0.25 mm). Otherwise inductance matches FastHenry to 0.3–2% and |H| matches Palace to ~5%. | `mqs.py` | ROADMAP; see `validation/README.md` |
-| C14 | AC resistance from the slab model is 11–34% low at 10–100 MHz against FastHenry: every sheet's current is spread over one or both faces alike, while traces over planes crowd onto the facing surfaces. Fine below ~1 MHz (35 µm copper). | `mqs.py` `surface_impedance` | ROADMAP: proximity-aware faces |
+| C14 | AC resistance from the slab model is 11–34% low at 10–100 MHz against FastHenry: every sheet's current is spread over one or both faces alike, while traces over planes crowd onto the facing surfaces. Fine below ~1 MHz (35 µm copper). | `mqs.py` `surface_impedance` | Started: `thickness_sheets=2` (face sheets + slab two-port) halves the 10–100 MHz error on the loop; in-plane edge resolution next |
 
 ## Integration and results
 

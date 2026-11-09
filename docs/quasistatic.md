@@ -188,6 +188,37 @@ current enters from one side; two faces assume equal currents on both sides.
 These are selectable approximations, not a resolved thickness/proximity
 solution. Via barrel resistance remains DC. Both MQS and PEEC use this option.
 
+### Two face sheets (experimental)
+
+```python
+q = MQS(board, nets=nets, terminals=terminals, conductor_loss='slab', thickness_sheets=2)
+```
+
+Each layer's copper becomes two sheets, at its faces (z ∓ t/2). The copies of a
+triangle share one node and each RWG edge carries two parallel currents. The
+faces are coupled through the copper by the slab's exact 1D two-port,
+`Zs*[[coth kt, csch kt], [csch kt, coth kt]]` with `k = sqrt(j*w*mu0*sigma)` and
+`Zs = k/sigma` (`conductor.face_impedance`). From that, the vacuum field between
+the two sheets is subtracted, because their partial inductance already counts
+it (`j*w*mu0*t/4` for the opposite-current mode). The external field then
+decides how the current divides between the faces, which is the proximity
+effect a single sheet's slab cannot give. The DC resistance and low-frequency
+internal inductance (`mu0*t/12`) are unchanged.
+
+Against FastHenry (`validation/mqs_fasthenry.py`, review C14) the AC resistance
+improves:
+
+| Case | Mesh | 10 MHz error, 1 → 2 sheets | 100 MHz error, 1 → 2 sheets |
+|---|---|---|---|
+| Strip loop | dmax 0.25 | −19 → −12% | −20 → −12% |
+| Trace over a plane | dmax 0.5 | −27 → −22% | −38 → +22% |
+
+Inductance is within 1.4% in both. The rest of the error is in-plane resolution:
+current crowding to strip edges and under the trace. The doubled unknowns limit
+how fine the dense solver can go. Not yet supported with `dielectric='stack'`.
+Capacitance splits each node's charge evenly between the faces, which has not
+been validated.
+
 ## Validation and limits
 
 Tests cover Wheeler's inductance formula, image-theory magnetic fields and
