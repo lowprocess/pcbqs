@@ -65,6 +65,17 @@ Today a 30 W wpthb case is ~56 s: about two strict-equivalent transients of a
 | Piecewise-linear switched state-space engine | 10–100× for ideal-switch studies | 1–2 weeks | the copper model and passives are linear; exact matrix exponentials per switch state; device-level effects need ngspice |
 | GPU | none for one transient | — | 369 equations: launch latency dominates. Useful only for batched sweeps on the piecewise-linear engine |
 
+## Validation
+
+Done (`validation/`, 2026-11-09): DC drop against Elmer 3D (strip, vias, wpthb, Jetson; 0.2–1.5% on boards),
+loop inductance and |H| against Palace (~1%, ~5%), plane pairs against Palace and the modal sum (≤ 0.8%).
+Found and fixed C11 and C12. Next:
+
+- FastHenry2 (needs approval to build downloaded source) for a second PEEC code and R(f) with skin effect.
+- CM5 U702 input loop against Palace, with the regulator and capacitor pads modelled alike in both (C13).
+- MQS: the ~1% inductance bias; parts that attach along their pad edges instead of at one node.
+- VNA and near-field probe measurements on wpthb.
+
 ## Models and validation
 
 - Vendor or fitted MOSFET models (MCG8D2N06YL), datasheet capacitor ESR/ESL
