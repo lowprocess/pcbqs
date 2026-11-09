@@ -68,10 +68,12 @@ Today a 30 W wpthb case is ~56 s: about two strict-equivalent transients of a
 ## Validation
 
 Done (`validation/`, 2026-11-09): DC drop against Elmer 3D (strip, vias, wpthb, Jetson; 0.2–1.5% on boards),
-loop inductance and |H| against Palace (~1%, ~5%), plane pairs against Palace and the modal sum (≤ 0.8%).
+loop inductance and |H| against Palace and FastHenry (0.3–2%, ~5%), plane pairs against Palace and the modal
+sum (≤ 0.8%), AC resistance against FastHenry (good to ~1 MHz, then 11–34% low: C14).
 Found and fixed C11 and C12. Next:
 
-- FastHenry2 (needs approval to build downloaded source) for a second PEEC code and R(f) with skin effect.
+- AC resistance (C14): the slab model is 11–34% low above ~3 MHz against FastHenry. Weight each sheet's faces
+  by its neighbours (the face towards a return plane), or give each sheet top and bottom face currents.
 - CM5 U702 input loop against Palace, with the regulator and capacitor pads modelled alike in both (C13).
 - MQS: the ~1% inductance bias; parts that attach along their pad edges instead of at one node.
 - VNA and near-field probe measurements on wpthb.

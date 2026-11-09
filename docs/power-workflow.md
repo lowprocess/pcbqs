@@ -79,8 +79,10 @@ other; the reported run is strict. See
 - **Measure** when margins are thin: VNA shunt-thru for PDN impedance, a
   near-field probe at 1–3 mm for the |H| maps.
 - **Independent solvers**: [validation/](../validation/README.md) compares DC drop
-  with Elmer (within 0.2–1.5% on wpthb and Jetson), loop inductance and |H| with
-  Palace (~1%, ~5%) and plane pairs with Palace (≤ 0.8%).
+  with Elmer (within 0.2–1.5% on wpthb and Jetson), loop inductance with Palace and
+  FastHenry (0.3–2%), |H| with Palace (~5%) and plane pairs with Palace (≤ 0.8%).
+  Copper AC resistance above ~3 MHz reads 11–34% low; treat loss figures there as
+  lower bounds.
 
 Known gaps and planned work: [power-tools-review.md](power-tools-review.md),
 [ROADMAP.md](../ROADMAP.md).
