@@ -7,7 +7,7 @@ import argparse,hashlib,json,shutil,copy,time
 from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
-from .power_bridge import load_config,matching,predicted_phase,build,metrics,make_board_ports
+from .power_bridge import load_config,matching,predicted_phase,build,metrics,make_board_ports,end_state
 from .power_spice import periodic_samples,cancel_active_runs,reset_runs
 from .wpt import link
 from .mqs_ports import CopperPorts,PortResponse,rl_equivalent,rl_error,foster_equivalent
@@ -115,24 +115,50 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
             with np.load(out/'transient.npz') as data:result={k:data[k] for k in data.files}
             result['_measures']=json.loads((out/'measurements.json').read_text());log(f'Reusing {f/1000:g} kHz / {power:g} W');return saved,result
     cfg=copy.deepcopy(cfg);match=matching(cfg,f);phase=predicted_phase(cfg,f,power,match);settings=cfg.setdefault('transient',{})
+    solver=dict(settings.get('solver',{}))
+    strict=solver.get('reltol',1e-4)
+    # Phase-search trials at relaxed tolerances (4x faster on wpthb, <=0.04% power/current change); the
+    # reported result comes from a short strict run continuing from the accepted state.
+    search=dict(solver,reltol=max(settings.get('search_reltol',1e-3),strict),
+                abstol=max(settings.get('search_abstol',1e-6),solver.get('abstol',1e-6)))
+    warm=settings.get('warm_start',True);state=None
     if copper is not None and settings.get('phase_pilot',True):
         pilot_folder=out/'phase-pilot';pilot_folder.mkdir(exist_ok=True)
-        pilot,_=run_case(cfg,f,power,pilot_folder,None,None,log)
+        pilot_cfg=copy.deepcopy(cfg);pilot_cfg['transient']['skip_final']=True   # it only seeds phase and state
+        pilot,pilot_result=run_case(pilot_cfg,f,power,pilot_folder,None,None,log)
         phase=pilot['phase_deg'];settings['initial_input_A']=pilot['input_power_W']/cfg['voltage_V']
+        if warm:state=end_state(pilot_result,cfg)          # its parts' states; copper ports keep the estimate
     cycles=settings.get('cycles',250);history=[];accepted=None
-    for trial in range(8):
-        folder=out/f'trial-{trial:02d}';circ=build(cfg,f,phase,match,copper,ports)
-        log(f'{f/1000:g} kHz / {power:g} W: phase {phase:.3f}°, {cycles} cycles')
-        result=circ.run(folder,f,cycles=cycles,samples_per_cycle=settings.get('samples_per_cycle',256),ramp_s=cfg.get('supply',{}).get('ramp_s',100e-6),linear_solver=settings.get('linear_solver','klu'),method=settings.get('method','gear'),threads=settings.get('ngspice_threads',1))
+
+    def simulate(folder,phase,cycles,options,state):
+        # Hard-switched edges occasionally defeat ngspice's step control ("timestep too small"):
+        # retry with trapezoidal integration (as accurate at these tolerances), then from a cold start.
+        attempts=[(options,state,cycles),(dict(options,method='trap'),state,cycles)]
+        if state is not None:attempts.append((options,None,max(cycles,settings.get('cycles',250))))
+        for k,(opts,start,n) in enumerate(attempts):
+            circ=build(cfg,f,phase,match,copper,ports,state=start)
+            try:
+                result=circ.run(folder,f,cycles=n,samples_per_cycle=settings.get('samples_per_cycle',256),ramp_s=cfg.get('supply',{}).get('ramp_s',100e-6),linear_solver=settings.get('linear_solver','klu'),method=settings.get('method'),threads=settings.get('ngspice_threads',1),options=opts)
+                break
+            except RuntimeError as exc:
+                if 'ngspice transient failed' not in str(exc) or k==len(attempts)-1:raise
+                if (folder/'ngspice.log').exists():shutil.copy2(folder/'ngspice.log',folder/f'ngspice-failed-{k}.log')
+                log(f'{f/1000:g} kHz / {power:g} W: ngspice did not converge; retrying '+('with trap' if k==0 else 'from a cold start'))
         m=metrics(result,f,match)
+        performance=json.loads((folder/'performance.json').read_text());performance['retries']=k
+        (folder/'transient.dat').unlink(missing_ok=True)     # reproducible from circuit.cir; transient.npz has the signals
+        return result,m,performance
+
+    for trial in range(8):
+        folder=out/f'trial-{trial:02d}'
+        log(f'{f/1000:g} kHz / {power:g} W: phase {phase:.3f}°, {cycles} cycles'+(' (warm start)' if state else ''))
+        result,m,performance=simulate(folder,phase,cycles,search,state)
         periodic=max(m['periodic_error'].values());error=(m['load_power_W']-power)/power
-        performance=json.loads((folder/'performance.json').read_text())
-        history.append(dict(phase_deg=phase,cycles=cycles,relative_power_error=error,performance=performance,**m))
+        history.append(dict(phase_deg=phase,cycles=cycles,reltol=search['reltol'],warm_start=state is not None,relative_power_error=error,performance=performance,**m))
         (folder/'metrics.json').write_text(json.dumps(history[-1],indent=2))
-        # Text output is reproducible from circuit.cir; compact NPZ contains all exported signals.
-        (folder/'transient.dat').unlink(missing_ok=True)
+        if warm:state=end_state(result,cfg,ports)          # the next run continues from here
         if max(v for k,v in m['periodic_error'].items() if k!='supply.I')>settings.get('periodic_tolerance',.01) or (abs(error)<settings.get('power_tolerance',.005) and periodic>settings.get('periodic_tolerance',.01)):
-            cycles=int(cycles*1.6)+1
+            cycles=int(cycles*1.6)+1 if not warm else max(int(cycles*.8),8)   # warm: the next run already continues
             if cycles>2000:raise RuntimeError('input filter/circuit did not settle; see '+str(folder))
             continue
         if m['input_power_W']<=0 or m['terminal_power_balance_relative']>.01:raise RuntimeError('failed circuit power balance; see '+str(folder))
@@ -143,10 +169,25 @@ def run_case(cfg,f,power,out,copper=None,ports=None,log=print):
         phase=np.clip(newphase, .01, 179.9)
         if m['input_power_W']>0:settings['initial_input_A']=power*m['input_power_W']/max(m['load_power_W'],1e-12)/cfg['voltage_V']
     if accepted is None:raise RuntimeError('power targeting did not converge; see '+str(out))
+    if search['reltol']>strict and not settings.get('skip_final'):
+        # The reported run: the strict tolerance, continuing from the accepted (settled) state.
+        final_cycles=settings.get('final_cycles',8)
+        for attempt in range(4):
+            folder=out/f'final-{attempt:02d}'
+            log(f'{f/1000:g} kHz / {power:g} W: final, reltol {strict:g}, {final_cycles} cycles')
+            result,m,performance=simulate(folder,phase,final_cycles,dict(solver,reltol=strict),state if warm else None)
+            history.append(dict(phase_deg=phase,cycles=final_cycles,reltol=strict,warm_start=warm,final=True,relative_power_error=(m['load_power_W']-power)/power,performance=performance,**m))
+            (folder/'metrics.json').write_text(json.dumps(history[-1],indent=2))
+            if max(v for k,v in m['periodic_error'].items() if k!='supply.I')<=settings.get('periodic_tolerance',.01):
+                accepted=(folder,result,m);break
+            if warm:state=end_state(result,cfg,ports)
+            final_cycles*=2
+        else:
+            raise RuntimeError('final strict-tolerance run did not settle; see '+str(out))
     folder,result,m=accepted
     for name in ['transient.npz','circuit.cir','ngspice.log','signals.json','measurements.json','port-spectrum.npz','adaptive-ports.raw','performance.json']:
         if (folder/name).exists():shutil.copy2(folder/name,out/name)
-    for trial in out.glob('trial-*'):(trial/'transient.npz').unlink(missing_ok=True)
+    for trial in [*out.glob('trial-*'),*out.glob('final-*')]:(trial/'transient.npz').unlink(missing_ok=True)
     row=dict(input_fingerprint=case_key,frequency_Hz=f,target_W=power,phase_deg=phase,matching=match,**m,history=history,runtime_s=time.perf_counter()-started,folder=str(out))
     (out/'case.json').write_text(json.dumps(row,indent=2))
     return row,result

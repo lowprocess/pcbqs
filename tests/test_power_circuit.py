@@ -212,3 +212,62 @@ def test_field_prefetch_releases_dense_matrices_and_preserves_responses(tmp_path
     response=extract_cached(q,[0,1e5,2e5],tmp_path,'cache-test',log=lambda *_:None)
     np.testing.assert_allclose(response.impedance,expected.impedance)
     np.testing.assert_allclose(q.h_field(response.drive(np.ones((3,1))),1,points),before)
+
+
+def test_solver_options_defaults_overrides_and_validation():
+    from pcbqs.power_spice import solver_options, SOLVER_DEFAULTS
+    assert solver_options() == SOLVER_DEFAULTS and SOLVER_DEFAULTS['abstol'] == 1e-6
+    assert solver_options(dict(reltol=1e-3), method='trap')['method'] == 'trap'
+    for bad in (dict(reltol=0), dict(reltol=0.5), dict(method='euler'), dict(maxord=9), dict(unknown=1), dict(abstol=True)):
+        with pytest.raises(ValueError):
+            solver_options(bad)
+
+
+def test_gate_pulse_across_t0_starts_on():
+    # A switch whose on-interval wraps past t=0 must be on from the start (as in steady state).
+    c = Circuit(); f = 1e5
+    c.switch('Q1', 'NET:D', 'NET:S', dict(type='switch', dead_time_s=1e-7), f, 120, False)   # low side, leg B
+    pulse = next(l for l in c.lines if l.startswith('VG_Q1'))
+    delay = float(pulse.split('PULSE(')[1].split()[2])
+    width = (1 / f) / 2 - 1e-7 - 2e-8
+    assert delay < 0 and delay + width > 0
+    c2 = Circuit(); c2.switch('Q2', 'NET:D', 'NET:S', dict(type='switch'), f, 180, False)
+    assert 0 <= float(next(l for l in c2.lines if l.startswith('VG_Q2')).split('PULSE(')[1].split()[2]) < 1 / f
+
+
+def _template_cfg():
+    from pcbqs.power_circuit import template
+    cfg = template(); cfg['frequencies_Hz'] = [1e5]; cfg['powers_W'] = [10]
+    return cfg
+
+
+def test_end_state_initialises_every_energy_store():
+    from pcbqs.power_bridge import build, end_state, matching
+    cfg = _template_cfg(); f = 1e5; match = matching(cfg, f)
+    circ = build(cfg, f, 60, match)
+    rng = np.random.default_rng(1)
+    fake = {k: np.array([0.0, float(rng.uniform(-3, 3))]) for k in circ.signals}
+    state = end_state(fake, cfg)
+    warm = build(cfg, f, 60, match, state=state)
+    text = '\n'.join(warm.lines)
+    c20 = next(p for p in cfg['components'] if p['ref'] == 'C20')
+    vc = fake['C20.V'][-1] - c20['ESR_ohm'] * fake['C20.I'][-1]
+    assert f"C_C20 " in text and f"IC={vc:.17g}" in text                                  # the capacitance itself
+    assert f"L_C20_series" in text and f"IC={fake['C20.I'][-1]:.17g}" in text              # its ESL carries the branch current
+    assert f"IC={fake['L3.I'][-1]:.17g}" in text and f"IC={fake['PRIMARY.winding_I'][-1]:.17g}" in text
+    assert f"L_Q1_d" in text and f"IC={fake['Q1.I'][-1]:.17g}" in text and f"IC={-fake['Q1.I'][-1]:.17g}" in text
+    assert '.ic ' not in text                                                              # capacitors set the nodes
+
+
+@pytest.mark.skipif(not shutil.which('ngspice'), reason='ngspice not installed')
+def test_warm_start_continues_the_previous_run(tmp_path):
+    from pcbqs.power_bridge import build, end_state, matching
+    cfg = _template_cfg(); f = 1e5; match = matching(cfg, f)
+    first = build(cfg, f, 60, match).run(tmp_path / 'a', f, cycles=6, samples_per_cycle=128, options=dict(reltol=1e-3))
+    state = end_state(first, cfg)
+    second = build(cfg, f, 60, match, state=state).run(tmp_path / 'b', f, cycles=2, samples_per_cycle=128, options=dict(reltol=1e-3))
+    for key in ('L3.I', 'PRIMARY.winding_I', 'LSOURCE.I'):
+        assert second[key][0] == pytest.approx(first[key][-1], rel=1e-3, abs=1e-4)
+    # VDMOS internal capacitances cannot take initial conditions: they charge from VHB in the first
+    # samples (a brief blip, little energy); the bus is back on the previous run's value right after.
+    assert second['C20.V'][2] == pytest.approx(first['C20.V'][-1], rel=2e-3)

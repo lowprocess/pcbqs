@@ -10,6 +10,29 @@ import numpy as np
 from .wpt import coil_capacitance,series_resistance,core_resistance
 
 
+# ngspice transient options. reltol dominates run time on hard-switched circuits: a 1e-3 search
+# tolerance was 3.5x faster than 1e-4 on the wpthb netlist with <=0.03% power/current change.
+# abstol 1e-6 A: 1e-9 A made strict runs fail ("timestep too small") at hard-switched edges on wpthb, and
+# changed no power/current/ripple result by more than 0.03% on the same netlist.
+SOLVER_DEFAULTS=dict(method='gear',maxord=2,reltol=1e-4,abstol=1e-6,vntol=1e-6,chgtol=1e-12,gmin=1e-10,rshunt=1e12)
+
+
+def solver_options(options=None,method=None):
+    """Validated ngspice .options, defaults overridden by `options` (and a legacy `method`)."""
+    merged={**SOLVER_DEFAULTS,**(options or {})}
+    if method is not None:merged['method']=method
+    unknown=set(merged)-set(SOLVER_DEFAULTS)
+    if unknown:raise ValueError('unknown solver options: '+', '.join(sorted(unknown)))
+    if merged['method'] not in ('gear','trap'):raise ValueError('method must be gear or trap')
+    if merged['maxord'] not in (1,2,3,4,5,6):raise ValueError('maxord must be an integer from 1 to 6')
+    for key in ('reltol','abstol','vntol','chgtol','gmin','rshunt'):
+        value=merged[key]
+        if isinstance(value,bool) or not isinstance(value,(int,float)) or not np.isfinite(value) or value<=0:
+            raise ValueError(key+' must be a positive number')
+    if merged['reltol']>=.1:raise ValueError('reltol must be below 0.1')
+    return merged
+
+
 _children=set()
 _children_lock=threading.RLock()
 _cancelled=threading.Event()
@@ -63,8 +86,9 @@ class Circuit:
         for key,val in [('R',R),('L',L)]:_positive(val,ref+'.'+key,True)
         if R:
             nxt=self.node('R:'+ref);self.lines.append(f'R_{ref}_series {n} {nxt} {R:.17g}');n=nxt
-        if L:
-            nxt=self.node('L:'+ref);self.lines.append(f'L_{ref}_series {n} {nxt} {L:.17g}');n=nxt
+        if L:                                                  # series ESL carries the branch current
+            branch=part.get('initial_I',part.get('initial_A') if kind=='inductor' else None)
+            nxt=self.node('L:'+ref);self.lines.append(f'L_{ref}_series {n} {nxt} {L:.17g}'+(f' IC={branch:.17g}' if branch is not None else ''));n=nxt
         code={'resistor':'R','capacitor':'C','inductor':'L'}[kind]
         if kind=='capacitor':
             factor=part.get('bias_factor',1.);_positive(factor,ref+'.bias_factor');value*=factor
@@ -93,14 +117,17 @@ class Circuit:
         if width<=0:raise ValueError('dead time/edges exceed half a switching period')
         vgate=model.get('gate_V',10.);_positive(vgate,ref+'.gate_V')
         d=self.sense(ref,a);s=self.node(b);g=self.node('G:'+ref);drv=self.node('DRIVE:'+ref)
-        delay=(phase/360+(0 if high else .5))*T+dead/2
+        delay=((phase/360+(0 if high else .5))*T+dead/2)%T
+        if delay+tr+width+tf>T:delay-=T                        # an on-interval across t=0: on from the start, as in steady state
         self.lines.append(f'VG_{ref} {drv} {s} PULSE(0 {vgate:.17g} {delay:.17g} {tr:.17g} {tf:.17g} {width:.17g} {T:.17g})')
         rg=model.get('gate_R_ohm',2.);_positive(rg,ref+'.gate_R',True)
         self.lines.append(f'RG_{ref} {drv} {g} {max(rg,1e-9):.17g}')
+        current=model.get('initial_A')                          # warm start: the switch's drain current
         for pin,key in [('d','package_L_H'),('s','source_L_H')]:
             val=model.get(key,0);_positive(val,ref+'.'+key,True)
             if val:
-                nxt=self.node(pin+':'+ref);self.lines.append(f'L_{ref}_{pin} {d if pin=="d" else s} {nxt} {val:.17g}')
+                ic='' if current is None else f' IC={(current if pin=="d" else -current):.17g}'
+                nxt=self.node(pin+':'+ref);self.lines.append(f'L_{ref}_{pin} {d if pin=="d" else s} {nxt} {val:.17g}'+ic)
                 if pin=='d':d=nxt
                 else:s=nxt
         ron=model.get('Ron_ohm',.008 if kind!='ideal' else 1e-6);roff=model.get('Roff_ohm',1e10)
@@ -138,8 +165,11 @@ class Circuit:
         self.power_refs.append(ref)
         self.voltage(ref+'.V',a,b);self.signals[ref+'.gate_I']=f'i(VG_{ref})';self.voltage(ref+'.gate_V','DRIVE:'+ref,b)
 
-    def copper(self,model,term_nodes,initial_currents=None):
+    def copper(self,model,term_nodes,initial_currents=None,initial_modes=None):
+        """initial_modes (a previous run's MODE<k>.I, in mode order) restores every modal inductor exactly;
+        otherwise modes start at the port currents' projection (exact for pure inductance modes only)."""
         names=model['names'];N=len(names);initial=None if initial_currents is None else np.asarray(initial_currents)
+        inductive=0
         modes=[]
         matrices=[('R',np.asarray(model['R_ohm']),None),('L',np.asarray(model['L_H']),None)]
         matrices += [('RL',np.asarray(m['R_ohm']),m['pole_rad_s']) for m in model.get('foster',[])]
@@ -161,7 +191,11 @@ class Circuit:
                 if kind in ('R','RL'):self.lines.append(f'RMODE{tag} {n} 0 1')
                 if kind in ('L','RL'):
                     L=reference if kind=='L' else 1/pole
-                    self.lines.append(f'LMODE{tag} {n} 0 {L:.17g}'+(f' IC={float(gain@initial):.17g}' if initial is not None else ''))
+                    if initial_modes is not None and inductive<len(initial_modes):ic=f' IC={float(initial_modes[inductive]):.17g}'
+                    elif initial is not None:ic=f' IC={float(gain@initial):.17g}'
+                    else:ic=''
+                    self.lines.append(f'LMODE{tag} {n} 0 {L:.17g}'+ic)
+                    self.signals[f'MODE{inductive}.I']=f'i(LMODE{tag})';inductive+=1
                 modes.append((n,gain))
         for i,name in enumerate(names):
             a,b=term_nodes[name];ref='PCB'+str(i);self.voltage(ref+'.V',a,b);self.power_refs.append(ref);n=self.sense(ref,a);summed=self.node('SUM:'+name)
@@ -170,8 +204,8 @@ class Circuit:
                 if abs(gain[i])>1e-14:self.lines.append(f'GSUM{i}_{j} 0 {summed} {mode} 0 {gain[i]:.17g}')
             self.lines.append(f'EPCB{i} {n} {self.node(b)} {summed} 0 1')
 
-    def run(self,out,f,cycles=250,samples_per_cycle=128,ramp_s=100e-6,timeout=600,linear_solver='klu',method='gear',threads=1):
-        if method not in ('gear','trap'):raise ValueError('method must be gear or trap')
+    def run(self,out,f,cycles=250,samples_per_cycle=128,ramp_s=100e-6,timeout=600,linear_solver='klu',method=None,threads=1,options=None):
+        solver=solver_options(options,method)
         if linear_solver not in ('klu','sparse'):raise ValueError('linear_solver must be klu or sparse')
         if not isinstance(threads,int) or threads<1:raise ValueError('threads must be a positive integer')
         executable=shutil.which('ngspice')
@@ -193,7 +227,7 @@ class Circuit:
             measures.extend([f'let measure{i}={expr}',f'meas tran m{i} {kind} measure{i} from={stop-1/f:.17g} to={stop:.17g}'])
         port_vectors=[name for name,label in zip(output_names,labels) if re.fullmatch(r'PCB\d+\.I',label)]
         adaptive_export=['set filetype=binary','write adaptive-ports.raw '+' '.join(port_vectors),'set filetype=ascii'] if port_vectors else []
-        lines=['Transient power circuit',*self.lines,f'.options method={method} maxord=2 reltol=1e-4 abstol=1e-9 vntol=1e-6 chgtol=1e-12 gmin=1e-10 rshunt=1e12',
+        lines=['Transient power circuit',*self.lines,'.options '+' '.join(f'{k}={v:.6g}' if isinstance(v,float) else f'{k}={v}' for k,v in solver.items()),
                '.control',*(['set klu'] if linear_solver=='klu' else []),f'set num_threads={threads}','set wr_singlescale','set wr_vecnames','save '+' '.join(sorted(save_vectors)),f'tran {1/f/samples_per_cycle:.17g} {stop:.17g} 0 {1/f/samples_per_cycle:.17g}'+(' uic' if self.uic else ''),
                *lets,*measures,*adaptive_export,'linearize '+' '.join(output_names),'wrdata transient.dat '+' '.join(output_names),'rusage all','quit','.endc','.end']
         (out/'circuit.cir').write_text('\n'.join(lines)+'\n')
@@ -233,7 +267,7 @@ class Circuit:
         if port_vectors:
             from .power_waveforms import save_port_spectrum
             save_port_spectrum(out,labels,f)
-        stats=dict(ngspice_wall_s=solved-started,postprocess_wall_s=time.perf_counter()-solved,linear_solver=linear_solver,method=method,ngspice_threads=threads)
+        stats=dict(ngspice_wall_s=solved-started,postprocess_wall_s=time.perf_counter()-solved,linear_solver=linear_solver,method=solver['method'],reltol=solver['reltol'],ngspice_threads=threads)
         for key,label in dict(analysis_s='Total analysis time (seconds)',load_s='Matrix load time',factor_s='Matrix factor time',solve_s='Matrix solve time',equations='Circuit Equations',iterations='Total iterations',accepted_steps='Accepted timepoints',rejected_steps='Rejected timepoints').items():
             match=re.search(r'^'+re.escape(label)+r'\s*=\s*([+\-0-9.eE]+)',stdout,re.M)
             if match:stats[key]=float(match[1])

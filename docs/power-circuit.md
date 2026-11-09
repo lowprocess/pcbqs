@@ -251,3 +251,55 @@ The Qt-free import API is `pcbqs.schematic.read_schematic(path)` (or
 `read_netlist(path)` for XML). `apply_import(config, document, references,
 update_connections=False)` returns a new configuration and leaves its inputs
 unchanged. `python -m pcbqs.schematic source.kicad_sch` prints normalized JSON.
+
+## Run time and solver settings
+
+A case targets receiver power by adjusting bridge phase, so it runs several
+transients. Since a 30 W wpthb case spent ~10,000 timesteps per switching cycle
+and 81% of ngspice time refactoring a small but dense matrix (the copper
+model's 24-port modal coupling), the search is arranged to do less of that:
+
+| `transient` key | Default | Effect |
+|---|---|---|
+| `search_reltol`, `search_abstol` | 1e-3, 1e-6 | tolerances of the phase-search trials |
+| `solver` | ngspice defaults below | the reported (final) run's `.options`: `method`, `maxord`, `reltol` (1e-4), `abstol` (1e-6 A), `vntol`, `chgtol`, `gmin`, `rshunt` |
+| `warm_start` | `true` | each run starts from the previous one's end state |
+| `final_cycles` | 8 | length of the strict final run (doubled until periodic) |
+
+Every run ends after whole switching periods, at the phase it started from, so
+the next run (the next phase trial, then the strict final run) can continue
+from it: capacitor voltages (less their ESR drop), inductor, ESL, package and
+winding currents, and the copper model's modal currents. Gate pulses whose
+on-interval spans t = 0 now start on, as in steady state; previously every run
+began with those switches off for part of a cycle, which re-excited the input
+filter. A strict run that ngspice cannot converge ("timestep too small") is
+retried with trapezoidal integration, then from a cold start; failed logs are
+kept as `ngspice-failed-<k>.log`. abstol is 1e-6 A because 1e-9 A made strict
+runs fail at hard-switched edges.
+
+Measured on wpthb (24 V, 24-port copper model, 5 and 30 W at 90 and 110 kHz,
+8 parallel jobs, i7-13700K), against the previous strict-only search:
+
+| Build | Per case | Worst change in reported results |
+|---|---|---|
+| as built (L3 5.6 µH, lightly damped 11 kHz filter mode) | 478 s → 56 s | ≤ 0.27%; input power ≤ 0.66% |
+| L3 with a damped polymer on VHB | 127 s → 55 s | ≤ 0.02%; input power ≤ 0.46% |
+| L3 replaced by 10 mΩ | 133 s → 59 s | ≤ 0.05% |
+
+Input power is averaged over the last switching cycle, so a slow input-filter
+mode that has not fully decayed biases it in both versions (supply-current
+cycle-to-cycle change 0.15–0.6%); the periodicity check excludes supply
+current. Options alone on one fixed wpthb netlist (`tools/benchmark_circuit_options.py`):
+
+| `.options` | Time | Power/current change | VHB spike p-p change |
+|---|---|---|---|
+| gear, reltol 1e-4, abstol 1e-9 (old) | 112 s | — | — |
+| reltol 1e-3, abstol 1e-6 (search) | 28 s | ≤ 0.04% | −3.3% |
+| abstol 1e-6 (final) | 87 s | ≤ 0.03% | −0.02% |
+| trap | 83 s | ≤ 0.03% | +0.1% |
+
+`tools/benchmark_circuit_solver.py` is a small wpthb-like converter for
+comparing ngspice settings and Xyce. Xyce ran its behavioural-switch version
+reliably where ngspice failed to converge, but was not faster (3.6 s against
+0.5 s for ngspice VDMOS at reltol 1e-3 on 40 cycles); ngspice VDMOS at reltol
+1e-5 or 1e-6 does not converge at the gate edges.
