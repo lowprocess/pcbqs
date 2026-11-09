@@ -72,13 +72,21 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 - **Plane-pair Z11 differs from Palace by a constant 13 pH (0.1 mm) or 33 pH (0.2 mm).** This is a port-shape
   effect: Palace's flat strip port against pcbqs's disc. Z21, the cavity itself, agrees.
 
+## In progress
+
+- **Capacitance against FasterCap** (`cap_fastercap.py`; FasterCap 5 built headless; wxWidgets 3.2 needs the
+  version in its CMakeLists changed). Plates in air agree to ~1.5%. On traces over a plane pcbqs is 20–45% low,
+  probably partly FasterCap's 35 µm side walls; a zero-thickness run will tell. The FR-4 input still gives a
+  non-physical matrix. Give pcbqs small terminals: a terminal has one charge density, and a whole-conductor
+  terminal removed half of a narrow trace's capacitance.
+- **Two face sheets for AC resistance** (`MQS(thickness_sheets=2)`, C14): the strip loop's 10–100 MHz error
+  falls from −20% to −12%. Mesh limits remain.
+
 ## Not done yet
 
 - **A real converter loop (CM5 U702) against Palace.** It needs the regulator's VIN and GND pads and the
   capacitors described the same way in both tools, with the terminal-pad effect above taken into account.
-- **AC resistance fix.** Checked against FastHenry (above). A model that weights each sheet's faces by where
-  its neighbours are, or separate top and bottom face sheets, is the fix. Then FastHenry checks it again,
-  including on real copper.
+
 - **Measurement.** VNA shunt-through on a PDN, and a near-field probe at 1–3 mm, on wpthb.
 
 ## Running

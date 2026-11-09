@@ -3,7 +3,7 @@
 Covers the converter near field (`pcbqs.mqs`), rail PDN (`pcbqs.pdn`), switching
 circuits (`pcbqs.power_circuit`) and their kicad2ems window pages. Findings
 referenced as C/I/U numbers are in [docs/power-tools-review.md](docs/power-tools-review.md).
-Estimates are working days. Last updated 2026-11-09.
+Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 started, FasterCap).
 
 ## Done recently
 
@@ -65,20 +65,34 @@ Today a 30 W wpthb case is ~56 s: about two strict-equivalent transients of a
 | Piecewise-linear switched state-space engine | 10–100× for ideal-switch studies | 1–2 weeks | the copper model and passives are linear; exact matrix exponentials per switch state; device-level effects need ngspice |
 | GPU | none for one transient | — | 369 equations: launch latency dominates. Useful only for batched sweeps on the piecewise-linear engine |
 
-## Validation
+## Validation and accuracy (next)
 
-Done (`validation/`, 2026-11-09): DC drop against Elmer 3D (strip, vias, wpthb, Jetson; 0.2–1.5% on boards),
-loop inductance and |H| against Palace and FastHenry (0.3–2%, ~5%), plane pairs against Palace and the modal
-sum (≤ 0.8%), AC resistance against FastHenry (good to ~1 MHz, then 11–34% low: C14).
-Found and fixed C11 and C12. Next:
+Done (`validation/`, 2026-11-09):
+- DC drop against Elmer 3D (strip, vias, wpthb, Jetson; 0.2–1.5% on boards).
+- Loop inductance and |H| against Palace and FastHenry (0.3–2%, ~5%).
+- Plane pairs against Palace and the modal sum (≤ 0.8%).
+- AC resistance against FastHenry (good to ~1 MHz, then 11–34% low: C14).
+- Found and fixed C11 and C12.
 
-- AC resistance (C14): started. `MQS(thickness_sheets=2)` puts face sheets coupled by the slab two-port;
-  the error against FastHenry drops from −19/−20% to −12% on the strip loop. Next: edge refinement (current
-  crowds to strip edges; FastHenry uses 31 filaments across), memory (twice the unknowns: compressed matrices
-  without capacitance), `dielectric='stack'`, then validate on CM5 and make it the slab default.
-- CM5 U702 input loop against Palace, with the regulator and capacitor pads modelled alike in both (C13).
-- MQS: the ~1% inductance bias; parts that attach along their pad edges instead of at one node.
-- VNA and near-field probe measurements on wpthb.
+In order:
+
+1. **AC resistance (C14), started (2 days).** `MQS(thickness_sheets=2)`: face sheets coupled by the slab
+   two-port; the strip loop's 10–100 MHz error against FastHenry falls from −19/−20% to −12%.
+   - Edge refinement: current crowds to strip edges; FastHenry uses 31 filaments across a 1 mm strip.
+   - Memory: twice the unknowns. The compressed backend needs to work without `capacitance=True`.
+   - `dielectric='stack'` with face sheets.
+   - Validate on the CM5 loop, then make it the slab default.
+2. **Capacitance against FasterCap, in progress (1 day).** FasterCap 5 is built at
+   `~/opt/src/FasterCap-build`; `validation/cap_fastercap.py` (work in progress). Plates in air agree to ~1.5%.
+   - Traces over a plane in air: pcbqs is 20% low on self capacitance and 45% low on trace-to-trace.
+     Run FasterCap with zero-thickness copper to separate the 35 µm side walls from pcbqs error.
+   - FasterCap's FR-4 input is wrong (non-physical matrix): fix the dielectric interface where copper sits on it.
+   - Terminals: a pcbqs terminal has one charge density, so it must stay small. Note this in `capacitance_matrix`.
+   - Then pcbqs's layered-stack images on FR-4, and side-wall capacitance once face sheets carry charge.
+3. **Real converter loop (1 day).** CM5 U702 against Palace and FastHenry, with regulator and capacitor pads
+   modelled alike (C13: a pcbqs terminal is one node, so large pads shorten a small loop).
+4. **Parts on pads (C13, 1 day).** Attach parts along their pad edges, not at one node.
+5. **Measurements.** VNA shunt-through on the wpthb DC link, and a near-field probe at 1–3 mm.
 
 ## Models and validation
 
