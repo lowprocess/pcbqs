@@ -7,7 +7,7 @@ geometry are solved by MQS/PEEC instead of adding cavity mounting estimates.
 import numpy as np
 
 from ..mqs import MQS
-from .rail import terminal
+from ..contacts import contact_terminal
 
 
 class PEECPDN:
@@ -16,7 +16,7 @@ class PEECPDN:
                  max_triangles=None, log=print, coarsen=None, grow=0.5,
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
-                 solver_tol=1e-8, solver_maxiter=500):
+                 solver_tol=1e-8, solver_maxiter=500, pad_contact='termination'):
         self.legacy = legacy
         self.rail = rail = legacy.rail
         if (any(s.kind not in ('R','jumper','through') for s in rail.series)
@@ -28,14 +28,16 @@ class PEECPDN:
         for ref, info in legacy.parts.items():
             power, ground = rail.pads_of(info['part'], info['role'])
             a, b = ref+':power', ref+':ground'
-            terms[a], terms[b] = terminal(power, layers), terminal(ground, layers)
+            part = info['part']
+            terms[a] = contact_terminal(part, power, pad_contact, layers)
+            terms[b] = contact_terminal(part, ground, pad_contact, layers)
             if not terms[a] or not terms[b]:
                 raise ValueError(ref+': PEEC PDN trial requires explicit power and ground pads')
             self.terminals[ref] = a, b
         for link in rail.series:
             a,b=link.part.ref+':a',link.part.ref+':b'
-            terms[a]=terminal(link.pads('a'),layers)
-            terms[b]=terminal(link.pads('b'),layers)
+            terms[a]=contact_terminal(link.part,link.pads('a'),pad_contact,layers)
+            terms[b]=contact_terminal(link.part,link.pads('b'),pad_contact,layers)
             if not terms[a] or not terms[b]:raise ValueError(link.part.ref+': missing series-part pads')
         fine = None
         if contact_spacing is not None:

@@ -40,6 +40,7 @@ OPTIONS = [
     ('esr', 'float', .003, 'Assumed ESR per input capacitor, ohms', 'Parts'),
     ('esl', 'float', .4e-9, 'Assumed ESL per input capacitor, H', 'Parts'),
     ('part_height', 'float', .5, 'Assumed part filament height above pads, mm', 'Parts'),
+    ('pad_contact', 'str', 'termination', 'Where a part meets its pads: termination (end-cap band), pad or edge', 'Parts'),
 ]
 
 
@@ -117,12 +118,13 @@ def select(board, a, require_values=True):
         raise ValueError('select one or more unique --capacitors')
     if vin==a.ground:
         raise ValueError('input supply and ground must differ')
+    from .contacts import contact_terminal
     terms={}
     for name in [ref,*caps]:
         if name not in parts:
             raise ValueError(f'unknown part {name}')
         for net in [vin,a.ground]:
-            pads=[(layer,p.geom) for p in parts[name].on({net}) for layer in p.layers]
+            pads=contact_terminal(parts[name],parts[name].on({net}),getattr(a,'pad_contact','termination'))
             if not pads:
                 raise ValueError(f'{name} has no copper pads on {net}')
             terms[f'{name}:{net}']=pads

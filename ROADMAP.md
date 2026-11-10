@@ -3,7 +3,7 @@
 Covers the converter near field (`pcbqs.mqs`), rail PDN (`pcbqs.pdn`), switching
 circuits (`pcbqs.power_circuit`) and their kicad2ems window pages. Findings
 referenced as C/I/U numbers are in [docs/power-tools-review.md](docs/power-tools-review.md).
-Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 started, FasterCap).
+Estimates are working days. Last updated 2026-11-10 (C13 started, measurement plan).
 
 ## Done recently
 
@@ -164,8 +164,14 @@ In order:
 3. **Real converter loop, in progress.** CM5 U702 (`validation/mqs_cm5.py`): pcbqs with one sheet is within 4%
    of Palace's PEC sheets at the finest meshes, both still converging. FastHenry (R, and L with thickness) is
    running; it decides between one and two face sheets.
-4. **Parts on pads (C13, 1 day).** Attach parts along their pad edges, not at one node.
-5. **Measurements.** VNA shunt-through on the wpthb DC link, and a near-field probe at 1–3 mm.
+4. **Parts on pads (C13, started).** Two-pad chip parts now attach on each pad's termination band toward the body
+   (`pcbqs.contacts`, `pad_contact`: termination by default, pad, edge), in the converter loop, circuit and PEEC PDN
+   tools. CM5's loop L −5%; wpthb's VHB port 2.5x (whole pads shorted ~40% of its loop); the circuit's settled bus
+   ripple −22%, everything else < 0.1%. Left: validate the band against a 3D part (a PEC 1206 body with end caps on
+   its pads in Palace) and against measurement 5(b).
+5. **Measurements (plan ready).** `validation/measurements.md`: VNA shunt-through at TP7/TP6 unpowered (as built,
+   and optionally one 1206 jumper in place of the ceramics), VHB ripple at the regression operating point, near
+   field at 1–3 mm. Predictions: `validation/wpthb_vhb_port.py`.
 
 ## Models and validation
 

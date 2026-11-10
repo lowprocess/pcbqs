@@ -295,6 +295,7 @@ def make_board_ports(board, config, log=print):
     from shapely.ops import unary_union
     from .mqs import MQS
     from .pdn.rail import parts_of
+    from .contacts import contact_terminal
 
     selected = config['mesh']
     nets = set(selected['nets'])
@@ -307,7 +308,7 @@ def make_board_ports(board, config, log=print):
         if ref not in parts:
             raise ValueError('missing PCB component ' + ref)
         pads = parts[ref].on({net})
-        terms[terminal] = [(l, p.geom) for p in pads for l in p.layers]
+        terms[terminal] = contact_terminal(parts[ref], pads, selected.get('pad_contact', 'termination'))
         if not terms[terminal]:
             raise ValueError('missing PCB terminal ' + terminal)
     extent = unary_union([p for vv in terms.values() for _, p in vv])

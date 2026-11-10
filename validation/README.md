@@ -69,6 +69,21 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   1 mm pads against 38.8 nH with 0.25 mm ones. Here terminals are 0.1 mm slivers at the gap, matching
   Palace's gap port. On real converter loops the part-to-pad model (filament at `part_h`) matters at the
   same scale.
+  - Since 2026-11-10 the tools attach a two-pad chip part to the band of each pad toward its body, the end cap's
+    footprint (`pcbqs.contacts`, `pad_contact='termination'`: 0.25 mm for 0402 up to 0.6 mm for 1812, from the
+    footprint name; half the pad otherwise). ICs and through-hole pads keep the whole pad. Not yet validated
+    against a 3D part or a measurement:
+
+    | Case | whole pad | termination band | 0.1 mm edge |
+    |---|---|---|---|
+    | CM5 U702 input loop, L at fsw (dmax 0.8, fine 0.25) | 1.600 nH | 1.518 nH (−5%) | 1.495 nH |
+    | wpthb VHB port TP7/TP6, board only, 100 MHz (dmax 0.8) | 115 pH | 288 pH (2.5×) | 409 pH |
+    | wpthb circuit, 90 kHz 10 W: settled bus ripple | 0.764 V | 0.593 V (−22%) | |
+
+    Efficiency, power, phase and currents move under 0.1%. wpthb's VHB caps (1206) span most of the 6 mm between
+    TP7 and TP6, over In1's GND plane 0.1 mm below, so a whole pad shorts about 40% of the loop's length; CM5's
+    loop closes the other way and its inductance falls slightly as the contact moves in. The wpthb port is the
+    measurement that decides (`measurements.md`, `wpthb_vhb_port.py`).
 - **Plane-pair Z11 differs from Palace by a constant 13 pH (0.1 mm) or 33 pH (0.2 mm).** This is a port-shape
   effect: Palace's flat strip port against pcbqs's disc. Z21, the cavity itself, agrees.
 
