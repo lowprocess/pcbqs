@@ -102,26 +102,9 @@ In order:
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 
    Started (2026-11-09):
-   - `panels3d.py`: the 1/R moments between triangles of any orientation, which side walls need. It reproduces the
-     horizontal kernel exactly, and is checked against rotations and brute-force quadrature (`test_panels3d.py`).
-     `walls.py`: each layer's boundary loops as wall panels of the copper's thickness, owned by the boundary
-     triangle beneath (its circuit node, which both faces already share), carrying rooftop currents along the wall;
-     their inductance with each other and with the sheets' RWG functions (`test_walls.py`: a straight wall and a
-     rectangle of wall against Grover within 0.1–1%, symmetric positive definite, reciprocal on a sheet's edge).
-     Still to do, in order:
-     1. The walls' impedance. A skin-only surface impedance vanishes at DC (the walls would short the copper),
-        and a fixed slice adds cross-section the faces already carry. Proposed: each wall owns the copper within
-        t/2 of its edge (the slab two-port across that depth) and the boundary triangles' faces give that strip up,
-        so DC is unchanged and the wall takes the side's skin current above ~3 MHz.
-     2. Rooftops as branches in MQS (between consecutive boundary triangles' nodes), with their R, L and the
-        mutual inductance to the sheets and vias; dense first, then the compressed backend's entries (native).
-     3. Check: DC unchanged; the strip loop, the plane return and CM5 against FastHenry, for five models: one
-        sheet, one sheet + walls, two faces, two faces + walls (and FastHenry's volume as the reference). One sheet
-        + walls (boundary_walls already centres the panels on the layer) is the cheap candidate: thickness in L
-        (the edge current spread up the side) and C (side charge) at about half the unknowns of two faces, but
-        no face preference, so R near a return plane should stay low.
-   - `face_correction='overlap'`: two face sheets now converge on a real six-layer board (CM5); see
-     validation/README.md.
+   - `panels3d.py`: the 1/R moments between triangles of any orientation (kept; the walls built on it were removed,
+     below).
+   - `face_correction='overlap'` made two faces converge on CM5 but was wrong near planes; removed (below).
    - Validation against FastHenry (`validation/face_study.py`, CM5-lite) found two faces wrong near a plane:
      +254% R at 100 MHz with a 35 um plane 0.1 mm under the trace (+0.1% with it 1.6 mm away). The slab two-port is
      driven by the faces' own currents; it has to be driven by the tangential field at the faces, from all currents,
