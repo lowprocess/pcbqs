@@ -164,11 +164,12 @@ In order:
 3. **Real converter loop, in progress.** CM5 U702 (`validation/mqs_cm5.py`): pcbqs with one sheet is within 4%
    of Palace's PEC sheets at the finest meshes, both still converging. FastHenry (R, and L with thickness) is
    running; it decides between one and two face sheets.
-4. **Parts on pads (C13, started).** Two-pad chip parts now attach on each pad's termination band toward the body
-   (`pcbqs.contacts`, `pad_contact`: termination by default, pad, edge), in the converter loop, circuit and PEEC PDN
-   tools. CM5's loop L −5%; wpthb's VHB port 2.5x (whole pads shorted ~40% of its loop); the circuit's settled bus
-   ripple −22%, everything else < 0.1%. Left: validate the band against a 3D part (a PEC 1206 body with end caps on
-   its pads in Palace) and against measurement 5(b).
+4. **~~Parts on pads (C13)~~, done 2026-11-10 bar validation.** A two-pad chip part attaches where its end cap
+   and solder fillet are: each pad from (body/2 − cap band) outward, sized from the footprint name
+   (`pcbqs.contacts`, `pad_contact`: termination by default, pad, edge as a bound). This is in the converter loop,
+   circuit and PEEC PDN tools. On KiCad footprints the contact is 83–95% of the pad, so whole pads were nearly
+   right: CM5 loop L −2%, wpthb VHB port +0.5%, circuit settled ripple +2.9%. An inner-edge contact would read
+   2.7× on wpthb's port, so the measurement in 5 checks the model's sensitivity directly.
 5. **Measurements (plan ready).** `validation/measurements.md`: VNA shunt-through at TP7/TP6 unpowered (as built,
    and optionally one 1206 jumper in place of the ceramics), VHB ripple at the regression operating point, near
    field at 1–3 mm. Predictions: `validation/wpthb_vhb_port.py`.

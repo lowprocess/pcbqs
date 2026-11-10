@@ -22,7 +22,7 @@ What each band tests:
 |---|---|---|
 | 5–20 kHz | Peak, 1.6–1.8 Ω near 10.5 kHz (`python -m pcbqs.pdn`; regression `wpthb_pdn`) | L3 against the VHB ceramics' *unbiased* C; the CA polymer caps' ESR as damping |
 | 1–3 MHz | Minimum of a few mΩ | The ceramics' ESR (vendor data) |
-| 3–100 MHz | Inductive: about 350 pH total, 288 pH of it the board; 78 mΩ at 35 MHz, 220 mΩ at 100 MHz (termination contact; whole pads would read 33 / 92 mΩ) | The parts' ESL plus the board's mounting and spreading inductance, the pcbqs copper model, and part contacts (C13) |
+| 3–100 MHz | Inductive: 2.9 mΩ near 7 MHz, 30 mΩ at 35 MHz, 87 mΩ at 59 MHz, 147 mΩ at 100 MHz (dmax 0.3); about 230 pH in all, 150 pH ± 7% of it the board | The parts' ESL plus the board's mounting and spreading inductance, the pcbqs copper model, and part contacts (C13) |
 
 The unpowered measurement sees the caps' unbiased capacitance. At 24 V an X5R 10 µF 50 V 1206 keeps perhaps
 40–60% of it, so the 10.5 kHz peak moves up by about 1.3–1.6× in operation. Compare unbiased with unbiased.
@@ -32,10 +32,15 @@ To separate the board from the parts in the 3–100 MHz band:
 - (b) Optionally, all ceramics but C21 removed, and C21 replaced by a 1206 zero-ohm jumper or a soldered copper
   strap of known size.
 
-With (b), the part's own inductance is small and known, so the reading is mostly the board's loop. pcbqs gives
-it for each contact mode (`termination`, `pad`, `edge`). With all six caps as ideal shorts, the board alone at
-100 MHz is 115 pH (whole pad), 288 pH (termination band) or 409 pH (edge), at dmax 0.8. That is a factor of 2.5,
-easily resolved. Two things are still to do: the one-jumper prediction for (b), and a mesh check at 0.4.
+With (b), the reading is the board's loop plus the jumper's own inductance. pcbqs gives the board's part:
+214 pH at 100 MHz (dmax 0.3), and about 0.5 mΩ of copper resistance at 0.3 MHz. Subtract the jumper's
+inductance: about 0.4–0.5 nH for a 1206 zero-ohm link, or better, use a copper strap whose inductance can be
+computed. With C21 left as its 10 µF cap, the same run gives 52 mΩ at 0.3 MHz and 386 mΩ at 100 MHz, using the
+placeholder ESL.
+
+The contact model hardly matters here: a whole pad and the cap-and-fillet contact differ by 0.5%. An inner-edge
+contact would read 2.7× higher, so the board's copper model is what this checks. That includes the slow mesh
+convergence (115 pH at dmax 0.8, about 150 pH ± 7% at 0.25–0.6).
 
 ## 2. VHB ripple, powered (oscilloscope)
 
@@ -57,6 +62,7 @@ easily resolved. Two things are still to do: the one-jumper prediction for (b), 
 
 ## Status
 
-- Predictions for test 1: `validation/wpthb_vhb_port.py`, with the part values as placeholders until the vendor
-  models (TDK CGA5L3X5R1H106M160AB, Murata GRM219R61H105KA73J) are in.
+- Predictions for test 1: `validation/wpthb_vhb_port.py` (results in `validation/results/wpthb_vhb_port.json`),
+  with the part values as placeholders until the vendor models (TDK CGA5L3X5R1H106M160AB, Murata
+  GRM219R61H105KA73J) are in.
 - Tests 2 and 3 need the bridge running. Test 3 also needs the bridge set up as an MQS converter case.

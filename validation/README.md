@@ -69,21 +69,26 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   1 mm pads against 38.8 nH with 0.25 mm ones. Here terminals are 0.1 mm slivers at the gap, matching
   Palace's gap port. On real converter loops the part-to-pad model (filament at `part_h`) matters at the
   same scale.
-  - Since 2026-11-10 the tools attach a two-pad chip part to the band of each pad toward its body, the end cap's
-    footprint (`pcbqs.contacts`, `pad_contact='termination'`: 0.25 mm for 0402 up to 0.6 mm for 1812, from the
-    footprint name; half the pad otherwise). ICs and through-hole pads keep the whole pad. Not yet validated
-    against a 3D part or a measurement:
+  - Since 2026-11-10 the tools attach a two-pad chip part where its metal is (`pcbqs.contacts`,
+    `pad_contact='termination'`). The end cap sits on the pad from (body length / 2 − cap band) to the body's end,
+    and the solder fillet joins the rest of the pad to the cap's end face. So the contact is the pad from the cap
+    outward, and only the bare copper under the ceramic is left out. Sizes come from the footprint name (0402:
+    1.0 mm body, 0.25 mm band; 1206: 3.2 mm, 0.5 mm). Otherwise, and for ICs and through-hole pads, the contact
+    is the whole pad. On KiCad's footprints this covers 83% (1206) to 95% (0805) of the pad, so whole pads were
+    nearly right:
 
-    | Case | whole pad | termination band | 0.1 mm edge |
+    | Case | whole pad | termination (default) | 0.1 mm inner edge (a bound) |
     |---|---|---|---|
-    | CM5 U702 input loop, L at fsw (dmax 0.8, fine 0.25) | 1.600 nH | 1.518 nH (−5%) | 1.495 nH |
-    | wpthb VHB port TP7/TP6, board only, 100 MHz (dmax 0.8) | 115 pH | 288 pH (2.5×) | 409 pH |
-    | wpthb circuit, 90 kHz 10 W: settled bus ripple | 0.764 V | 0.593 V (−22%) | |
+    | CM5 U702 input loop, L at fsw (dmax 0.8, fine 0.25) | 1.600 nH | 1.567 nH (−2%) | 1.495 nH |
+    | wpthb VHB port TP7/TP6, board only, 100 MHz (dmax 0.3) | 152.1 pH | 152.9 pH (+0.5%) | 404.5 pH (dmax 0.8) |
+    | wpthb circuit, 90 kHz 10 W: settled bus ripple | 0.764 V | 0.786 V (+2.9%) | |
 
-    Efficiency, power, phase and currents move under 0.1%. wpthb's VHB caps (1206) span most of the 6 mm between
-    TP7 and TP6, over In1's GND plane 0.1 mm below, so a whole pad shorts about 40% of the loop's length; CM5's
-    loop closes the other way and its inductance falls slightly as the contact moves in. The wpthb port is the
-    measurement that decides (`measurements.md`, `wpthb_vhb_port.py`).
+    The port's board inductance converges slowly: 115, 158, 165, 153, 148 pH at dmax 0.8, 0.6, 0.4, 0.3, 0.25
+    (`wpthb_vhb_port.py`, compressed backend below 0.8), so about 150 pH ± 7%.
+    The contact still matters: a part touching only its pads' inner edges would read 2.7× higher on wpthb's port,
+    because its 1206 caps span most of the 6 mm between TP7 and TP6, over In1's GND plane 0.1 mm below. A first
+    version of `contacts` put the contact on the pad's inner half, toward the body, and read 2.5× higher. That
+    was wrong for chip parts: the inner part of a KiCad pad lies under the bare ceramic.
 - **Plane-pair Z11 differs from Palace by a constant 13 pH (0.1 mm) or 33 pH (0.2 mm).** This is a port-shape
   effect: Palace's flat strip port against pcbqs's disc. Z21, the cavity itself, agrees.
 

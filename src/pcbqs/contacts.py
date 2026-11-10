@@ -1,66 +1,69 @@
 """Where a part touches its pads (C13): the contact area that becomes a terminal.
 
-A terminal is one node, an ideal equipotential, so a whole pad as a terminal lets current cross the pad for free:
-a 20 x 10 mm loop read 37.4 nH with 1 mm pads against 38.8 nH with 0.25 mm ones. A chip part does not short its
-pad. Its metal termination (a thick, solder-filled end cap) covers the pad's inner part, toward the part's body,
-and the copper beyond it carries current like any other copper.
+A terminal is one node, an ideal equipotential, so the copper it covers carries current for free. For a chip part
+that is mostly right: the metal end cap (termination band, a few tens of um of Cu/Ni/Sn) sits on the pad from
+(body length / 2 - band) out to the body's end, and the solder fillet joins the rest of the pad, out to its outer
+end, to the cap's end face, where the internal electrodes start. Only the bare copper under the ceramic, between
+the pad's inner edge and the cap, conducts as copper.
 
-    contacts = part_contacts(part, mode='termination')   # {pad index: polygon}, for a two-pad chip part
+    contacts = part_contacts(part, mode='termination')   # {pad index: polygon}
 
 mode
-    'pad'          the whole pad (the earlier behaviour)
-    'termination'  (default) for a two-pad SMD part, the band of each pad within the termination length of its edge
-                   facing the other pad: the end cap's footprint from the package code in the footprint name
-                   (C_0805_2012Metric: 0.5 mm), else half the pad's length along the part. Parts with more pads
-                   (ICs: a lead or exposed pad soldered over its whole pad) and through-hole pads keep the whole pad.
-    'edge'         a 0.1 mm sliver along the facing edge (the shortest current path a part could have)
+    'termination'  (default) two-pad SMD parts: each pad from (L / 2 - band) outward, measured from the part's
+                   centre (the two pads' midpoint) along its axis, with the body length L and band from the package
+                   code in the footprint name (C_1206_3216Metric: 3.2 mm, 0.5 mm). Without a code, or for ICs
+                   (a lead or exposed pad soldered over its whole pad) and through-hole pads: the whole pad.
+    'pad'          the whole pad (the behaviour before 2026-11-10)
+    'edge'         a 0.1 mm sliver along each pad's inner edge, toward the other pad: the shortest current path a
+                   part could have, a bound and not a model
 """
 import re
 
 import numpy as np
 from shapely.geometry import Polygon
 
-# MLCC / chip-resistor termination band (end cap length on the pad side), mm, by EIA imperial size; typical datasheet
-# values (Murata GRM, Yageo RC): 0201 0.15, 0402 0.25, 0603 0.35, 0805 0.5, 1206 and larger 0.5-0.6
-TERMINATION_MM = {'01005': 0.1, '0201': 0.15, '0402': 0.25, '0603': 0.35, '0805': 0.5, '1206': 0.5, '1210': 0.5,
-                  '1806': 0.5, '1812': 0.6, '2010': 0.6, '2220': 0.6, '2512': 0.6}
+# EIA chip sizes: body length (mm) and termination band (mm), typical datasheet values (Murata GRM, TDK CGA, Yageo
+# RC). The band is the cap's length along the body's bottom.
+BODY_MM = {'01005': (0.4, 0.1), '0201': (0.6, 0.15), '0402': (1.0, 0.25), '0603': (1.6, 0.35), '0805': (2.0, 0.5),
+           '1206': (3.2, 0.5), '1210': (3.2, 0.5), '1806': (4.5, 0.5), '1812': (4.5, 0.6), '2010': (5.0, 0.6),
+           '2220': (5.7, 0.6), '2512': (6.4, 0.6)}
 METRIC = {'0402': '01005', '0603': '0201', '1005': '0402', '1608': '0603', '2012': '0805', '3216': '1206',
           '3225': '1210', '4516': '1806', '4532': '1812', '5025': '2010', '5750': '2220', '6332': '2512'}
 EDGE_MM = 0.1
 MODES = ('termination', 'pad', 'edge')
 
 
-def termination_mm(lib):
-    """The termination length (mm) a footprint name implies, or None: KiCad's '<x>_0805_2012Metric' names, a
-    trailing 'NNNNMetric' alone, or an imperial code as its own token."""
+def chip_size(lib):
+    """(body length, termination band) in mm that a footprint name implies, or None: KiCad's
+    '<x>_0805_2012Metric', a 'NNNNMetric' alone, or an imperial code as its own token."""
     name = lib.rsplit(':', 1)[-1]
     m = re.search(r'(\d{4})Metric', name)
     if m and m.group(1) in METRIC:
-        return TERMINATION_MM[METRIC[m.group(1)]]
+        return BODY_MM[METRIC[m.group(1)]]
     for tok in re.split(r'[_\-\s]', name):
-        if tok in TERMINATION_MM:
-            return TERMINATION_MM[tok]
+        if tok in BODY_MM:
+            return BODY_MM[tok]
     return None
 
 
-def facing_band(geom, toward, depth):
-    """The part of a pad within `depth` (mm) of its extreme toward the point `toward` (along the line from the
-    pad's centroid to it). The whole pad when the band would cover it."""
-    c = np.array(geom.centroid.coords[0])
-    u = np.asarray(toward, float) - c
-    n = np.linalg.norm(u)
-    if n == 0:
-        return geom
-    u /= n
-    xy = np.array(geom.exterior.coords) if geom.geom_type == 'Polygon' else \
+def _coords(geom):
+    return np.array(geom.exterior.coords) if geom.geom_type == 'Polygon' else \
         np.vstack([np.array(g.exterior.coords) for g in geom.geoms])
-    s = xy @ u
+
+
+def beyond(geom, origin, u, s0, s1=None):
+    """The part of a pad where s = (x - origin) . u lies in [s0, s1] (s1 None: no upper bound); the whole pad if
+    that is all of it, and the whole pad (a footprint the sizes do not fit) if it is empty."""
+    u = np.asarray(u, float) / np.linalg.norm(u)
+    s = (_coords(geom) - origin) @ u
     lo, hi = s.min(), s.max()
-    if hi - depth <= lo:
+    a, b = max(s0, lo - 1), hi + 1 if s1 is None else s1
+    if a <= lo and b >= hi:
         return geom
     v = np.array([-u[1], u[0]])
-    w = np.abs(xy @ v).max() + (hi - lo) + 1.0                       # a half-plane box past the pad's extent
-    cut = Polygon([(hi - depth) * u + w * v, (hi + 1) * u + w * v, (hi + 1) * u - w * v, (hi - depth) * u - w * v])
+    w = np.abs((_coords(geom) - origin) @ v).max() + 1.0
+    o = np.asarray(origin, float)
+    cut = Polygon([o + a * u + w * v, o + b * u + w * v, o + b * u - w * v, o + a * u - w * v])
     band = geom.intersection(cut)
     return band if not band.is_empty and band.area > 0 else geom
 
@@ -77,20 +80,21 @@ def part_contacts(part, mode='termination'):
     out = {k: p.geom for k, p in enumerate(part.pads)}
     if mode == 'pad' or len(part.pads) != 2 or any(_through_hole(p) for p in part.pads):
         return out
-    depth_lib = termination_mm(getattr(part, 'lib', '') or '')
+    c = [np.array(p.geom.centroid.coords[0]) for p in part.pads]
+    centre = 0.5 * (c[0] + c[1])
+    size = chip_size(getattr(part, 'lib', '') or '')
+    if mode == 'termination' and size is None:
+        return out
     for k, p in enumerate(part.pads):
-        other = part.pads[1 - k].geom.centroid.coords[0]
+        u = c[k] - centre                                            # outward, along the part's axis
+        if np.linalg.norm(u) == 0:
+            continue
         if mode == 'edge':
-            depth = EDGE_MM
-        elif depth_lib is not None:
-            depth = depth_lib
-        else:                                                        # half the pad's length along the part
-            c = np.array(p.geom.centroid.coords[0])
-            u = np.asarray(other) - c
-            u /= np.linalg.norm(u) or 1.0
-            s = np.array(p.geom.exterior.coords) @ u
-            depth = 0.5 * (s.max() - s.min())
-        out[k] = facing_band(p.geom, other, depth)
+            inner = ((_coords(p.geom) - centre) @ (u / np.linalg.norm(u))).min()
+            out[k] = beyond(p.geom, centre, u, inner, inner + EDGE_MM)
+        else:
+            length, band = size
+            out[k] = beyond(p.geom, centre, u, length / 2 - band)
     return out
 
 

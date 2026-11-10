@@ -1,11 +1,11 @@
-"""Part contacts on pads (C13): a two-pad chip part touches the band of each pad toward its body."""
+"""Part contacts on pads (C13): a two-pad chip part touches each pad from its end cap outward (cap and fillet)."""
 from types import SimpleNamespace as NS
 
 import numpy as np
 import pytest
 from shapely.geometry import box, mapping
 
-from pcbqs.contacts import facing_band, part_contacts, termination_mm
+from pcbqs.contacts import beyond, chip_size, part_contacts
 
 
 def pad(x0, x1, layers=('F.Cu',), net='A'):
@@ -17,28 +17,29 @@ def chip(lib='Capacitor_SMD:C_0805_2012Metric'):
     return NS(ref='C1', lib=lib, pads=[pad(-1.45, -0.45), pad(0.45, 1.45, net='B')])
 
 
-def test_termination_length_from_the_footprint_name():
-    assert termination_mm('Capacitor_SMD:C_0805_2012Metric') == 0.5
-    assert termination_mm('CM5IO:C_0402_1005Metric') == 0.25
-    assert termination_mm('R_0603') == 0.35
-    assert termination_mm('Inductor_SMD:L_Bourns_SRP1265A') is None
+def test_chip_size_from_the_footprint_name():
+    assert chip_size('Capacitor_SMD:C_0805_2012Metric') == (2.0, 0.5)
+    assert chip_size('CM5IO:C_0402_1005Metric') == (1.0, 0.25)
+    assert chip_size('R_0603') == (1.6, 0.35)
+    assert chip_size('Inductor_SMD:L_Bourns_SRP1265A') is None
 
 
-def test_chip_part_contacts_its_pads_inner_bands():
+def test_chip_part_contacts_its_pads_from_the_end_cap_outward():
+    """0805: body 2.0 mm, cap 0.5 mm, so the cap starts 0.5 mm from the centre; the pads start at 0.45 mm."""
     c = part_contacts(chip())
-    for k, (lo, hi) in enumerate([(-0.95, -0.45), (0.45, 0.95)]):          # 0.5 mm toward the body
+    for k, (lo, hi) in enumerate([(-1.45, -0.5), (0.5, 1.45)]):
         x0, _, x1, _ = c[k].bounds
         assert (x0, x1) == pytest.approx((lo, hi))
-        assert c[k].area == pytest.approx(0.5 * 1.2)
+        assert c[k].area == pytest.approx(0.95 * 1.2)
 
 
 def test_modes():
     whole = part_contacts(chip(), mode='pad')
     assert whole[0].equals(box(-1.45, -0.6, -0.45, 0.6))
     edge = part_contacts(chip(), mode='edge')
-    assert edge[1].bounds[2] - edge[1].bounds[0] == pytest.approx(0.1)
-    unknown = part_contacts(chip(lib='X:L_Big'))                          # no size code: half the pad
-    assert unknown[0].bounds[0] == pytest.approx(-0.95)
+    assert edge[1].bounds[0] == pytest.approx(0.45) and edge[1].bounds[2] == pytest.approx(0.55)
+    unknown = part_contacts(chip(lib='X:L_Big'))                          # no size code: the whole pad
+    assert unknown[0].equals(chip().pads[0].geom)
     with pytest.raises(ValueError):
         part_contacts(chip(), mode='middle')
 
@@ -53,15 +54,14 @@ def test_ics_and_through_hole_keep_whole_pads():
 def test_band_follows_a_rotated_part():
     from shapely import affinity
     g = affinity.rotate(box(0.45, -0.6, 1.45, 0.6), 30, origin=(0, 0))
-    toward = (-np.cos(np.radians(30)), -np.sin(np.radians(30)))
-    b = facing_band(g, toward, 0.5)
-    assert b.area == pytest.approx(0.6, rel=1e-6)
-    assert b.distance(affinity.rotate(box(0.4, -1, 0.45, 1), 30, origin=(0, 0))) < 1e-9
+    u = (np.cos(np.radians(30)), np.sin(np.radians(30)))
+    b = beyond(g, (0, 0), u, 0.95)
+    assert b.area == pytest.approx(0.5 * 1.2, rel=1e-6)
 
 
 def test_mqs_loop_inductance_rises_when_parts_no_longer_short_their_pads():
-    """A 10 x 4 mm loop of 1 mm trace closed by an 0805-sized part: a whole-pad terminal shorts 1 mm of copper per
-    side, so the loop reads lower than with the termination band."""
+    """A 10 x 4 mm loop of 1 mm trace closed by an 0805-sized part: the less of each pad the contact covers, the
+    more copper carries the current and the higher the loop reads."""
     from pcbqs.mqs import MQS
     from shapely.ops import unary_union
     tr = unary_union([box(0, 0, 10, 1), box(9, 0, 10, 4), box(0, 3, 10, 4), box(0, 0, 1, 1.55),
