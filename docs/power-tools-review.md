@@ -55,5 +55,5 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 
 - The `power_*` modules were written as dense one-line statements, which made review and diffs harder than the rest of pcbqs. Reformatted with ruff (120 columns, quotes preserved; `[tool.ruff]` in pyproject.toml).
 - Duplication removed: plane-pair physics (`pdn/cavity.py` functions now used by `RailPDN`), CLI options/`--describe`/board loading (`pcbqs/_cli.py`), series-part pad selection (`Series.pads`, `Rail.pads_of`), and the window's describe/process code (`toolprocess.py`). Dead code removed (unused end-state nodes, metric fallbacks, `dc.supply`, unused imports and arrays).
-- Tests cover circuit physics with small netlists and now warm starts; there is no end-to-end regression of a real board's results (wpthb or CM5) to catch drift such as C4–C6. Adding one coarse, cached case is cheap.
+- Tests cover circuit physics with small netlists and now warm starts. Real-board regressions now exist for CM5's near field and wpthb's PDN (`tests/test_regression_boards.py`, stored results); a wpthb circuit case is still missing.
 - Template-specific logic (C7, U1) and the generic engine are mixed in `power_bridge.py`.

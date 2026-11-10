@@ -7,6 +7,9 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 
 ## Done recently
 
+- Real-board regressions (`tests/test_regression_boards.py`): CM5 U702's near field and wpthb's DC drop and PDN at
+  coarse settings against stored results (`tests/data/regression_boards.json`; `--update` after a deliberate
+  change), skipped where the board is not installed. About 37 s with the board cache.
 - Ripple reported twice (I1): `bus_ripple_V` is now the settled ripple (the final cycle sampled at T/256, as the
   saved waveforms are) and `bus_spike_pp_V` the peak to peak on the solver's own steps, edge spikes included; the
   window's Circuit table shows both. Results from before this report the spike value as `bus_ripple_V`.
@@ -41,8 +44,8 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 4. **PDN loads and targets (C9, C10, I6; 1 day).** `--load REF=A@RETURN` for loads
    whose return is another part (a bridge's low side); per-load targets or none;
    clip the bare-planes curve.
-5. **Real-board regressions (0.5 day).** One coarse cached case each for wpthb
-   (PDN and circuit) and CM5 (near field), checked against stored results.
+5. ~~Real-board regressions~~: done for CM5 (near field) and wpthb (PDN); a wpthb circuit case (56 s) is
+   still open.
 
 ## Then: workflow (≈ 5 days)
 
