@@ -132,12 +132,17 @@ In order:
      rose 36% with the fix, and all models now agree with it on L within a few percent.
    - Walls wired into MQS (`walls=True`, dense, DC loss; copper shrunk by t/2, walls carry that strip; DC exact):
      NOT validated. On an isolated 1 mm strip they add +49% R at 10 MHz against FastHenry.
-   - The root cause behind the far-plane and isolated-trace errors: a zero-thickness sheet's current is singular
-     at its edges in the inductive regime, so its loss grows without bound as the edge is refined (stacked
-     sheets, isolated strip, 10 MHz: +26% / +76% / +82% at 4 / 8 / 16 cells across). Walls made of sheets share
-     it. Next: finite-thickness kernels for close pairs (the 1/R kernel averaged over each slice's thickness, as
-     FastHenry's rectangular filaments), which bounds the edge current physically, for sheets and walls alike;
-     then two faces without the overlap correction (now better than it everywhere) re-checked.
+   - FIXED (2026-11-10), the real cause of the isolated-trace errors: a terminal's inner sheet edges (both sides
+     in the terminal's one node) formed loops of their own, which carried eddy current that the field drove and the
+     sheet resistance dissipated. An isolated 20 mm strip's two terminals took 15% of its R at 1 MHz. Now no loop
+     (`ideal_terminals`, default; False for parity with the capacitance path). One sheet then converges to an
+     independent 2D cross-section PEEC within 0.4 / 0.9 / 2% (1 / 10 / 100 MHz). The CM5 regression moved 0.4-1.2%.
+   - `thick_kernel=True` (dense): close same-layer pairs through the 1/R kernel averaged over both slabs
+     (`thick.py`); a bar's DC L to 0.01% of FastHenry. Isolated strip, current uniform through the thickness: within
+     1-2% of the 2D PEEC at 1-100 MHz. Stacked sheets + thick kernel against FastHenry with full skin: -0.7% /
+     -1.3% (10 / 100 MHz) on the strip; trace 0.1 mm over a plane: R +1/-3/-5%, L within 2.3%. With the plane 1.6
+     mm away the dense mesh is too coarse (R -27% at 100 MHz): the kernel in the compressed backend is next.
+     One sheet + slab loss + thick kernel (placed in its real slab): strip -8 / +6%: the cheap option.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
    permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the

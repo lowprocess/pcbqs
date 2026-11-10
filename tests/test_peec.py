@@ -90,7 +90,7 @@ def test_peec_approaches_mqs_for_a_closed_copper_path():
     terms = {'a': [('F', box(0, 0, 1, 2))], 'b': [('F', box(4, 0, 5, 2))]}
     zs = []
     for cap in (False, True):
-        q = MQS(board, 'N', terminals=terms, dmax=.7, capacitance=cap, log=lambda *_: None)
+        q = MQS(board, 'N', terminals=terms, dmax=.7, capacitance=cap, ideal_terminals=False, log=lambda *_: None)
         q.source('I', 'a', 'b', part_h=0)
         result = q.solve([1e-3, 1e2, 1e5])
         zs.append(result.z['I'])

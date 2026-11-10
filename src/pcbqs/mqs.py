@@ -65,7 +65,7 @@ class MQS:
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
                  solver_tol=1e-8, solver_maxiter=500, drop_lone_pads=True, pad_area=1.0, pad_sides=8,
-                 via_sides=6, thickness_sheets=1, walls=False):
+                 via_sides=6, thickness_sheets=1, walls=False, thick_kernel=False, ideal_terminals=True):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -153,6 +153,15 @@ class MQS:
         if walls and (matrix_backend != 'dense' or conductor_loss != 'dc' or capacitance):
             raise NotImplementedError("walls need matrix_backend='dense', conductor_loss='dc' and no capacitance")
         self.use_walls = bool(walls)
+        # thick_kernel=True (experimental, dense): close same-layer pairs interact through the 1/R kernel averaged
+        # over their slabs' thickness (thick.py), which bounds the edge current a zero-thickness sheet makes singular
+        if thick_kernel and matrix_backend != 'dense':
+            raise NotImplementedError("thick_kernel needs matrix_backend='dense'")
+        self.thick_kernel = bool(thick_kernel)
+        # ideal_terminals (default): a terminal's (and a via fan's) inner sheet edges carry no loop current, the
+        # terminal an ideal contact; False keeps the earlier behaviour (eddies in terminals), for parity with the
+        # capacitance (PEEC) path and stored references
+        self.ideal_terminals = bool(ideal_terminals)
         if dielectric == 'stack' and er != 1:
             raise ValueError('er applies to homogeneous dielectric; stack uses board permittivities')
         self.dielectric = dielectric
@@ -163,9 +172,10 @@ class MQS:
         self.board, self.sigma, self.log = board, sigma, log
         self.nets = {nets} if isinstance(nets, str) else set(nets)
         # one sheet sits at board.json's z (the dielectric interface: the facing gaps exact); thick copper (two faces,
-        # stacked sheets) is placed with its thickness put into the stack (copper_centres), so no dielectric shrinks
+        # stacked sheets, or one sheet whose kernel is averaged over its slab) is placed with its thickness put into
+        # the stack (copper_centres), so no dielectric shrinks
         z_board = stack_z(board)
-        zt = copper_centres(board) if thickness_sheets > 1 else z_board
+        zt = copper_centres(board) if thickness_sheets > 1 or thick_kernel else z_board   # a slab kernel: its real slab
         self.copper_z = {l: v[0] for l, v in zt.items()}
         self.terms = dict(terminals or {})
         reg = box(*region) if isinstance(region, (tuple, list)) else region
@@ -328,6 +338,9 @@ class MQS:
                                        **self._fill_options, return_info=True)
         nodes, M0, Mrx, Mry, Mrr = moments
         self.fill_info['magnetic'] = info
+        if self.thick_kernel:
+            from .thick import thicken
+            thicken(nodes, self.tris, self.z_of, self.t_of, M0, Mrx, Mry, Mrr, log=self.log)
         self.log(f'mqs: {info["backend"]} matrix fill, {info["workers"]} worker(s), {info["seconds"]:.2f} s')
         r = RWG(nodes, self.tris)
         # in total currents across each edge (i = l I): Z / (l_m l_n)
@@ -569,8 +582,15 @@ class MQS:
                         stack.append(v)
         rows, cols, vals, src_cols, dead = [], [], [], {}, []
         col = 0
+        n_rwg = getattr(self, 'n_rwg', len(self.br))
         for k in np.flatnonzero(~tree):
             a, b = ends[k]
+            if a == b and k < n_rwg and getattr(self, 'ideal_terminals', True) and not self.capacitance:
+                # a sheet edge inside one node (a terminal's pads, a via's fan) is inside an ideal equipotential: no
+                # loop. As its own loop it carried eddy current that the field drove and the sheet resistance
+                # dissipated: an isolated 20 mm strip's terminals took 15% of its R at 1 MHz (FastHenry, 2D PEEC).
+                # (Inductance-only models; the capacitance (PEEC) path keeps its own charge-continuity treatment.)
+                continue
             if find(a) != find(b):                                # its ends on copper joined only through it
                 dead.append(k)
                 continue

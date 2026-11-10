@@ -13,7 +13,7 @@ from test_mqs_cli import board
 
 def test_copper_snapshot_parity():
     # Parity with the reference pipeline on its unsimplified mesh.
-    q=MQS(trace_board(),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,log=lambda *_:None,
+    q=MQS(trace_board(),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,log=lambda *_:None,ideal_terminals=False,
           drop_lone_pads=False,pad_sides=None,via_sides=None)
     q.source('p','s','g',part_h=0);r=CopperPorts(q).extract([0,1e5,2e5])
     with np.load(Path(__file__).parent/'fixtures/copper-reference.npz') as expected:
@@ -65,7 +65,7 @@ class Block(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0,Block())
 from pcbqs.mqs import MQS
 from pcbqs.mqs_ports import CopperPorts
-q=MQS(json.load(open(sys.argv[1])),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,fill_workers=2,log=lambda *_:None,drop_lone_pads=False,pad_sides=None,via_sides=None)
+q=MQS(json.load(open(sys.argv[1])),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,fill_workers=2,log=lambda *_:None,drop_lone_pads=False,pad_sides=None,via_sides=None,ideal_terminals=False)
 q.source('p','s','g',part_h=0)
 r=CopperPorts(q).extract([0,1e5,2e5])
 with np.load(sys.argv[2]) as ref:np.testing.assert_allclose(r.impedance,ref['impedance'],rtol=1e-8,atol=1e-13)
