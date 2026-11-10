@@ -58,12 +58,28 @@ def _prepare(model):
     lpair = np.zeros(pairs.shape[1])
     for k in range(0, pairs.shape[1], 256):
         e, g = pairs[0, k:k + 256], pairs[1, k:k + 256]
-        if hasattr(Le, 'entry') and Le.entry is None:
-            raise ValueError('thickness_sheets=2 needs a freshly filled inductance (no exact entries when unpickled)')
-        lpair[k:k + 256] = np.diagonal(np.asarray(Le.entry(e, g) if hasattr(Le, 'entry') else Le[np.ix_(e, g)]))
+        if hasattr(Le, 'entry') and Le.entry is not None:
+            lpair[k:k + 256] = np.diagonal(np.asarray(Le.entry(e, g)))
+        elif hasattr(Le, 'entry'):                       # a cached, reloaded operator keeps no exact entries
+            lpair[k:k + 256] = _pair_mutual(model, e, g)
+        else:
+            lpair[k:k + 256] = np.asarray(Le)[e, g]
     model._mqs_iter = dict(C=C, Cf=C[:, free], Cs=C[:, sc], src=src, sc=sc, free=free, A=A, passive=passive,
                            cotree=cotree, keep=keep, ldiag=ldiag, pairs=pairs, lpair=lpair)
     return model._mqs_iter
+
+
+def _pair_mutual(model, e, g):
+    """Mutual partial inductance (branch units, as MQS's L) of RWG edges e and g, from their support triangles'
+    analytic moments: the face pairs' preconditioner blocks when the compressed operator keeps no exact entries."""
+    from ._numerics.sing import offplane_pairs
+    r, z = model.rwg, model.z_of
+    out = np.zeros(len(e))
+    for ta, aa, va in ((r.tp[e], r.l[e] / (2 * r.area[r.tp[e]]), r.vp[e]), (r.tm[e], -r.l[e] / (2 * r.area[r.tm[e]]), r.vm[e])):
+        for tb, ab, vb in ((r.tp[g], r.l[g] / (2 * r.area[r.tp[g]]), r.vp[g]), (r.tm[g], -r.l[g] / (2 * r.area[r.tm[g]]), r.vm[g])):
+            m0, mro, mrs, mrr = offplane_pairs(r.nodes, r.tris, ta, tb, z[ta] - z[tb], outer_levels=1)
+            out += aa * ab * (mrr - (vb * mro).sum(1) - (va * mrs).sum(1) + (va * vb).sum(1) * m0)
+    return 1e-7 * out / (r.l[e] * r.l[g])                   # mu0 / 4 pi
 
 
 def _graph_preconditioner(p, d, zpair):

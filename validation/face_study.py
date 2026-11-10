@@ -42,14 +42,13 @@ def board(h, tp):
 PADS = (('F.Cu', box(-10.6, -0.5, -10.5, 0.5)), ('F.Cu', box(-10, -0.5, -9.9, 0.5)))
 
 
-def pcbqs(h, tp, dmax, sheets, face='overlap'):
+def pcbqs(h, tp, dmax, sheets):
     from pcbqs.mqs import MQS
     q = MQS(board(h, tp), {'S'}, terminals={'A': [PADS[0]], 'B': [PADS[1]]}, dmax=dmax, conductor_loss='slab',
             thickness_sheets=sheets, log=lambda *a: None)
-    q.face_correction = face
     q.source('port', 'A', 'B', part_h=0.0)
     Z = np.asarray(q.solve(F).zc['port'])
-    return dict(tool='pcbqs', h=h, tp=tp, mesh=dmax, sheets=sheets, face=face if sheets == 2 else None,
+    return dict(tool='pcbqs', h=h, tp=tp, mesh=dmax, sheets=sheets,
                 n=len(q.tris), R=Z.real, L=Z.imag / (2 * np.pi * F))
 
 
@@ -92,7 +91,7 @@ def save(rows):
         fcntl.flock(lock, fcntl.LOCK_EX)
         path = DIR / 'result.json'
         old = json.loads(path.read_text())['rows'] if path.is_file() else []
-        key = lambda r: (r['tool'], r['h'], r['tp'], r.get('mesh'), r.get('sheets'), r.get('face'), str(r.get('f')))
+        key = lambda r: (r['tool'], r['h'], r['tp'], r.get('mesh'), r.get('sheets'), str(r.get('f')))
         merged = {key(r): r for r in old}
         merged.update({key(r): r for r in rows})
         write_json(path, dict(f=F, rows=list(merged.values())))
@@ -108,9 +107,9 @@ def report():
         L0 = np.array([fh[k]['L'][0] for k in (6, 7, 8)])
         print(f'h {h} mm, plane {tp * 1e3:g} um: FastHenry R {np.round(R0 * 1e3, 3)} mOhm, L {np.round(L0 * 1e9, 3)} nH')
         for r in sorted((r for r in rows if r['tool'] == 'pcbqs' and r['h'] == h and r['tp'] == tp),
-                        key=lambda r: (r['sheets'], str(r['face']), -r['mesh'])):
+                        key=lambda r: (r['sheets'], -r['mesh'])):
             dR, dL = (np.array(r['R']) / R0 - 1) * 100, (np.array(r['L']) / L0 - 1) * 100
-            print(f"   sheets {r['sheets']} {r['face'] or '':8s} dmax {r['mesh']:<5g} R {np.round(dR, 1)}%  L {np.round(dL, 2)}%")
+            print(f"   sheets {r['sheets']} dmax {r['mesh']:<5g} R {np.round(dR, 1)}%  L {np.round(dL, 2)}%")
 
 
 if __name__ == '__main__':

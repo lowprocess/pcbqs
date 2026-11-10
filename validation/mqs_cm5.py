@@ -110,20 +110,20 @@ def geometry():
     plt.close(fig)
 
 
-def pcbqs(dmax, sheets=1, backend='dense', face='pair', workers=16):
+def pcbqs(dmax, sheets=1, backend='dense', workers=16, thick=False):
     from pcbqs.mqs import MQS
     t = time.perf_counter()
     q = MQS(case(), nets(), terminals={k: [('F.Cu', s)] for k, s in SLIVERS.items()}, dmax=dmax, fine=FINE,
-            dmax_fine=dmax / 2, conductor_loss='slab', thickness_sheets=sheets, matrix_backend=backend,
+            dmax_fine=dmax / 2, conductor_loss='dc' if thick else 'slab', thickness_sheets=sheets, thick_kernel=thick,
+            matrix_backend=backend,
             fill_workers=workers, log=lambda *a: None)
-    q.face_correction = face
     q.source('port', 'A', 'B', part_h=0.0)
     r = q.solve(F)
     Z = np.asarray(r.zc['port'])
-    row = dict(tool='pcbqs', sheets=sheets, backend=backend, face=face if sheets == 2 else None, mesh=dmax,
+    row = dict(tool='pcbqs', sheets=sheets, backend=backend, thick=thick, mesh=dmax,
                n=len(q.tris), R=Z.real, L=Z.imag / (2 * np.pi * F),
                seconds=time.perf_counter() - t)
-    print(f"cm5: pcbqs dmax {dmax} sheets {sheets} {backend} {row['face'] or ''}: L {np.round(row['L'] * 1e9, 4)} nH, "
+    print(f"cm5: pcbqs dmax {dmax} sheets {sheets} {backend}{' thick' if thick else ''}: L {np.round(row['L'] * 1e9, 4)} nH, "
           f"R {np.round(Z.real * 1e3, 3)} mOhm ({row['n']:,} triangles, {row['seconds']:.0f} s)", flush=True)
     return row
 
@@ -243,7 +243,7 @@ def save(rows):
 def _save(rows):
     path = DIR / 'result.json'
     old = json.loads(path.read_text())['rows'] if path.is_file() else []
-    key = lambda r: (r['tool'], r['mesh'], r.get('sheets'), r.get('backend'), r.get('face'), str(r.get('nh')),
+    key = lambda r: (r['tool'], r['mesh'], r.get('sheets'), r.get('backend'), r.get('thick'), str(r.get('nh')),
                      r.get('options', ''),
                      str(r.get('f')) if r['tool'] == 'fasthenry' else '')
     merged = {key(r): r for r in old}
@@ -260,7 +260,7 @@ def figure():
     plt = style()
     fig, ax = plt.subplots(1, 2, figsize=(10, 3.8))
     one = lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 1 and x['backend'] == 'hierarchical'
-    two = lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 2 and x.get('face') == 'overlap'
+    two = lambda x: x['tool'] == 'pcbqs' and x['sheets'] == 2
     series = [('pcbqs, one sheet', PCBQS, 'o-', one), ('pcbqs, two face sheets', PCBQS, 's--', two),
               ('Palace, PEC sheets', REFERENCE, 'D-', lambda x: x['tool'] == 'palace')]
     for label, colour, style_, pick in series:
@@ -290,12 +290,12 @@ def figure():
 
 def report():
     r = json.loads((DIR / 'result.json').read_text())
-    for row in sorted(r['rows'], key=lambda x: (x['tool'], str(x.get('sheets')), str(x.get('face')), x['mesh'])):
+    for row in sorted(r['rows'], key=lambda x: (x['tool'], str(x.get('sheets')), str(x.get('thick')), x['mesh'])):
         L = np.array(row['L']) * 1e9
         R = np.array(row['R']) * 1e3 if 'R' in row else None
         what = row['tool']
         if row['tool'] == 'pcbqs':
-            what += f" sheets {row['sheets']} {row['backend']} {row.get('face') or ''}"
+            what += f" sheets {row['sheets']} {row['backend']}{' thick' if row.get('thick') else ''}"
         elif row['tool'] == 'fasthenry':
             what += f" nh {row.get('nh')} {row.get('options', '')} f {np.round(np.log10(row.get('f', F)), 1)}"
         print(f"{what:32s} mesh {row['mesh']:<5g} n {row['n']:>9,}  L {np.round(L, 4)} nH"
@@ -308,9 +308,9 @@ if __name__ == '__main__':
     if what == 'geometry':
         case()
         geometry()
-    elif what == 'pcbqs':                         # pcbqs DMAX [SHEETS] [hier] [overlap]
+    elif what == 'pcbqs':                         # pcbqs DMAX [SHEETS] [hier] [thick]
         save([pcbqs(args[0], int(args[1]) if len(args) > 1 else 1,
-                    'hierarchical' if 'hier' in sys.argv else 'dense', 'overlap' if 'overlap' in sys.argv else 'pair')])
+                    'hierarchical' if 'hier' in sys.argv else 'dense', thick='thick' in sys.argv)])
     elif what == 'palace':
         save([palace(h) for h in args])
     elif what == 'fasthenry':                     # fasthenry P [FREQ [NH_OUTER NH_INNER]]; FASTHENRY_OPTS='-t 1e-2'

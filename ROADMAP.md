@@ -133,8 +133,9 @@ In order:
      the stack (`pdn.mesh.copper_centres`), so every dielectric keeps KiCad's face-to-face thickness; one sheet
      stays at the interfaces. Centring on z had shrunk a 0.1 mm dielectric to 0.065 mm: FastHenry's L at 100 MHz
      rose 36% with the fix, and all models now agree with it on L within a few percent.
-   - Walls wired into MQS (`walls=True`, dense, DC loss; copper shrunk by t/2, walls carry that strip; DC exact):
-     NOT validated. On an isolated 1 mm strip they add +49% R at 10 MHz against FastHenry.
+   - Walls (copper's sides as rooftop panels) were built and removed (2026-11-10): +49% R at 10 MHz on an isolated
+     strip, and unnecessary once the terminal eddy bug was fixed and close pairs used the thickness-averaged kernel.
+     `panels3d.py` (1/R moments between triangles of any orientation, tested) is kept for vertical structures.
    - FIXED (2026-11-10), the real cause of the isolated-trace errors: a terminal's inner sheet edges (both sides
      in the terminal's one node) formed loops of their own, which carried eddy current that the field drove and the
      sheet resistance dissipated. An isolated 20 mm strip's two terminals took 15% of its R at 1 MHz. Now no loop

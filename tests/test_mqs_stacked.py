@@ -81,3 +81,17 @@ def test_slab_loss_defaults_to_two_face_sheets():
     assert MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', thickness_sheets=1,
                log=lambda *a: None).thickness_sheets == 1
     assert MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='dc', log=lambda *a: None).thickness_sheets == 1
+
+
+def test_face_sheets_solve_on_a_reloaded_compressed_operator():
+    """The face pairs' preconditioner blocks come from the compressed operator's exact entries, which a reloaded
+    (unpickled) operator does not keep: they are then computed from the edges' own moments, to the same answer."""
+    q = MQS(strip(), {'S'}, terminals=TERMS, dmax=0.5, conductor_loss='slab', matrix_backend='hierarchical',
+            log=lambda *a: None)
+    q.source('port', 'A', 'B', part_h=0.0)
+    f = np.array([1e7, 1e8])
+    z1 = np.asarray(q.solve(f).zc['port'])
+    Le = q._assemble()['L'][0]
+    Le.entry, q._mqs_iter = None, None
+    z2 = np.asarray(q.solve(f).zc['port'])
+    np.testing.assert_allclose(z2, z1, rtol=1e-6)
