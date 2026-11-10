@@ -54,3 +54,20 @@ def test_thick_copper_keeps_the_dielectric_between_facing_surfaces():
     bot = lambda l: c[l][0] - c[l][1] / 2
     assert bot('In') - top('B') == pytest.approx(0.1) and bot('F') - top('In') == pytest.approx(0.5)
 
+
+
+def test_thick_kernel_gives_a_bars_inductance_on_both_backends():
+    """thick_kernel: the sheet's close pairs through the kernel averaged over the copper's thickness, so a 20 x 1 mm x
+    35 um strip has a bar's DC inductance (Grover, 0.3%; a zero-thickness sheet is ~1% high), the same on the dense
+    and compressed backends (the correction is one sparse matrix added to either)."""
+    mu = 4e-7 * np.pi
+    l, w, t = 19.9e-3, 1e-3, 35e-6                    # between the terminal slivers' centres
+    grover = mu * l / (2 * np.pi) * (np.log(2 * l / (w + t)) + 0.5 + 0.2235 * (w + t) / l)
+    out = {}
+    for back in ('dense', 'hierarchical'):
+        q = MQS(strip(), {'S'}, terminals=TERMS, dmax=0.5, conductor_loss='dc', thick_kernel=True, matrix_backend=back,
+                log=lambda *a: None)
+        q.source('port', 'A', 'B', part_h=0.0)
+        out[back] = np.asarray(q.solve(np.array([1e3, 1e8])).zc['port'])
+    assert out['dense'][0].imag / (2 * np.pi * 1e3) == pytest.approx(grover, rel=3e-3)
+    np.testing.assert_allclose(out['hierarchical'], out['dense'], rtol=1e-5)

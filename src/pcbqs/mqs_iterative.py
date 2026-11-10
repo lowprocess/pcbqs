@@ -48,7 +48,10 @@ def _prepare(model):
     keep = np.ones(model.n_nodes, bool)
     keep[roots] = False
     Le, Lv = m['L']
-    ldiag = np.r_[_diagonal(Le), _diagonal(Lv) if model.nv else np.zeros(0), np.zeros(len(model.parts))]
+    ld = _diagonal(Le)
+    if getattr(model, 'thick_kernel', False):
+        ld = ld + np.r_[model._thick_correction().diagonal(), np.zeros(len(ld) - model.n_rwg)]
+    ldiag = np.r_[ld, _diagonal(Lv) if model.nv else np.zeros(0), np.zeros(len(model.parts))]
     # face sheets (thickness_sheets=2): an edge's two copies are nearly one conductor (35 um apart), so the
     # preconditioner keeps each pair's 2x2 block: their mutual inductance, exactly, in chunks
     pairs = np.hstack(getattr(model, '_face_pairs', [])) if getattr(model, '_face_pairs', None) else np.zeros((2, 0), int)

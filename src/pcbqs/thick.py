@@ -7,7 +7,7 @@ bound as the edges are refined (an isolated strip at 10 MHz: +26 / +76 / +82% ag
 cells across). Copper caps the crowding at about its thickness; averaging the kernel over it does the same, as
 FastHenry's rectangular filaments do.
 
-    thicken(nodes, tris, z, t, M0, Mrx, Mry, Mrr)      # in place, on static_moments' dense moments
+    D = delta_inductance(rwg, z, t)    # sparse, over RWG branches: added to either backend's point-kernel L
 
 For a pair at heights zp, zq with thicknesses tp, tq the offset between a point of each slab is spread over a
 trapezoid (the convolution of two uniform distributions) centred on zp - zq; the moments are even in the offset and
@@ -54,29 +54,46 @@ def close_pairs(nodes, tris, z, t, reach=3.0):
     return p[keep], q[keep]
 
 
-def thicken(nodes, tris, z, t, M0, Mrx, Mry, Mrr, outer_levels=1, reach=3.0, log=None):
-    """Replace the close pairs' moments by their thickness averages, in place (both orders). Returns the count."""
+def delta_inductance(rwg, z, t, outer_levels=1, reach=3.0, log=None):
+    """The thickness correction as a sparse matrix over RWG branches (edge currents i = l I, as MQS's L): for every
+    close triangle pair, (thickness-averaged - point) moments, combined over the RWG halves each triangle supports.
+    Added to the point-kernel L of either backend (dense or compressed), it gives thick_kernel's L."""
+    from scipy.sparse import coo_matrix
+    MU0 = 4e-7 * np.pi
+    nodes, tris = rwg.nodes, rwg.tris
     p, q = close_pairs(nodes, tris, z, t, reach)
-    # group the pairs by (offset, thicknesses): each group shares one quadrature
     key = np.round(np.c_[z[p] - z[q], t[p], t[q]] * 1e9).astype(np.int64)
     _, inv = np.unique(key, axis=0, return_inverse=True)
     inv = inv.ravel()
-    m0 = np.zeros(len(p)); mro = np.zeros((len(p), 2)); mrs = np.zeros((len(p), 2)); mrr = np.zeros(len(p))
+    d0 = np.zeros(len(p)); dro = np.zeros((len(p), 2)); drs = np.zeros((len(p), 2)); drr = np.zeros(len(p))
     for g in range(inv.max() + 1):
         sel = np.flatnonzero(inv == g)
         k = sel[0]
+        pt = offplane_pairs(nodes, tris, p[sel], q[sel], z[p[k]] - z[q[k]], outer_levels=outer_levels)
         xs, ws = _trapezoid_rule(z[p[k]] - z[q[k]], t[p[k]], t[q[k]])
+        acc = [np.zeros_like(a) for a in pt]
         for x, w in zip(xs, ws):
-            a, b, c_, d_ = offplane_pairs(nodes, tris, p[sel], q[sel], x, outer_levels=outer_levels)
-            m0[sel] += w * a; mro[sel] += w * b; mrs[sel] += w * c_; mrr[sel] += w * d_
-    off = p != q
-    M0[p, q] = m0; M0[q, p] = m0
-    Mrr[p, q] = mrr; Mrr[q, p] = mrr
-    Mrx[p[off], q[off]], Mry[p[off], q[off]] = mro[off, 0], mro[off, 1]
-    Mrx[q[off], p[off]], Mry[q[off], p[off]] = mrs[off, 0], mrs[off, 1]
-    dg = ~off
-    Mrx[p[dg], p[dg]] = 0.5 * (mro[dg, 0] + mrs[dg, 0])
-    Mry[p[dg], p[dg]] = 0.5 * (mro[dg, 1] + mrs[dg, 1])
+            for a, b in zip(acc, offplane_pairs(nodes, tris, p[sel], q[sel], x, outer_levels=outer_levels)):
+                a += w * b
+        d0[sel] = acc[0] - pt[0]; dro[sel] = acc[1] - pt[1]; drs[sel] = acc[2] - pt[2]; drr[sel] = acc[3] - pt[3]
+    # each triangle's RWG halves: (edge, alpha, free vertex)
+    halves = [[] for _ in range(len(tris))]
+    for e in range(rwg.Ne):
+        halves[rwg.tp[e]].append((e, rwg.l[e] / (2 * rwg.area[rwg.tp[e]]), rwg.vp[e]))
+        halves[rwg.tm[e]].append((e, -rwg.l[e] / (2 * rwg.area[rwg.tm[e]]), rwg.vm[e]))
+    rows, cols, vals = [], [], []
+    for k in range(len(p)):
+        a, b = p[k], q[k]
+        for ea, aa, va in halves[a]:
+            for eb, ab, vb in halves[b]:
+                v = aa * ab * (drr[k] - vb @ dro[k] - va @ drs[k] + (va @ vb) * d0[k])
+                rows.append(ea); cols.append(eb); vals.append(v)
+                if a != b:                                   # the pair's other order: observation <-> source
+                    rows.append(eb); cols.append(ea); vals.append(v)
+    s = 1.0 / rwg.l
+    vals = MU0 / (4 * np.pi) * np.array(vals) * s[np.array(rows)] * s[np.array(cols)]
+    D = coo_matrix((vals, (rows, cols)), shape=(rwg.Ne, rwg.Ne)).tocsr()
+    D = 0.5 * (D + D.T)
     if log:
-        log(f'mqs: thickness-averaged kernels on {len(p):,} close pairs ({inv.max() + 1} offset groups)')
-    return len(p)
+        log(f'mqs: thickness correction on {len(p):,} close triangle pairs, {D.nnz:,} entries')
+    return D

@@ -141,7 +141,13 @@ In order:
      (`thick.py`); a bar's DC L to 0.01% of FastHenry. Isolated strip, current uniform through the thickness: within
      1-2% of the 2D PEEC at 1-100 MHz. Stacked sheets + thick kernel against FastHenry with full skin: -0.7% /
      -1.3% (10 / 100 MHz) on the strip; trace 0.1 mm over a plane: R +1/-3/-5%, L within 2.3%. With the plane 1.6
-     mm away the dense mesh is too coarse (R -27% at 100 MHz): the kernel in the compressed backend is next.
+     mm away: converging with the mesh (-27 / -18 / -8.8% at 100 MHz as dmax 0.5 / 0.35 / 0.25). The correction is
+     one sparse matrix added to either backend (`thick.delta_inductance`), so the compressed backend runs it.
+   - CM5-lite (real copper, FastHenry 0.1 mm grid, correct placement), dmax 0.35: stacked 4 + thick kernel R
+     -3.6/-5.9/-3.9%, L -0.4/+2.1/+2.8% (319 s); two faces without correction R -3.6/-6.8/+3.3%, L +0.5/+3.5/+3.9%
+     (12 s); one sheet L +8-12%. Both tools still move a few % with refinement.
+   - Decision to make: default for conductor_loss='slab' with thickness: two faces without the overlap
+     correction (cheap, within ~7% so far) or one sheet; stacked + thick kernel stays the reference.
      One sheet + slab loss + thick kernel (placed in its real slab): strip -8 / +6%: the cheap option.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective

@@ -155,9 +155,8 @@ class MQS:
         self.use_walls = bool(walls)
         # thick_kernel=True (experimental, dense): close same-layer pairs interact through the 1/R kernel averaged
         # over their slabs' thickness (thick.py), which bounds the edge current a zero-thickness sheet makes singular
-        if thick_kernel and matrix_backend != 'dense':
-            raise NotImplementedError("thick_kernel needs matrix_backend='dense'")
         self.thick_kernel = bool(thick_kernel)
+        self._thick_D = None
         # ideal_terminals (default): a terminal's (and a via fan's) inner sheet edges carry no loop current, the
         # terminal an ideal contact; False keeps the earlier behaviour (eddies in terminals), for parity with the
         # capacitance (PEEC) path and stored references
@@ -329,6 +328,13 @@ class MQS:
         self._face_c = None
 
     # ---- the matrices ----
+    def _thick_correction(self):
+        """thick_kernel's sparse correction over the RWG branches (thick.delta_inductance), made once."""
+        if self.thick_kernel and self._thick_D is None:
+            from .thick import delta_inductance
+            self._thick_D = delta_inductance(self.rwg, self.z_of, self.t_of, log=self.log)
+        return self._thick_D
+
     def _edge_matrices(self):
         if self.matrix_backend == 'hierarchical':
             from .compressed import edge_inductance
@@ -338,9 +344,6 @@ class MQS:
                                        **self._fill_options, return_info=True)
         nodes, M0, Mrx, Mry, Mrr = moments
         self.fill_info['magnetic'] = info
-        if self.thick_kernel:
-            from .thick import thicken
-            thicken(nodes, self.tris, self.z_of, self.t_of, M0, Mrx, Mry, Mrr, log=self.log)
         self.log(f'mqs: {info["backend"]} matrix fill, {info["workers"]} worker(s), {info["seconds"]:.2f} s')
         r = RWG(nodes, self.tris)
         # in total currents across each edge (i = l I): Z / (l_m l_n)
@@ -349,6 +352,8 @@ class MQS:
                                           self._fill_options['workers'])
         info['combine'] = combine_info
         del Mrr, Mrx, Mry, moments
+        if self.thick_kernel:
+            L = L + self._thick_correction().toarray()
         if self.capacitance and self._potential is None:
             if self.dielectric == 'homogeneous':
                 self._set_potential(M0)
@@ -655,6 +660,9 @@ class MQS:
         # complex copy of the dense copper inductance.
         for block, L in ((slice(0, self.ne), Le), (slice(self.ne, self.ne + self.nv), Lv)):
             out[block] = L @ currents[block].real + 1j * (L @ currents[block].imag)
+        if self.thick_kernel and self.matrix_backend == 'hierarchical':   # the dense L already holds it
+            n = self.n_rwg
+            out[:n] += self._thick_correction() @ currents[:n]
         return out
 
     def solve(self, freqs, amps=None):
