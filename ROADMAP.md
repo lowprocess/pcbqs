@@ -145,7 +145,10 @@ In order:
      one sparse matrix added to either backend (`thick.delta_inductance`), so the compressed backend runs it.
    - CM5-lite (real copper, FastHenry 0.1 mm grid, correct placement), dmax 0.35: stacked 4 + thick kernel R
      -3.6/-5.9/-3.9%, L -0.4/+2.1/+2.8% (319 s); two faces without correction R -3.6/-6.8/+3.3%, L +0.5/+3.5/+3.9%
-     (12 s); one sheet L +8-12%. Both tools still move a few % with refinement.
+     (12 s); one sheet L +8-12%. At dmax 0.25: stacked R -8.1/-8.5/-6.4%, L -3.5/-2.0/-1.6% (655 s); two faces R
+     -8.1/-10.0/+0.8%, L -2.7/-0.6/-0.4% (32 s). pcbqs R falls with refinement while FastHenry's rose 3-9% from its
+     0.2 to 0.1 mm grid (its staircase of CM5's 0.2-0.3 mm features), so the residual is mostly the reference's; its
+     0.05 mm grid (82k segments) did not get past the preconditioner in an hour even with -p diag.
    - Decision to make: default for conductor_loss='slab' with thickness: two faces without the overlap
      correction (cheap, within ~7% so far) or one sheet; stacked + thick kernel stays the reference.
      One sheet + slab loss + thick kernel (placed in its real slab): strip -8 / +6%: the cheap option.
