@@ -127,9 +127,9 @@ In order:
      compressed product per step for every port, warm-started across frequencies), no dense loop matrices.
      wpthb (24 ports, 11 frequencies): one sheet dense 69 s / 5.4 GB; one sheet compressed 545 s per-port GMRES ->
      151 s lockstep / 1.4 GB, results within 0.1% of dense; two faces dense 266 s / 25 GB, compressed per-port
-     2334 s / 2.1 GB (settled ripple -5.6%, all else < 0.1%); two faces lockstep: timing run in progress. Next:
-     fewer iterations (a better port preconditioner, a recycled Krylov space across ports), then decide whether
-     two faces becomes the circuit default.
+     2334 s / 2.1 GB, lockstep 420 s / 4.0 GB (settled ripple -5.7%, spike +0.4%, efficiency and input power
+     0.05%). Next: fewer iterations (a better port preconditioner, a recycled Krylov space across ports), then
+     decide whether two faces becomes the circuit default.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 
