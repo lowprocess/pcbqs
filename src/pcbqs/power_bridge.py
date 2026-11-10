@@ -322,7 +322,9 @@ def make_board_ports(board, config, log=print):
         dmax_fine=selected.get('fine_mm', 1.6),
         conductor_loss='slab',
         conductor_faces=2,
-        thickness_sheets=1,  # one sheet: the circuit's coarse copper model (two faces: a follow-up)
+        # one sheet by default: two face sheets moved wpthb's settled bus ripple 6% (power, efficiency, phase, currents
+        # under 0.03%) at 4.7x the time and 25 GB (copper ports need the dense loop matrices); mesh.thickness_sheets: 2
+        thickness_sheets=int(selected.get('thickness_sheets', 1)),
         fill_backend=selected.get('backend', 'auto'),
         fill_workers=selected.get('workers', 8),
         log=log,

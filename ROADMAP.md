@@ -138,7 +138,9 @@ In order:
      0.05 mm grid (82k segments) did not get past the preconditioner in an hour even with -p diag.
    - Decided (2026-11-10): `conductor_loss='slab'` defaults to two face sheets (inductance only, homogeneous
      dielectric), with no face correction: the per-pair and overlap corrections are removed. Stacked sheets +
-     `thick_kernel` stay the reference. The circuit tool's copper model (`power_bridge`) keeps one sheet for now.
+     `thick_kernel` stay the reference. The circuit tool's copper model (`power_bridge`) keeps one sheet: two faces
+     moved wpthb's settled bus ripple 6% and nothing else beyond 0.03%, at 4.7x the time and 25 GB (copper ports need
+     the dense loop matrices); `mesh.thickness_sheets: 2` in the circuit config opts in.
      One sheet + slab loss + thick kernel (placed in its real slab): strip -8 / +6%: the cheap option.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
