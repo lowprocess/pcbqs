@@ -34,7 +34,7 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 | # | Finding | Where | Status |
 |---|---|---|---|
 | I1 | `bus_ripple_V` is measured at every solver timestep (edge spikes), while saved waveforms are resampled at T/256 and hide them; the GUI plots the resampled data. Easy to misread (it was misread during this review). | `power_bridge.py:153` | ROADMAP: report settled ripple and spike p-p separately; plot raw points |
-| I2 | Each tool re-imports the KiCad board (25 s for Jetson) on every run; nothing is shared between the three tools or the GUI pages. | CLIs | ROADMAP: shared board-JSON cache by hash |
+| I2 | Each tool re-imports the KiCad board (25 s for Jetson) on every run; nothing is shared between the three tools or the GUI pages. | CLIs | Fixed: `load_board` caches imports by content hash (Jetson +1V15 11.8 → 0.5 s) |
 | I3 | Two near-field paths: `pcbqs.mqs` (assumed pulse spectrum) and `power_circuit --fields` (simulated currents); results are not cross-referenced. | `mqs_cli.py`, `power_circuit.py` | ROADMAP |
 | I4 | PDN and Near field forms are generated from `--describe` (good: new options appear without GUI changes). The Circuit page is hand-built around the wpthb template instead. | `powercircuittab.py` | ROADMAP: `--describe` for power_circuit |
 | I5 | Converter discovery stops at ambiguous input nets (VCC/VDD/VDRV on five Jetson bucks); the user must know the right net. | `mqs_cli.py:125` | ROADMAP: offer candidates in the GUI |

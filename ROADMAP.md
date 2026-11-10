@@ -7,6 +7,9 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 
 ## Done recently
 
+- Shared board import (I2): `pcbqs._cli.load_board` caches each KiCad import by content hash and net subset in
+  `~/.cache/pcbqs/boards` (`PCBQS_CACHE_DIR`, `PCBQS_NO_CACHE=1`), so the three tools and the window import a board
+  once (Jetson +1V15: 11.8 s, then 0.5 s).
 - PDN: series filter inductors keep L and DCR (`--through`, `--dcr`); CA/CE/CP
   capacitors are decaps with electrolytic defaults (`--cap`); `--plane-min`.
 - Circuits: relaxed-tolerance phase search with warm starts and a strict final
@@ -44,8 +47,7 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 6. **Circuit page from `--describe` (I4, U2, U5; 1.5 days).** Generate the form
    from the tool, as Power Integrity and Near field do; per-group parasitic
    overrides; default to the template's switch model and warn on `switch` with ngspice.
-7. **Shared board import (I2; 0.5 day).** Cache board JSON by file hash for all
-   three tools and the window (Jetson import is 25 s per run today).
+7. ~~Shared board import (I2)~~: done (see above).
 8. **Converter candidates (I5; 0.5 day).** When the input net is ambiguous, offer
    the candidates in the Near field page instead of failing.
 9. **Cross-tool flows (U4, I3; 2.5 days).** Near field converter → Circuit
