@@ -27,7 +27,7 @@ def test_stacked_sheets_keep_the_dc_resistance_and_lie_in_the_copper():
     q, z4 = solve(4)
     assert z4.real[0] == pytest.approx(z1.real[0], rel=2e-3)        # the slices' conductances add up
     zs = np.unique(np.round(q.z_of * 1e3, 6))
-    assert len(zs) == 4 and zs.min() > 1.6 - 0.0175 and zs.max() < 1.6 + 0.0175
+    assert len(zs) == 4 and zs.min() > 1.6 and zs.max() < 1.6 + 0.035      # in the slab [z, z + t] (copper_centres)
     ts = {round(z, 6): t for z, t in zip(q.z_of * 1e3, q.t_of * 1e3)}
     assert sum(ts.values()) == pytest.approx(0.035, rel=1e-9)        # graded slices fill the thickness
     assert ts[zs.min()] < ts[sorted(zs)[1]]                          # thinner at the faces
@@ -42,3 +42,15 @@ def test_stacked_sheets_show_skin_effect():
 def test_stacked_sheets_need_dc_loss():
     with pytest.raises(ValueError):
         MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', thickness_sheets=3, log=lambda *a: None)
+
+
+def test_thick_copper_keeps_the_dielectric_between_facing_surfaces():
+    """copper_centres: each slab starts at its z plus the copper below, so KiCad's dielectric is the face-to-face gap."""
+    from pcbqs.pdn.mesh import copper_centres
+    b = dict(stack=dict(copper=[dict(name='B', z=0.0, t=0.035), dict(name='In', z=0.1, t=0.015),
+                                dict(name='F', z=0.6, t=0.035)]))
+    c = copper_centres(b)
+    top = lambda l: c[l][0] + c[l][1] / 2
+    bot = lambda l: c[l][0] - c[l][1] / 2
+    assert bot('In') - top('B') == pytest.approx(0.1) and bot('F') - top('In') == pytest.approx(0.5)
+

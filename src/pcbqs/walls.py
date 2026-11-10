@@ -157,3 +157,92 @@ def wall_rwg_inductance(w, rwg, z_tri, outer_levels=2):
     np.add.at(M, (r1, c1), 0.5 * v1)
     np.add.at(M, (c2, r2), 0.5 * v2)
     return M
+
+
+# ---- vectorized Galerkin for the solver -----------------------------------------------------------------------------
+_B3 = np.array([[2 / 3, 1 / 6, 1 / 6], [1 / 6, 2 / 3, 1 / 6], [1 / 6, 1 / 6, 2 / 3]])
+
+
+def wall_pieces(walls):
+    """Affine pieces of every rooftop of several wall sets (each a boundary_walls dict, with its own z0, z1):
+    (basis index (P,), triangles (P, 3, 3), M (P, 3, 3), v (P, 3)), rooftops numbered across the sets in order."""
+    idx, T, M, V = [], [], [], []
+    off = 0
+    for w in walls:
+        tri, panel = _panel_triangles(w)
+        for n, p, m, v in _halves(w):
+            for t in tri[panel == p]:
+                idx.append(off + n); T.append(t); M.append(m); V.append(v)
+        off += len(w['roof'])
+    return np.array(idx, int), np.array(T), np.array(M), np.array(V)
+
+
+def rwg_pieces(rwg, z_tri):
+    """Affine pieces of RWG functions on horizontal triangles (rwg on 2D nodes, z_tri m): f = alpha (r - v), alpha
+    = +-l / 2A (unit normal current across the edge)."""
+    V = rwg.nodes[rwg.tris]
+    tri3 = np.concatenate([V, np.asarray(z_tri, float)[:, None, None] * np.ones((1, 3, 1))], -1)
+    e = np.arange(rwg.Ne)
+    t = np.r_[rwg.tp, rwg.tm]
+    alpha = np.r_[rwg.l / (2 * rwg.area[rwg.tp]), -rwg.l / (2 * rwg.area[rwg.tm])]
+    v = np.r_[rwg.vp, rwg.vm]
+    v3 = np.c_[v, np.asarray(z_tri)[t]]
+    return np.r_[e, e], tri3[t], alpha[:, None, None] * np.eye(3)[None], v3
+
+
+def galerkin(obs, src, n_obs, n_src, near=3.0, outer_levels=2, chunk=(200, 3000)):
+    """sum int int f_o . f_s / R over the pieces of each pair of bases (obs, src as from wall_pieces/rwg_pieces):
+    (n_obs, n_src) dense. Pairs within `near` x their summed radii analytically (panels3d), the rest by a 3 x 3
+    point product rule."""
+    from scipy.sparse import csr_matrix
+    io, To, Mo, vo = obs
+    is_, Ts, Ms, vs = src
+    co, cs = To.mean(1), Ts.mean(1)
+    ro = np.linalg.norm(To - co[:, None], axis=2).max(1)
+    rs = np.linalg.norm(Ts - cs[:, None], axis=2).max(1)
+    ao = 0.5 * np.linalg.norm(np.cross(To[:, 1] - To[:, 0], To[:, 2] - To[:, 0]), axis=1)
+    as_ = 0.5 * np.linalg.norm(np.cross(Ts[:, 1] - Ts[:, 0], Ts[:, 2] - Ts[:, 0]), axis=1)
+    Po = np.einsum('qk,pkc->pqc', _B3, To)                       # (Po, 3, 3) points
+    Ps = np.einsum('qk,pkc->pqc', _B3, Ts)
+    Fo = np.einsum('pij,pqj->pqi', Mo, Po - vo[:, None]) * (ao / 3)[:, None, None]   # weighted f at the points
+    Fs = np.einsum('pij,pqj->pqi', Ms, Ps - vs[:, None]) * (as_ / 3)[:, None, None]
+    Bo = csr_matrix((np.ones(len(io)), (io, np.arange(len(io)))), shape=(n_obs, len(io)))
+    Bs = csr_matrix((np.ones(len(is_)), (np.arange(len(is_)), is_)), shape=(len(is_), n_src))
+    out = np.zeros((n_obs, n_src))
+    for a in range(0, len(io), chunk[0]):
+        sa = slice(a, min(len(io), a + chunk[0]))
+        for b in range(0, len(is_), chunk[1]):
+            sb = slice(b, min(len(is_), b + chunk[1]))
+            d = Po[sa][:, None, :, None, :] - Ps[sb][None, :, None, :, :]        # (A, B, 3, 3, 3)
+            R = np.sqrt((d * d).sum(-1))
+            dot = np.einsum('aqi,bri->abqr', Fo[sa], Fs[sb])
+            with np.errstate(divide='ignore', invalid='ignore'):  # coincident points: near pairs, replaced below
+                val = (dot / R).sum((2, 3))
+            dist = np.linalg.norm(co[sa][:, None] - cs[sb][None], axis=2)
+            ii, jj = np.nonzero(dist < near * (ro[sa][:, None] + rs[sb][None]))
+            if len(ii):
+                gi, gj = ii + a, jj + b
+                m = pair_moments(To[gi], Ts[gj], outer_levels=outer_levels, tensor=True)
+                val[ii, jj] = affine_pair(m, Mo[gi], vo[gi], Ms[gj], vs[gj])
+            out += Bo[:, sa] @ (Bs[sb].T @ val.T).T
+    return MU0 / (4 * np.pi) * out
+
+
+def rooftop_gram(walls):
+    """int f_m . f_n dS of the rooftops (sparse, square): a rooftop's two halves L/(3h) each, two rooftops on one
+    panel L/(6h)."""
+    from scipy.sparse import coo_matrix
+    rows, cols, vals, off = [], [], [], 0
+    for w in walls:
+        h = w['z1'] - w['z0']
+        L = np.linalg.norm(w['ends'][:, 1] - w['ends'][:, 0], axis=1)
+        roof = w['roof']
+        for n, (k, j) in enumerate(roof):
+            rows.append(off + n); cols.append(off + n); vals.append((L[k] + L[j]) / (3 * h))
+        first = {k: n for n, (k, j) in enumerate(roof)}               # the rooftop rising on panel k ...
+        for n, (k, j) in enumerate(roof):                              # ... and the one falling on it (n): share j
+            m = first.get(j)
+            if m is not None:
+                rows += [off + n, off + m]; cols += [off + m, off + n]; vals += [L[j] / (6 * h)] * 2
+        off += len(roof)
+    return coo_matrix((vals, (rows, cols)), shape=(off, off)).tocsr()

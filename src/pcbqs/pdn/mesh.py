@@ -59,6 +59,20 @@ def stack_z(board):
     return {c['name']: (c['z'], c['t']) for c in board['stack']['copper']}
 
 
+def copper_centres(board):
+    """{layer: (centre z, t)}, mm, of each layer's copper with its thickness put into the stack. board.json (from
+    kicad2ems) stacks the dielectrics and puts each copper layer at their interface with no thickness: KiCad's
+    dielectric thickness is the gap between facing copper surfaces. Thick copper keeps those gaps when each layer's
+    slab starts at its z plus the copper below it: [z + C, z + C + t], C the thicknesses of the layers beneath."""
+    zt = stack_z(board)
+    out, below = {}, 0.0
+    for lay in sorted(zt, key=lambda l: zt[l][0]):
+        z, t = zt[lay]
+        out[lay] = (z + below + t / 2, t)
+        below += t
+    return out
+
+
 def _outline_lines(polys, geom):
     """The outlines of `polys` (mm) inside `geom` as mesh_polygons' constraint segments (m)."""
     segs = []

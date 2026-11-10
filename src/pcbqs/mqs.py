@@ -34,7 +34,7 @@ from shapely.geometry import Point, box
 from ._numerics.base import MU0, RWG, combine, qform, _BAR3, _W3, quad_pts
 from .static import edge_inductance as dense_edge_inductance, static_moments
 from .biot import rwg_currents, h_sheets, h_segments
-from .pdn.mesh import copper_of, mesh_sheet, simplify_copper, stack_z, SIGMA_CU
+from .pdn.mesh import copper_centres, copper_of, mesh_sheet, simplify_copper, stack_z, SIGMA_CU
 
 
 def filament_mutual(z0a, z1a, z0b, z1b, s):
@@ -65,7 +65,7 @@ class MQS:
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
                  solver_tol=1e-8, solver_maxiter=500, drop_lone_pads=True, pad_area=1.0, pad_sides=8,
-                 via_sides=6, thickness_sheets=1):
+                 via_sides=6, thickness_sheets=1, walls=False):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -146,6 +146,13 @@ class MQS:
         if thickness_sheets >= 2 and dielectric == 'stack':
             raise NotImplementedError('thickness_sheets with dielectric=stack (the images need copper on interfaces)')
         self.thickness_sheets = int(thickness_sheets)
+        # walls=True (experimental, dense, conductor_loss='dc'): each layer's copper shrunk by t/2, and on its new edge
+        # a wall panel of the copper's height carrying the strip it gave up (rooftop currents along the edge, the
+        # slab's impedance over a depth t/2 driven from outside: DC exact, the side's skin current at high
+        # frequency). Its field in h_field is not drawn yet.
+        if walls and (matrix_backend != 'dense' or conductor_loss != 'dc' or capacitance):
+            raise NotImplementedError("walls need matrix_backend='dense', conductor_loss='dc' and no capacitance")
+        self.use_walls = bool(walls)
         if dielectric == 'stack' and er != 1:
             raise ValueError('er applies to homogeneous dielectric; stack uses board permittivities')
         self.dielectric = dielectric
@@ -155,7 +162,11 @@ class MQS:
             self._dielectric_stack = DielectricStack.from_board(board, dielectric_tol)
         self.board, self.sigma, self.log = board, sigma, log
         self.nets = {nets} if isinstance(nets, str) else set(nets)
-        zt = stack_z(board)
+        # one sheet sits at board.json's z (the dielectric interface: the facing gaps exact); thick copper (two faces,
+        # stacked sheets) is placed with its thickness put into the stack (copper_centres), so no dielectric shrinks
+        z_board = stack_z(board)
+        zt = copper_centres(board) if thickness_sheets > 1 else z_board
+        self.copper_z = {l: v[0] for l, v in zt.items()}
         self.terms = dict(terminals or {})
         reg = box(*region) if isinstance(region, (tuple, list)) else region
         vias = [v for v in board['vias'] if v.get('net') in self.nets and (reg is None or reg.contains(Point(v['x'], v['y'])))]
@@ -182,6 +193,10 @@ class MQS:
                 self.mesh_info[key] += value
             if g is None:
                 continue
+            if self.use_walls:                               # the edge strip goes to the walls
+                g = g.buffer(-0.5 * zt[lay][1], join_style=2)
+                if g.is_empty:
+                    continue
             nd, tr, rings, regs = mesh_sheet(g, pts, dmax, regions=[p for _, p in polys], fine=fine,
                                              dmax_fine=dmax_fine if fine is not None else None,
                                              coarsen=coarsen,grow=grow,edge_rings=edge_rings,w_ref=edge_width,
@@ -250,18 +265,30 @@ class MQS:
         _, self.node_of = np.unique(roots, return_inverse=True)
         self.n_nodes = self.node_of.max() + 1
         self.term_node = {n: int(self.node_of[ts[0]]) for n, ts in self.term_tris.items()}
-        # branches: the RWG edges (their total current), then the via segments, then the parts (added later)
+        # branches: the RWG edges (their total current), the walls' rooftops, the via segments, then the parts
         r = self.rwg
         self.br = [(int(self.node_of[a]), int(self.node_of[b])) for a, b in zip(r.tp, r.tm)]
+        self.walls = []
+        if self.use_walls:
+            from .walls import boundary_walls
+            for lay in dict.fromkeys(self.sheet_layer.values()):
+                idx = self.layer_tris[lay]
+                zc, tc = zt[lay]
+                w = boundary_walls(self.nodes, self.tris[idx], zc * 1e-3, tc * 1e-3)
+                w['owner'] = idx[w['owner']]
+                w['depth'] = 0.5 * tc * 1e-3
+                self.walls.append(w)
+                self.br += [(int(self.node_of[w['owner'][k]]), int(self.node_of[w['owner'][j]])) for k, j in w['roof']]
+        self.n_rwg, self.n_wall = r.Ne, sum(len(w['roof']) for w in self.walls)
         self.vseg = []                                       # (x, y, r, z0, z1) m, per via segment
         for k, v in enumerate(vias):
             on = sorted([(zt[l][0], l) for l in dict.fromkeys(self.sheet_layer.values())
-                         if (k, l) in ring_tris and ring_tris[(k, l)] and v['z0'] - 1e-6 <= zt[l][0] <= v['z1'] + 1e-6])
+                         if (k, l) in ring_tris and ring_tris[(k, l)] and v['z0'] - 1e-6 <= z_board[l][0] <= v['z1'] + 1e-6])
             for (za, la), (zb, lb) in zip(on, on[1:]):
                 na, nb = int(self.node_of[ring_tris[(k, la)][0]]), int(self.node_of[ring_tris[(k, lb)][0]])
                 self.br.append((na, nb))
                 self.vseg.append((v['x'] * 1e-3, v['y'] * 1e-3, v['r'] * 1e-3, za * 1e-3, zb * 1e-3))
-        self.ne, self.nv = r.Ne, len(self.vseg)
+        self.ne, self.nv = r.Ne + self.n_wall, len(self.vseg)
         self.parts = []                                       # dict(name, a, b, kind, R, L, C, part_h)
         self.plating = plating * 1e-3
         self._mats = None
@@ -315,7 +342,27 @@ class MQS:
                 self.fill_info['capacitance'] = dict(info, reused_magnetic_moments=True)
             else:
                 self._ensure_potential()
+        if self.use_walls:
+            return self._wall_matrices(self._sheet_resistance(r), L)
         return self._sheet_resistance(r), L
+
+    def _wall_matrices(self, R, L):
+        """R and L of the sheets' RWG edges extended by the walls' rooftops (walls.py): rooftop x rooftop and
+        rooftop x RWG partial inductance (an RWG edge's branch current is l times its coefficient: 1/l), the
+        rooftops' resistance at DC (Gram / sigma d)."""
+        from .walls import galerkin, rooftop_gram, rwg_pieces, wall_pieces
+        import time
+        t0 = time.time()
+        nw, ne = self.n_wall, self.n_rwg
+        pw = wall_pieces(self.walls)
+        Lww = galerkin(pw, pw, nw, nw)
+        Lww = 0.5 * (Lww + Lww.T)
+        Lwr = galerkin(pw, rwg_pieces(self.rwg, self.z_of), nw, ne) / self.rwg.l[None, :]
+        Lfull = np.block([[np.asarray(L), Lwr.T], [Lwr, Lww]])
+        self._wall_gram = [rooftop_gram([w]) for w in self.walls]
+        Rw = block_diag([G / (self.sigma * w['depth']) for G, w in zip(self._wall_gram, self.walls)], format='csr')
+        self.log(f'mqs: {nw:,} wall rooftops, matrices in {time.time() - t0:.1f} s')
+        return block_diag((R, Rw), format='csr'), Lfull
 
     def _sheet_resistance(self,r):
         # R: the Gram matrix of the RWG functions, each triangle at its sheet resistance
@@ -361,7 +408,7 @@ class MQS:
         nb = len(self.br) + len(self.parts)
         if self.conductor_loss == 'dc':
             return csr_matrix((nb, nb), dtype=complex)
-        delta = csr_matrix((self.ne, self.ne), dtype=complex)
+        delta = csr_matrix((self.n_rwg, self.n_rwg), dtype=complex)
         for t, faces, R in self._sheet_terms:
             ratio = surface_impedance(f, t, self.sigma, faces) * self.sigma * t
             delta = delta + (ratio - 1) * R
@@ -374,8 +421,15 @@ class MQS:
             delta = delta + (zself - 2 / (self.sigma * t)) * Gs + zmutual * Gx
         if getattr(self, '_face_terms', None):
             rows, cols, vals = self._face_opposite()
-            V = coo_matrix((vals, (rows, cols)), shape=(self.ne, self.ne)).tocsr()
+            V = coo_matrix((vals, (rows, cols)), shape=(self.n_rwg, self.n_rwg)).tocsr()
             delta = delta - 1j * 2 * np.pi * f * V
+        if self.use_walls:                                    # each wall: a slab of depth d driven from outside
+            ws = []
+            for G, w in zip(self._wall_gram, self.walls):
+                k = (1 + 1j) * np.sqrt(np.pi * f * MU0 * self.sigma)
+                zw = k / self.sigma / np.tanh(k * w['depth'])
+                ws.append((zw - 1 / (self.sigma * w['depth'])) * G)
+            delta = block_diag([delta] + ws, format='csr')
         return block_diag((delta, csr_matrix((nb-self.ne, nb-self.ne))), format='csr')
 
     def _face_opposite(self):
@@ -395,7 +449,7 @@ class MQS:
                 self._face_c = (np.zeros(0, int), np.zeros(0, int), np.zeros(0))
                 return self._face_c
             if mode == 'overlap':
-                pair_of = np.full(self.ne, -1)
+                pair_of = np.full(self.n_rwg, -1)
                 pair_of[e] = np.arange(len(e))
                 r = self.rwg
                 edges_of = [[] for _ in range(len(self.tris))]
@@ -641,7 +695,7 @@ class MQS:
         from ._numerics.base import _BAR6, _W6
         i = res.i[fi]
         r = self.rwg
-        a, b = rwg_currents(r, i[:self.ne] / r.l)
+        a, b = rwg_currents(r, i[:self.n_rwg] / r.l)
         V = self.nodes[self.tris]
         area = r.area
         Q = np.einsum('qk,tkc->tqc', _BAR6, V)
@@ -723,7 +777,7 @@ class MQS:
         fis = list(np.atleast_1d(fi))
         i = res.i[fis].T                                        # (nbranch, k)
         r = self.rwg
-        a, b = rwg_currents(r, i[:self.ne] / r.l[:, None])
+        a, b = rwg_currents(r, i[:self.n_rwg] / r.l[:, None])
         sheets = [(self.nodes, self.tris[idx], a[idx], b[idx], float(self.z_of[idx[0]])) for idx in self.layer_tris.values()]
         H = h_sheets(sheets, pts)
         if self.nv:
@@ -747,7 +801,7 @@ class MQS:
     def current_density(self, res, fi):
         """{layer: (centroids (m), J (A/m, (n, 2)))} per triangle at its centroid."""
         r = self.rwg
-        a, b = rwg_currents(r, res.i[fi][:self.ne] / r.l)
+        a, b = rwg_currents(r, res.i[fi][:self.n_rwg] / r.l)
         J = a[:, None] * r.cent + b
         return {lay: (r.cent[idx], J[idx]) for lay, idx in self.layer_tris.items()}
 

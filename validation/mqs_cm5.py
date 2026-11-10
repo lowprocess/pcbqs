@@ -144,7 +144,8 @@ def fasthenry_inp(p, nh_outer=5, nh_inner=3):
     The port's two edges are equipotential lines (.equiv) of nodes."""
     from mqs_fasthenry import via_bars
     b = case()
-    zs = {c['name']: (c['z'], c['t']) for c in b['stack']['copper']}
+    from pcbqs.pdn.mesh import copper_centres
+    zs = copper_centres(b)                          # the thick models' placement: dielectric gaps kept
     outer = {min(zs, key=lambda l: zs[l][0]), max(zs, key=lambda l: zs[l][0])}
     x0, y0 = PORT_GAP.bounds[0], 0.5 * (PORT_GAP.bounds[1] + PORT_GAP.bounds[3])
     xb, yb = REGION.bounds[0::2], REGION.bounds[1::2]

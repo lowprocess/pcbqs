@@ -125,9 +125,19 @@ In order:
      with the gap's vacuum field (from all currents, not only the pair's own) removed. Next: that formulation in the
      dense solver, then the compressed backend (a field-kernel H-matrix), checked against the reference below.
    - Reference mode: `thickness_sheets=N, conductor_loss='dc'` (graded stacked sheets, no slab formula), within
-     4% / 1% (R / L) of FastHenry near a plane; far from one, R moves with edge refinement until side walls close
-     the sheets' edges. Walls go on the stacked reference first (the clean test of the walls' benefit), then on
-     the face model.
+     5% / 1.3% (R / L) of FastHenry near a plane.
+   - Copper placement (2026-11-10): thick copper (two faces, stacked sheets) is placed with its thickness put into
+     the stack (`pdn.mesh.copper_centres`), so every dielectric keeps KiCad's face-to-face thickness; one sheet
+     stays at the interfaces. Centring on z had shrunk a 0.1 mm dielectric to 0.065 mm: FastHenry's L at 100 MHz
+     rose 36% with the fix, and all models now agree with it on L within a few percent.
+   - Walls wired into MQS (`walls=True`, dense, DC loss; copper shrunk by t/2, walls carry that strip; DC exact):
+     NOT validated. On an isolated 1 mm strip they add +49% R at 10 MHz against FastHenry.
+   - The root cause behind the far-plane and isolated-trace errors: a zero-thickness sheet's current is singular
+     at its edges in the inductive regime, so its loss grows without bound as the edge is refined (stacked
+     sheets, isolated strip, 10 MHz: +26% / +76% / +82% at 4 / 8 / 16 cells across). Walls made of sheets share
+     it. Next: finite-thickness kernels for close pairs (the 1/R kernel averaged over each slice's thickness, as
+     FastHenry's rectangular filaments), which bounds the edge current physically, for sheets and walls alike;
+     then two faces without the overlap correction (now better than it everywhere) re-checked.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
    permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the

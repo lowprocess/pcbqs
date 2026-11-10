@@ -101,3 +101,37 @@ def test_wall_on_a_sheet_couples_the_same_either_way():
     assert np.abs(one - two).max() < 2e-2 * scale
     M2, M3 = wall_rwg_inductance(w, rwg, z, outer_levels=2), wall_rwg_inductance(w, rwg, z, outer_levels=3)
     assert np.abs(M2 - M3).max() < 2e-2 * scale
+
+
+def test_vectorized_galerkin_matches_the_reference():
+    """walls.galerkin (near pairs analytic, far pairs 3 x 3 points) against wall_inductance's all-analytic sum."""
+    from pcbqs.walls import galerkin, wall_pieces
+    a, b, k = 4e-3, 2e-3, 8
+    pts = np.concatenate([np.c_[np.linspace(0, a, 2 * k, endpoint=False), np.zeros(2 * k)],
+                          np.c_[np.full(k, a), np.linspace(0, b, k, endpoint=False)],
+                          np.c_[np.linspace(a, 0, 2 * k, endpoint=False), np.full(2 * k, b)],
+                          np.c_[np.zeros(k), np.linspace(b, 0, k, endpoint=False)]])
+    w = chain_walls(pts, 0.0, T, closed=True)
+    n = len(w['roof'])
+    p = wall_pieces([w])
+    L = galerkin(p, p, n, n)
+    ref = wall_inductance(w)
+    np.testing.assert_allclose(0.5 * (L + L.T), ref, rtol=0, atol=2e-3 * np.abs(ref).max())
+
+
+def test_walls_keep_the_dc_resistance():
+    """MQS(walls=True): the copper shrunk by t/2 and the strip carried by the walls; DC within 0.5% (the terminal
+    slivers at the strip's ends shrink with it: 0.27% at dmax 0.5, 0.05% at 0.25)."""
+    from shapely.geometry import mapping
+    from pcbqs.mqs import MQS
+    b = dict(stack=dict(copper=[dict(name='F.Cu', z=1.6, t=0.035)], layers=[], thickness=1.6),
+             copper={'F.Cu': [dict(net='S', polygon=mapping(box(0, 0, 20, 1)))]}, vias=[],
+             outline=mapping(box(-1, -1, 21, 2)), prims=dict(footprints=[]))
+    terms = {'A': [('F.Cu', box(0, 0, 0.1, 1))], 'B': [('F.Cu', box(19.9, 0, 20, 1))]}
+    z = []
+    for walls in (False, True):
+        q = MQS(b, {'S'}, terminals=terms, dmax=0.5, conductor_loss='dc', walls=walls, log=lambda *a: None)
+        q.source('port', 'A', 'B', part_h=0.0)
+        z.append(np.asarray(q.solve(np.array([1e3])).zc['port'])[0])
+    assert q.n_wall > 0
+    assert z[1].real == pytest.approx(z[0].real, rel=5e-3)

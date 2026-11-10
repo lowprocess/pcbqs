@@ -6,8 +6,9 @@ close or far and thin or thick (the CM5 loop's In1 case, without its port-region
     python validation/face_study.py report
 
 A 1 mm trace 20 mm long on top (35 um), down a via (r 0.15) to a 26 x 6 mm plane, back up a via to a pad; the port
-across the 0.5 mm gap between the pad and the trace's start. The trace's centre is H above the plane's centre, the
-plane TP thick; every tool centres copper on its z (pcbqs's convention). FastHenry: the trace as one segment split
+across the 0.5 mm gap between the pad and the trace's start. H is the dielectric between the plane's top face and the
+trace's bottom face (KiCad's convention), the plane TP thick; FastHenry places the copper as pcbqs's thick models do
+(pcbqs.pdn.mesh.copper_centres), one sheet sits at the interfaces. FastHenry: the trace as one segment split
 into 31 x 5 filaments, the plane a uniform 0.125 mm grid with 5 filaments through its thickness, -p diag.
 """
 import json
@@ -56,7 +57,9 @@ def fasthenry_inp(h, tp, cell=0.125, nw=31, nh=5):
     from mqs_fasthenry import via_bars
     x0, y0, x1, y1 = PLANE
     s1, s2 = int(round((x1 - x0) / cell)), int(round((y1 - y0) / cell))
-    zt, zb = h, 0.0
+    from pcbqs.pdn.mesh import copper_centres
+    c = copper_centres(board(h, tp))                # as pcbqs's thick models: the dielectric (h) between faces
+    zt, zb = c['F.Cu'][0], c['B.Cu'][0]
     return f""".units mm
 .default sigma=5.8e4 nhinc={nh} nwinc=1 rw=2 rh=2
 G1 x1={x0} y1={y0} z1={zb} x2={x1} y2={y0} z2={zb} x3={x1} y3={y1} z3={zb} thick={tp} seg1={s1} seg2={s2}
