@@ -322,6 +322,7 @@ def make_board_ports(board, config, log=print):
         dmax_fine=selected.get('fine_mm', 1.6),
         conductor_loss='slab',
         conductor_faces=2,
+        thickness_sheets=1,  # one sheet: the circuit's coarse copper model (two faces: a follow-up)
         fill_backend=selected.get('backend', 'auto'),
         fill_workers=selected.get('workers', 8),
         log=log,

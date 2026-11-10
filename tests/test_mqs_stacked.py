@@ -71,3 +71,13 @@ def test_thick_kernel_gives_a_bars_inductance_on_both_backends():
         out[back] = np.asarray(q.solve(np.array([1e3, 1e8])).zc['port'])
     assert out['dense'][0].imag / (2 * np.pi * 1e3) == pytest.approx(grover, rel=3e-3)
     np.testing.assert_allclose(out['hierarchical'], out['dense'], rtol=1e-5)
+
+
+def test_slab_loss_defaults_to_two_face_sheets():
+    """conductor_loss='slab' without capacitance: two face sheets by default (validated against FastHenry); one sheet
+    with capacitance (face sheets carry no charge yet) or when asked."""
+    q = MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', log=lambda *a: None)
+    assert q.thickness_sheets == 2
+    assert MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', thickness_sheets=1,
+               log=lambda *a: None).thickness_sheets == 1
+    assert MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='dc', log=lambda *a: None).thickness_sheets == 1

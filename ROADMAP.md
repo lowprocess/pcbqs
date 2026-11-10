@@ -7,6 +7,9 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 
 ## Done recently
 
+- Thick copper validated against FastHenry and a 2D cross-section PEEC: a terminal eddy-current bug fixed
+  (`ideal_terminals`), thick copper placed with the dielectric gaps kept (`copper_centres`), finite-thickness kernels
+  (`thick_kernel`), stacked sheets as the reference; `conductor_loss='slab'` now defaults to two face sheets.
 - Real-board regressions (`tests/test_regression_boards.py`): CM5 U702's near field and wpthb's DC drop and PDN at
   coarse settings against stored results (`tests/data/regression_boards.json`; `--update` after a deliberate
   change), skipped where the board is not installed. About 37 s with the board cache.
@@ -149,8 +152,9 @@ In order:
      -8.1/-10.0/+0.8%, L -2.7/-0.6/-0.4% (32 s). pcbqs R falls with refinement while FastHenry's rose 3-9% from its
      0.2 to 0.1 mm grid (its staircase of CM5's 0.2-0.3 mm features), so the residual is mostly the reference's; its
      0.05 mm grid (82k segments) did not get past the preconditioner in an hour even with -p diag.
-   - Decision to make: default for conductor_loss='slab' with thickness: two faces without the overlap
-     correction (cheap, within ~7% so far) or one sheet; stacked + thick kernel stays the reference.
+   - Decided (2026-11-10): `conductor_loss='slab'` defaults to two face sheets (inductance only, homogeneous
+     dielectric), with no face correction: the per-pair and overlap corrections are removed. Stacked sheets +
+     `thick_kernel` stay the reference. The circuit tool's copper model (`power_bridge`) keeps one sheet for now.
      One sheet + slab loss + thick kernel (placed in its real slab): strip -8 / +6%: the cheap option.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective

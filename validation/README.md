@@ -129,7 +129,9 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   - Two faces with the overlap correction: R within 0.1% at 1.6 mm, but +254% at 0.1 mm and 100 MHz, current
     circulating between each conductor's faces. No setting of the face correction works at both spacings: the slab
     two-port is driven by the faces' own currents, while the copper responds to the field at its faces, which a
-    trace 65 um above the plane dominates. Not for close planes until reformulated (ROADMAP).
+    trace 65 um above the plane dominates. The corrections were removed (2026-11-10); with the copper placed in
+    its real slab and the terminal bug fixed, uncorrected faces are within ~10% of FastHenry in every case and the
+    `conductor_loss='slab'` default.
   - `MQS(thickness_sheets=N, conductor_loss='dc')`: N sheets through the copper, cosine-graded toward its faces,
     each at its slice's DC sheet resistance: skin and proximity effect from mutual inductance alone, no slab
     formula. N = 6, dmax 0.25, 10 cells across the trace: at 0.1 mm, R within 4% and L within 1% at 1–100 MHz; at

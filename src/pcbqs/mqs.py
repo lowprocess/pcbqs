@@ -65,7 +65,7 @@ class MQS:
                  edge_rings=1, edge_width=None, edge_zone=None, matrix_backend='dense',
                  compression_tol=1e-6, compression_leaf=64, compression_eta=1.,
                  solver_tol=1e-8, solver_maxiter=500, drop_lone_pads=True, pad_area=1.0, pad_sides=8,
-                 via_sides=6, thickness_sheets=1, walls=False, thick_kernel=False, ideal_terminals=True):
+                 via_sides=6, thickness_sheets=None, walls=False, thick_kernel=False, ideal_terminals=True):
         """Mesh the selected copper. `near` controls analytic 1/R integration
         (infinity: all pairs); `outer_levels` refines its close-pair quadrature.
         `capacitance=True` enables surface-charge PEEC: homogeneous `er`, or
@@ -128,9 +128,15 @@ class MQS:
             raise ValueError('dielectric must be homogeneous or stack')
         # thickness_sheets=2 (experimental): each layer's copper as two sheets at its faces (z -+ t/2), each copy of
         # a triangle one node, each RWG edge two parallel branches, coupled through the copper by the slab's exact
-        # 1D two-port, Zs [[coth kt, csch kt], [csch kt, coth kt]], less the vacuum field the partial inductance
-        # already puts between the faces. The external field then sets how the current divides between the faces:
+        # 1D two-port, Zs [[coth kt, csch kt], [csch kt, coth kt]], with no correction for the vacuum field the partial
+        # inductance puts between the faces (the per-pair and overlap corrections were removed 2026-11-10: against
+        # FastHenry they were right only far from a plane, +200% R at 100 MHz with a plane 0.1 mm away, while the
+        # uncorrected faces are within ~10% everywhere tested). The external field sets how the current divides:
         # the proximity effect a single sheet's slab cannot give (C14, validation/mqs_fasthenry.py).
+        # thickness_sheets: default two face sheets with conductor_loss='slab' (inductance only, homogeneous dielectric:
+        # validated against FastHenry, validation/README.md), else one sheet
+        if thickness_sheets is None:
+            thickness_sheets = 2 if conductor_loss == 'slab' and not capacitance and dielectric == 'homogeneous' else 1
         # thickness_sheets=N with conductor_loss='dc' (experimental, the reference): N sheets at the centres of N
         # slices of the copper (cosine-graded: thinner at the faces, where the skin is), each at its slice's DC
         # sheet resistance, a triangle's copies one node. Skin
@@ -305,7 +311,6 @@ class MQS:
         self._potential = None
         self._peec = None
         self._mqs_iter = None
-        self._face_c = None
         log(f"mqs: {Nt:,} triangles on {len(self.layer_tris)} layer(s), {self.ne:,} edges, {self.nv} via segments, "
             f"{len(self.terms)} terminals")
 
@@ -316,7 +321,6 @@ class MQS:
         self._mats = None
         self._peec = None
         self._mqs_iter = None
-        self._face_c = None
 
     def element(self, name, a, b, R=0.0, L=0.0, C=None, ESR=None, ESL=None, part_h=0.5):
         """A series R, L (and C) through a part between terminals a and b."""
@@ -325,7 +329,6 @@ class MQS:
         self._mats = None
         self._peec = None
         self._mqs_iter = None
-        self._face_c = None
 
     # ---- the matrices ----
     def _thick_correction(self):
@@ -431,16 +434,9 @@ class MQS:
             ratio = surface_impedance(f, t, self.sigma, faces) * self.sigma * t
             delta = delta + (ratio - 1) * R
         for t, Gs, Gx in getattr(self, '_face_terms', []):
-            # the raw slab two-port carries the whole opposite-mode (between-the-faces) impedance; the partial
-            # inductance's own share of it, per edge pair, is removed below. (Subtracting the analytic vacuum term
-            # instead over-subtracted: the discrete share is only 67-79% of mu0 t / 2 at these meshes, and the
-            # opposite mode then took too much current: +30% loss over a plane at 100 MHz against FastHenry.)
+            # the raw slab two-port, uncorrected: the partial inductance between the faces is left as filled
             zself, zmutual = face_impedance(f, t, self.sigma, vacuum=False)
             delta = delta + (zself - 2 / (self.sigma * t)) * Gs + zmutual * Gx
-        if getattr(self, '_face_terms', None):
-            rows, cols, vals = self._face_opposite()
-            V = coo_matrix((vals, (rows, cols)), shape=(self.n_rwg, self.n_rwg)).tocsr()
-            delta = delta - 1j * 2 * np.pi * f * V
         if self.use_walls:                                    # each wall: a slab of depth d driven from outside
             ws = []
             for G, w in zip(self._wall_gram, self.walls):
@@ -449,46 +445,6 @@ class MQS:
                 ws.append((zw - 1 / (self.sigma * w['depth'])) * G)
             delta = block_diag([delta] + ws, format='csr')
         return block_diag((delta, csr_matrix((nb-self.ne, nb-self.ne))), format='csr')
-
-    def _face_opposite(self):
-        """The partial inductance's share of the between-the-faces field, removed from face-sheet pairs (the slab
-        two-port carries it): (rows, cols, values) of V, subtracted as j w V. With d_i = (bottom edge - top edge) of
-        pair i, V = sum c_ij d_i d_j^T, c_ij = d_i^T L d_j / 4, which zeroes the partial inductance's opposite-mode
-        coupling of i and j. face_correction 'pair' (default) takes each pair alone (i = j); 'overlap'
-        (experimental) also every two pairs whose bottom edges share a triangle, as the slab's Gram terms do."""
-        if getattr(self, '_face_c', None) is None:
-            Le = self._copper[1] if self._copper is not None else self._assemble()['L'][0]
-            e, g = np.hstack(self._face_pairs)
-            if hasattr(Le, 'entry') and Le.entry is None:
-                raise ValueError('thickness_sheets=2 needs a freshly filled inductance (a cached, unpickled '
-                                 'operator keeps no exact entries)')
-            mode = getattr(self, 'face_correction', 'pair')
-            if mode == 'none':                       # the raw partial inductance between the faces (diagnostics)
-                self._face_c = (np.zeros(0, int), np.zeros(0, int), np.zeros(0))
-                return self._face_c
-            if mode == 'overlap':
-                pair_of = np.full(self.n_rwg, -1)
-                pair_of[e] = np.arange(len(e))
-                r = self.rwg
-                edges_of = [[] for _ in range(len(self.tris))]
-                for k, (a, b) in enumerate(zip(r.tp, r.tm)):
-                    if pair_of[k] >= 0:
-                        edges_of[a].append(pair_of[k])
-                        edges_of[b].append(pair_of[k])
-                couples = {(i, j) for es in edges_of for i in es for j in es}
-                i, j = np.array(sorted(couples)).T
-            else:
-                i = j = np.arange(len(e))
-            c = np.zeros(len(i))
-            for k in range(0, len(i), 256):
-                a, b = i[k:k + 256], j[k:k + 256]
-                if hasattr(Le, 'entry'):
-                    look = lambda x, y: np.array([np.asarray(Le.entry([u], [v]))[0, 0] for u, v in zip(x, y)])
-                else:
-                    look = lambda x, y: np.asarray(Le)[x, y]
-                c[k:k + 256] = (look(e[a], e[b]) + look(g[a], g[b]) - look(e[a], g[b]) - look(g[a], e[b])) / 4
-            self._face_c = (np.r_[e[i], g[i], e[i], g[i]], np.r_[e[j], g[j], g[j], e[j]], np.r_[c, c, -c, -c])
-        return self._face_c
 
     def _set_potential(self, M0, er=None):
         from ._numerics.base import EPS0

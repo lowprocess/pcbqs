@@ -28,6 +28,7 @@ def test_sheet_loss_is_used_by_mqs_and_peec():
     answers = []
     for cap, loss in [(False, 'dc'), (False, 'slab'), (True, 'slab')]:
         q = MQS(board, 'N', terminals=terms, dmax=.7, capacitance=cap, conductor_loss=loss, ideal_terminals=False,
+                thickness_sheets=1,
                 conductor_faces=1, log=lambda *_: None)
         q.source('I', 'a', 'b', part_h=0)
         answers.append(q.solve([1e3, 30e6]).z['I'])
