@@ -3,6 +3,7 @@ answers is seen (C4-C6 were drift of this kind). Skipped where the board is not 
 
     CM5 U702 near field (python -m pcbqs.mqs)     /usr/share/kicad/demos/cm5_minima (KiCad's demos)
     wpthb DC drop and PDN (python -m pcbqs.pdn)   ~/Desktop/wpthb (the as-built 24 V bridge)
+    wpthb circuit, 90 kHz 10 W, with copper        tests/data/wpthb_circuit.json (python -m pcbqs.power_circuit)
 
 A deliberate change to these answers: python tests/test_regression_boards.py --update, then review the diff of
 tests/data/regression_boards.json.
@@ -43,7 +44,19 @@ def wpthb_pdn(out):
                 f_Hz=r['pdn']['f'], z_mag_Q1=r['pdn']['z']['Q1']['mag'])
 
 
-CASES = {'cm5_near_field': (CM5, cm5_near_field), 'wpthb_pdn': (WPTHB, wpthb_pdn)}
+def wpthb_circuit(out):
+    pytest.importorskip('kicad2ems')
+    from pcbqs.power_circuit import main
+    main([str(Path(__file__).parent / 'data' / 'wpthb_circuit.json'), '--board', str(WPTHB), '--copper',
+          '--frequencies', '90000', '--powers', '10', '--out', str(out)])
+    r = json.loads((Path(out) / 'power-circuit.json').read_text())
+    c, = r['cases']
+    return {k: c[k] for k in ('load_power_W', 'input_power_W', 'efficiency', 'phase_deg', 'primary_rms_A',
+                              'bus_ripple_V')}
+
+
+CASES = {'cm5_near_field': (CM5, cm5_near_field), 'wpthb_pdn': (WPTHB, wpthb_pdn),
+         'wpthb_circuit': (WPTHB, wpthb_circuit)}
 
 
 def _close(got, want, path=''):

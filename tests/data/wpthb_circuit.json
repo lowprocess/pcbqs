@@ -1,0 +1,300 @@
+{
+  "format": 1,
+  "name": "wpthb coupled receiver",
+  "voltage_V": 24,
+  "frequencies_Hz": [
+    90000,
+    110000
+  ],
+  "powers_W": [
+    5,
+    10,
+    20,
+    30
+  ],
+  "coupling": 0.4,
+  "primary_C_F": 9.9e-08,
+  "primary": {
+    "L_H": 2.4e-05,
+    "R_ohm": 0.11,
+    "SRF_Hz": 7700000.0,
+    "Rac_ref_ohm": 0.12161003820347586,
+    "loss_model": "parallel_core",
+    "loss_reference_Hz": 125000
+  },
+  "secondary": {
+    "L_H": 2.4e-05,
+    "R_ohm": 0.11,
+    "SRF_Hz": 7700000.0,
+    "Rac_ref_ohm": 0.12161003820347586,
+    "loss_model": "parallel_core",
+    "loss_reference_Hz": 125000
+  },
+  "primary_terminals": [
+    "TP15:/HL_AC",
+    "TP14:/HR_SW"
+  ],
+  "bridge_terminals": [
+    "Q2:/HL_SW",
+    "Q1:/HR_SW"
+  ],
+  "primary_cap_ESR_ohm": 0.005,
+  "secondary_cap_ESR_ohm": 0.015,
+  "secondary_cap_ESL_H": 8e-10,
+  "supply": {
+    "R_ohm": 0.05,
+    "L_H": 1e-07,
+    "ramp_s": 0.0001
+  },
+  "transient": {
+    "cycles": 32,
+    "samples_per_cycle": 256,
+    "periodic_tolerance": 0.005,
+    "power_tolerance": 0.005,
+    "initialization": "precharged"
+  },
+  "switch_model": {
+    "type": "vdmos",
+    "Ron_ohm": 0.008,
+    "Roff_ohm": 10000000000.0,
+    "rise_s": 2e-08,
+    "fall_s": 2e-08,
+    "dead_time_s": 1e-07,
+    "gate_V": 10,
+    "gate_R_ohm": 2,
+    "package_L_H": 1e-09,
+    "source_L_H": 5e-10,
+    "Cds_F": 5e-10,
+    "Cgd_F": 5e-11,
+    "Cgs_F": 1e-09,
+    "body_diode": true,
+    "diode_TT_s": 2e-08,
+    "diode_R_ohm": 0.02
+  },
+  "components": [
+    {
+      "ref": "C19",
+      "a": "C19:GND",
+      "b": "C19:VHB",
+      "type": "capacitor",
+      "value": 1e-06,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C20",
+      "a": "C20:GND",
+      "b": "C20:VHB",
+      "type": "capacitor",
+      "value": 1e-05,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C21",
+      "a": "C21:GND",
+      "b": "C21:VHB",
+      "type": "capacitor",
+      "value": 1e-05,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C22",
+      "a": "C22:GND",
+      "b": "C22:VHB",
+      "type": "capacitor",
+      "value": 1e-05,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C23",
+      "a": "C23:GND",
+      "b": "C23:VHB",
+      "type": "capacitor",
+      "value": 1e-05,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C24",
+      "a": "C24:GND",
+      "b": "C24:VHB",
+      "type": "capacitor",
+      "value": 1e-06,
+      "ESR_ohm": 0.005,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C25",
+      "a": "C25:/HL_AC",
+      "b": "C25:/HL_SW",
+      "type": "capacitor",
+      "value": 3.3e-08,
+      "ESR_ohm": 0.015,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C27",
+      "a": "C27:/HL_AC",
+      "b": "C27:/HL_SW",
+      "type": "capacitor",
+      "value": 3.3e-08,
+      "ESR_ohm": 0.015,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "C30",
+      "a": "C30:/HL_AC",
+      "b": "C30:/HL_SW",
+      "type": "capacitor",
+      "value": 3.3e-08,
+      "ESR_ohm": 0.015,
+      "ESL_H": 8e-10
+    },
+    {
+      "ref": "R9",
+      "a": "NET:VIN",
+      "b": "NET:VBUS",
+      "type": "resistor",
+      "value": 0.005
+    },
+    {
+      "ref": "L3",
+      "a": "NET:VBUS",
+      "b": "L3:VHB",
+      "type": "inductor",
+      "value": 5.6e-06,
+      "DCR_ohm": 0.03,
+      "ESL_H": 0
+    },
+    {
+      "ref": "CA1",
+      "a": "NET:VBUS",
+      "b": "NET:GND",
+      "type": "capacitor",
+      "value": 2.2e-05,
+      "ESR_ohm": 0.02,
+      "ESL_H": 1e-09
+    },
+    {
+      "ref": "CA2",
+      "a": "NET:VBUS",
+      "b": "NET:GND",
+      "type": "capacitor",
+      "value": 2.2e-05,
+      "ESR_ohm": 0.02,
+      "ESL_H": 1e-09
+    },
+    {
+      "ref": "CA3",
+      "a": "NET:VBUS",
+      "b": "NET:GND",
+      "type": "capacitor",
+      "value": 2.2e-05,
+      "ESR_ohm": 0.02,
+      "ESL_H": 1e-09
+    },
+    {
+      "ref": "CA4",
+      "a": "NET:VBUS",
+      "b": "NET:GND",
+      "type": "capacitor",
+      "value": 2.2e-05,
+      "ESR_ohm": 0.02,
+      "ESL_H": 1e-09
+    }
+  ],
+  "switches": [
+    {
+      "ref": "Q1",
+      "a": "Q1:VHB",
+      "b": "Q1:/HR_SW",
+      "leg": "B",
+      "high": true
+    },
+    {
+      "ref": "Q2",
+      "a": "Q2:VHB",
+      "b": "Q2:/HL_SW",
+      "leg": "A",
+      "high": true
+    },
+    {
+      "ref": "Q3",
+      "a": "Q3:/HR_SW",
+      "b": "Q3:GND",
+      "leg": "B",
+      "high": false
+    },
+    {
+      "ref": "Q4",
+      "a": "Q4:/HL_SW",
+      "b": "Q4:GND",
+      "leg": "A",
+      "high": false
+    }
+  ],
+  "terminals": {
+    "Q1:VHB": "VHB",
+    "Q1:/HR_SW": "/HR_SW",
+    "Q2:VHB": "VHB",
+    "Q2:/HL_SW": "/HL_SW",
+    "Q3:/HR_SW": "/HR_SW",
+    "Q3:GND": "GND",
+    "Q4:/HL_SW": "/HL_SW",
+    "Q4:GND": "GND",
+    "C19:GND": "GND",
+    "C19:VHB": "VHB",
+    "C20:GND": "GND",
+    "C20:VHB": "VHB",
+    "C21:GND": "GND",
+    "C21:VHB": "VHB",
+    "C22:GND": "GND",
+    "C22:VHB": "VHB",
+    "C23:GND": "GND",
+    "C23:VHB": "VHB",
+    "C24:GND": "GND",
+    "C24:VHB": "VHB",
+    "C25:/HL_AC": "/HL_AC",
+    "C25:/HL_SW": "/HL_SW",
+    "C27:/HL_AC": "/HL_AC",
+    "C27:/HL_SW": "/HL_SW",
+    "C30:/HL_AC": "/HL_AC",
+    "C30:/HL_SW": "/HL_SW",
+    "TP15:/HL_AC": "/HL_AC",
+    "TP14:/HR_SW": "/HR_SW",
+    "L3:VHB": "VHB"
+  },
+  "net_references": {
+    "GND": "C20:GND",
+    "VHB": "L3:VHB",
+    "/HL_SW": "Q2:/HL_SW",
+    "/HR_SW": "TP14:/HR_SW",
+    "/HL_AC": "TP15:/HL_AC"
+  },
+  "mesh": {
+    "nets": [
+      "VHB",
+      "GND",
+      "/HL_SW",
+      "/HR_SW",
+      "/HL_AC"
+    ],
+    "coarse_mm": 3,
+    "fine_mm": 1.6,
+    "margin_mm": 2,
+    "workers": 8,
+    "backend": "openmp",
+    "circuit_fit_tolerance": 0.03
+  },
+  "assumptions": [
+    "Secondary is assumed identical to the primary, not supplied receiver hardware.",
+    "Receiver series capacitor is tuned per operating frequency; its AC-equivalent resistor maximizes sinusoidal link efficiency.",
+    "Target receiver power is obtained by adjusting phase at 24 V, not by imposing a fixed power sink.",
+    "Switch and passive parasitics are editable engineering placeholders, not extracted manufacturer values.",
+    "Coil core conductance is fitted to small-signal Q=155 at 125 kHz and held constant; broadband/large-signal/temperature behavior is not measured.",
+    "Input filter is electrical; upstream copper, coil geometry, gate circuitry and environment coupling are not field-modeled."
+  ]
+}
