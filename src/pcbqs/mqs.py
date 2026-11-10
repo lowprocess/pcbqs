@@ -149,9 +149,14 @@ class MQS:
         elif thickness_sheets >= 2 and conductor_loss != 'dc':
             raise ValueError("thickness_sheets=2 with conductor_loss='slab' is the face model; N stacked sheets need "
                              "conductor_loss='dc'")
-        if thickness_sheets >= 2 and dielectric == 'stack':
-            raise NotImplementedError('thickness_sheets with dielectric=stack (the images need copper on interfaces)')
+        if thickness_sheets > 2 and dielectric == 'stack':
+            raise NotImplementedError('stacked sheets with dielectric=stack (the images need copper on interfaces)')
         self.thickness_sheets = int(thickness_sheets)
+        self._dielectric_stack = None
+        if dielectric == 'stack':
+            from .electrostatic import DielectricStack
+            make = DielectricStack.from_board_thick if self.thickness_sheets == 2 else DielectricStack.from_board
+            self._dielectric_stack = make(board, dielectric_tol)
         # thick_kernel=True (experimental, dense): close same-layer pairs interact through the 1/R kernel averaged
         # over their slabs' thickness (thick.py), which bounds the edge current a zero-thickness sheet makes singular
         self.thick_kernel = bool(thick_kernel)
@@ -169,10 +174,6 @@ class MQS:
         if dielectric == 'stack' and er != 1:
             raise ValueError('er applies to homogeneous dielectric; stack uses board permittivities')
         self.dielectric = dielectric
-        self._dielectric_stack = None
-        if dielectric == 'stack':
-            from .electrostatic import DielectricStack
-            self._dielectric_stack = DielectricStack.from_board(board, dielectric_tol)
         self.board, self.sigma, self.log = board, sigma, log
         self.nets = {nets} if isinstance(nets, str) else set(nets)
         # one sheet sits at board.json's z (the dielectric interface: the facing gaps exact); thick copper (two faces,

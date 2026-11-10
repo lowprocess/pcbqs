@@ -40,3 +40,17 @@ def test_thickness_adds_capacitance_step_by_step():
 def test_side_charge_needs_face_sheets_and_capacitance():
     with pytest.raises(NotImplementedError):
         MQS(microstrip(), {'T', 'G'}, terminals=TERMS, conductor_loss='slab', side_charge=True, log=lambda *a: None)
+
+
+def test_face_sheets_in_a_layered_dielectric():
+    """dielectric='stack' with face sheets: the stack expanded by the copper's thickness (faces on interfaces); in
+    FR-4 the thickness adds a little capacitance (Hammerstad-Jensen: +3.3% for this microstrip)."""
+    b = microstrip()
+    b['stack']['layers'][0]['er'] = 4.4
+    cs = []
+    for sheets in (1, 2):
+        q = MQS(b, {'T', 'G'}, terminals=TERMS, dmax=0.5, capacitance=True, dielectric='stack', conductor_loss='slab',
+                thickness_sheets=sheets, log=lambda *a: None)
+        C, _, tl = q.capacitance_matrix()
+        cs.append(abs(np.real(np.asarray(C))[tl['T'], tl['G']]))
+    assert 1.0 < cs[1] / cs[0] < 1.08

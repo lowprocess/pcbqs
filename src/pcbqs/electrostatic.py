@@ -39,6 +39,39 @@ class DielectricStack:
             s['er']*(1-1j*s.get('tand', 0.0)) for s in slabs] + [board['stack'].get('top_er', 1.0)]
         return cls(z, eps, tol)
 
+    @classmethod
+    def from_board_thick(cls, board, tol=1e-8):
+        """The stack with each copper layer's thickness put in (pdn.mesh.copper_centres): every dielectric shifted up
+        by the copper beneath it, each copper layer a slab of its own, so face sheets lie on interfaces. Beside the
+        copper a layer is filled with air (outer layers) or resin, taken as the mean of its two neighbours."""
+        from .pdn.mesh import copper_centres
+        slabs = sorted(board['stack']['layers'], key=lambda l: l['z0'])
+        if not slabs:
+            raise ValueError('stack electrostatics requires dielectric layers')
+        cu = copper_centres(board)
+        z_board = {c['name']: c['z'] for c in board['stack']['copper']}
+        below = lambda z: sum(c['t'] for c in board['stack']['copper'] if c['z'] < z - 1e-9)
+        eps_of = lambda s: s['er'] * (1 - 1j * s.get('tand', 0.0))
+        bottom, top = board['stack'].get('bottom_er', 1.0), board['stack'].get('top_er', 1.0)
+        regions = [(s['z0'] + below(s['z0']) + (sum(c['t'] for c in board['stack']['copper']
+                                                     if abs(c['z'] - s['z0']) < 1e-9)),
+                    s['z1'] + below(s['z1']), eps_of(s)) for s in slabs]
+        for name, (zc, t) in cu.items():
+            z = z_board[name]
+            under = [s for s in slabs if abs(s['z1'] - z) < 1e-6]
+            over = [s for s in slabs if abs(s['z0'] - z) < 1e-6]
+            if under and over:
+                eps = 0.5 * (eps_of(under[0]) + eps_of(over[0]))
+            else:
+                eps = top if under else bottom
+            regions.append((zc - t / 2, zc + t / 2, eps))
+        regions.sort(key=lambda r: r[0])
+        for a, b in zip(regions, regions[1:]):
+            if abs(a[1] - b[0]) > 1e-6:
+                raise ValueError('expanded stack: slabs are not contiguous')
+        z = np.array([regions[0][0]] + [r[1] for r in regions]) * 1e-3
+        return cls(z, [bottom] + [r[2] for r in regions] + [top], tol)
+
     def interface(self, z):
         i = int(np.argmin(abs(self.z-z)))
         if abs(self.z[i]-z) > 1e-9:

@@ -103,6 +103,13 @@ In order:
      copper boxes in air: plates -0.3%, microstrip -2.5% (two faces alone -7.5%, one sheet against thick +17% low),
      two traces 0.1 mm apart self -5.5..-7.5%, mutual -10..-13% (faces alone -30%; the rest is the narrow-gap
      edge-charge resolution, as one sheet's against thin copper). Capacitance_matrix only; no AC solve with faces.
+     `dielectric='stack'` with face sheets: the stack expanded by the copper's thickness
+     (`DielectricStack.from_board_thick`: faces on interfaces; beside the copper air outside, resin (the mean of the
+     two neighbours) inside). FR-4 microstrip: faces add 2.3% over one sheet (Hammerstad-Jensen's thickness
+     correction: 3.3%); -5.1% against it at dmax 0.25 (one sheet -4.1% against the zero-thickness formula). Side
+     charge is homogeneous-only (vertical panels are off the interfaces the images need).
+   - Still open here: the AC capacitance (PEEC) solve with face sheets (charge nodes in the circuit), side charge in
+     the compressed backend and in a layered dielectric, and the narrow-gap edge-charge resolution.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 

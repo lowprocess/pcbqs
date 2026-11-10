@@ -46,14 +46,28 @@ def microstrip(er):
 
 
 def hammerstad(w, h, er, t=0.0):
-    """Microstrip C per metre (Hammerstad-Jensen, zero thickness): sqrt(eeff) / (c Z0)."""
+    """Microstrip C per metre (Hammerstad-Jensen): sqrt(eeff) / (c Z0); t > 0 adds their thickness correction (the
+    strip widened by du1 in air and dur in the dielectric)."""
+    def eeff_of(u):
+        a = 1 + np.log((u ** 4 + (u / 52) ** 2) / (u ** 4 + 0.432)) / 49 + np.log(1 + (u / 18.1) ** 3) / 18.7
+        b = 0.564 * ((er - 0.9) / (er + 3)) ** 0.053
+        return (er + 1) / 2 + (er - 1) / 2 * (1 + 10 / u) ** (-a * b)
+
+    def z01(u):                                                # air
+        f = 6 + (2 * np.pi - 6) * np.exp(-(30.666 / u) ** 0.7528)
+        return 60 * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))
     u = w / h
-    a = 1 + np.log((u ** 4 + (u / 52) ** 2) / (u ** 4 + 0.432)) / 49 + np.log(1 + (u / 18.1) ** 3) / 18.7
-    b = 0.564 * ((er - 0.9) / (er + 3)) ** 0.053
-    eeff = (er + 1) / 2 + (er - 1) / 2 * (1 + 10 / u) ** (-a * b)
-    f = 6 + (2 * np.pi - 6) * np.exp(-(30.666 / u) ** 0.7528)
-    z01 = 60 * np.log(f / u + np.sqrt(1 + (2 / u) ** 2))      # air
-    return np.sqrt(eeff) / (299792458.0 * z01 / np.sqrt(eeff))
+    if t > 0:
+        coth2 = (np.cosh(np.sqrt(6.517 * u)) / np.sinh(np.sqrt(6.517 * u))) ** 2
+        du1 = t / (np.pi * h) * np.log(1 + 4 * np.e / (t / h * coth2))
+        dur = 0.5 * (1 + 1 / np.cosh(np.sqrt(er - 1))) * du1 if er > 1 else du1
+        u1, ur = u + du1, u + dur
+        eeff = eeff_of(ur) * (z01(u1) / z01(ur)) ** 2
+        z0 = z01(ur) / np.sqrt(eeff_of(ur))
+    else:
+        eeff = eeff_of(u)
+        z0 = z01(u) / np.sqrt(eeff)
+    return np.sqrt(eeff) / (299792458.0 * z0)
 
 
 CASES = dict(plates=plates, traces_air=lambda: traces(1.0), traces_fr4=lambda: traces(4.4),
