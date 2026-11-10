@@ -27,7 +27,7 @@ def make(backend,layered=False,closed=False,whole=False):
     terms={'a':[('F',g if whole else box(0,0,1,1))],
            'b':[('B',g if whole else box(5,3,6,4))]}
     q=MQS(b,{'B','F'},terminals=terms,dmax=1.2,capacitance=True,matrix_backend=backend,
-          dielectric='stack' if layered else 'homogeneous',conductor_loss='slab',conductor_faces=1,
+          dielectric='stack' if layered else 'homogeneous',conductor_loss='slab',conductor_faces=1,thickness_sheets=1,
           compression_leaf=16,compression_tol=1e-8,solver_tol=1e-10,solver_maxiter=2000,
           fill_workers=1,log=lambda *_:None)
     q.source('I','a','b',part_h=0)

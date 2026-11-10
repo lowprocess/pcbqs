@@ -31,8 +31,14 @@ def electric_field(model, result, fi, pts, chunk=100_000):
         raise ValueError('electric fields require a capacitance=True result')
     multi = np.ndim(fi) > 0
     charge = result.charge[np.atleast_1d(fi)].T
-    area = np.bincount(model.node_of, weights=model.rwg.area, minlength=model.n_nodes)
-    density = charge[model.node_of] / area[model.node_of, None]
+    _, D = node_potential(model) if getattr(model, 'charge_of', None) is not None else (None, None)
+    if D is not None:                                    # face sheets: each copy's share (side panels left out)
+        of = model.charge_of
+        charge = (D @ charge)[:of.max() + 1]
+    else:
+        of = model.node_of
+    area = np.bincount(of, weights=model.rwg.area, minlength=of.max() + 1)
+    density = charge[of] / area[of, None]
     V = model.nodes[model.tris]
     if model.dielectric == 'homogeneous':
         E = _electric_triangles(V, model.z_of, density, pts, chunk) / model.er
@@ -116,10 +122,46 @@ def capacitance_matrix(model):
     return (C + C.T) / 2, labels, {name: int(labels[node]) for name, node in model.term_node.items()}
 
 
+def charge_nodes(model):
+    """Face sheets (and side panels): the charge unknowns -> circuit nodes, as a sparse (n_charge, n_nodes)
+    incidence. None without face sheets (a charge per circuit node)."""
+    charge_of = getattr(model, 'charge_of', None)
+    if charge_of is None:
+        return None
+    rep = np.zeros(charge_of.max() + 1, int)
+    rep[charge_of] = model.node_of
+    side = getattr(model, 'side_owner', None)
+    if side is not None:
+        rep = np.r_[rep, model.node_of[side]]
+    return coo_matrix((np.ones(len(rep)), (np.arange(len(rep)), rep)), shape=(len(rep), model.n_nodes)).tocsc()
+
+
+def node_potential(model):
+    """The circuit nodes' coefficients of potential, and the charge's spread over each node's copies.
+
+    With face sheets a node's charge is free to move between its copies (both faces, its side panels): they
+    are one conductor at one potential. So for node charges q, the copies hold Pc^-1 Bn v with
+    Bn^T Pc^-1 Bn v = q, i.e. node-level P_eff = (Bn^T Pc^-1 Bn)^-1 and copy charges D q, D = Pc^-1 Bn P_eff.
+    Without face sheets: (model._potential, None)."""
+    Bn = charge_nodes(model)
+    Pc = model._ensure_potential()
+    if Bn is None:
+        return Pc, None
+    cached = getattr(model, '_node_potential', None)
+    if cached is not None and cached[0] is Pc:
+        return cached[1], cached[2]
+    X = dense_solve(Pc, Bn.toarray(), assume_a='sym')    # Pc^-1 Bn (complex symmetric in a lossy stack)
+    C = Bn.T @ X                                         # the node-level capacitance (Maxwell, to infinity)
+    C = (C + C.T) / 2
+    Peff = np.linalg.inv(C)
+    Peff = (Peff + Peff.T) / 2
+    D = X @ Peff
+    model._node_potential = (Pc, Peff, D)
+    return Peff, D
+
+
 def prepare(model):
     """Frequency/excitation-independent projections, reused until parts change."""
-    if getattr(model, 'charge_of', None) is not None:
-        raise NotImplementedError('face sheets with capacitance: capacitance_matrix() only (no AC solve yet)')
     if model._peec is not None:
         return model._peec
     m = model._assemble()
@@ -135,7 +177,7 @@ def prepare(model):
     K = hstack([C[passive][:, cycles], eye(nb, format='csc')[passive][:, np.flatnonzero(tree)]], format='csc')
     nl = len(cycles)
     T = A[:, passive] @ K[:, nl:]
-    P = model._potential
+    P, _ = node_potential(model)
     pscale = np.max(np.abs(P))
     electro = qform(T, P, T) / pscale
     kc = K.tocoo()
@@ -208,7 +250,7 @@ def solve(model, freqs, amps=None):
                        (1 / (jw * model.parts[passive[j] - len(model.br)]['C'])
                         if model.parts[passive[j] - len(model.br)].get('C') else 0)
                        for j in m['part_rows']], complex)
-        if len(passive):
+        if len(passive) and K.shape[1]:                  # (a terminal covering a whole conductor leaves no unknowns)
             cached = m['factors'].pop(float(freq), None)
             if cached is None:
                 Z = R + delta + jw * L + m['E'].T @ (zp[:, None] * m['E'])

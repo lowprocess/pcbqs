@@ -229,12 +229,41 @@ def potential(model):
         provider=core.LayeredEntries(*common,np.ascontiguousarray(pairs.layer,np.int64),
                                      [pairs.images(a,b)[3] for a in range(nl) for b in range(nl)],np.pi,EPS0)
     lo,hi=_boxes(engine)
-    H=HMatrix(entry,lo,hi,dtype=complex if pairs is not None else float,log=model.log,native=provider,
-              workers=engine.info['workers'],**model._compression_options)
     of=model.charge_of if getattr(model,'charge_of',None) is not None else model.node_of   # face sheets: a charge per copy
     nn=int(of.max())+1
-    area=np.bincount(of,weights=g.area,minlength=nn)
-    W=coo_matrix((g.area/area[of],(np.arange(len(g.area)),of)),shape=(len(g.area),nn)).tocsr()
+    tri_area=g.area
+    if getattr(model,'side_charge',False) and getattr(model,'thickness_sheets',1)==2:
+        # the copper's sides: their panel triangles join the compressed kernel (any pair with a panel through the
+        # any-orientation moments; triangle pairs still natively), each panel a charge node of its own
+        from .side_charge import side_panels,_scalar_moments
+        sp=side_panels(model);nt=len(g.area);Tp=sp['tris']
+        # in the model's own coordinates (the fill geometry is centred on the nodes' mean; its boxes are too)
+        Tt=np.concatenate([model.nodes[model.tris],np.repeat(model.z_of[:,None,None],3,1)],-1)
+        shift=np.r_[model.nodes.mean(0),0.]
+        V=np.concatenate([Tt,Tp]);parea=0.5*np.linalg.norm(np.cross(Tp[:,1]-Tp[:,0],Tp[:,2]-Tp[:,0]),axis=1)
+        tri_area=np.r_[g.area,parea];tri_entry=entry
+        def entry(rows,cols):
+            rows,cols=np.asarray(rows),np.asarray(cols);out=np.zeros((len(rows),len(cols)))
+            rt,ct=rows<nt,cols<nt
+            def moments(r,c):                            # the dense path's orders: triangle x panel, and panel
+                M=_scalar_moments(V[r],V[c])              # pairs symmetrised (the close-pair quadrature is not)
+                return M/(tri_area[r][:,None]*tri_area[c][None,:]*4*np.pi*EPS0*model.er)
+            pr,pc=~rt,~ct
+            if rt.any() and ct.any():out[np.ix_(rt,ct)]=tri_entry(rows[rt],cols[ct])
+            if rt.any() and pc.any():out[np.ix_(rt,pc)]=moments(rows[rt],cols[pc])
+            if pr.any() and ct.any():out[np.ix_(pr,ct)]=moments(cols[ct],rows[pr]).T
+            if pr.any() and pc.any():
+                out[np.ix_(pr,pc)]=0.5*(moments(rows[pr],cols[pc])+moments(cols[pc],rows[pr]).T)
+            return out
+        lo=np.r_[lo,V[nt:].min(1)-shift];hi=np.r_[hi,V[nt:].max(1)-shift]
+        provider=None                                    # the compiled provider knows only the flat triangles
+        of=np.r_[of,nn+sp['panel']];nn=nn+len(sp['area'])
+        model.side_owner=sp['owner']
+        model.log(f"mqs: {len(sp['area']):,} side panels carry charge (compressed)")
+    H=HMatrix(entry,lo,hi,dtype=complex if pairs is not None else float,log=model.log,native=provider,
+              workers=engine.info['workers'],**model._compression_options)
+    area=np.bincount(of,weights=tri_area,minlength=nn)
+    W=coo_matrix((tri_area/area[of],(np.arange(len(tri_area)),of)),shape=(len(tri_area),nn)).tocsr()
     # Exact grouped-contact self terms, without computing a node-square array.
     diagonal=np.zeros(nn,dtype=H.dtype)
     order=np.argsort(of,kind='stable');offset=np.r_[0,np.cumsum(np.bincount(of))]
@@ -242,13 +271,14 @@ def potential(model):
         ids=order[offset[node]:offset[node+1]]
         if len(ids)==1:diagonal[node]=H.diagonal[ids[0]]
         else:
-            weights=g.area[ids]/area[node];total=0.
+            weights=tri_area[ids]/area[node];total=0.
             for start in range(0,len(ids),64):
                 for stop in range(0,len(ids),64):
                     a,b=ids[start:start+64],ids[stop:stop+64]
                     total+=weights[start:start+len(a)]@entry(a,b)@weights[stop:stop+len(b)]
             diagonal[node]=total
     P=PotentialOperator(H,W,diagonal)
+    P.node_area=area                                  # each charge node's area (side panels included)
     model.fill_info['capacitance']=dict(engine.info,**H.info,seconds=time.perf_counter()-started,matrix_backend='hierarchical')
     model.fill_info['capacitance']['bytes']=P.storage_bytes
     if pairs is not None:model.fill_info['capacitance']['image_fill']=pairs.info

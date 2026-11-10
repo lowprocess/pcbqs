@@ -54,6 +54,15 @@ def _prepare(model):
     ldiag = np.r_[ld, _diagonal(Lv) if model.nv else np.zeros(0), np.zeros(len(model.parts))]
     # face sheets (thickness_sheets=2): an edge's two copies are nearly one conductor (35 um apart), so the
     # preconditioner keeps each pair's 2x2 block: their mutual inductance, exactly, in chunks
+    pairs, lpair = face_pairs(model, Le)
+    model._mqs_iter = dict(C=C, Cf=C[:, free], Cs=C[:, sc], src=src, sc=sc, free=free, A=A, passive=passive,
+                           cotree=cotree, keep=keep, ldiag=ldiag, pairs=pairs, lpair=lpair)
+    return model._mqs_iter
+
+
+def face_pairs(model, Le):
+    """Face sheets: the (2, P) edge pairs (an edge on one face, the same edge on the other) and their mutual
+    partial inductance, exactly, for the preconditioners' 2x2 blocks. Empty without face sheets."""
     pairs = np.hstack(getattr(model, '_face_pairs', [])) if getattr(model, '_face_pairs', None) else np.zeros((2, 0), int)
     lpair = np.zeros(pairs.shape[1])
     for k in range(0, pairs.shape[1], 256):
@@ -64,9 +73,9 @@ def _prepare(model):
             lpair[k:k + 256] = _pair_mutual(model, e, g)
         else:
             lpair[k:k + 256] = np.asarray(Le)[e, g]
-    model._mqs_iter = dict(C=C, Cf=C[:, free], Cs=C[:, sc], src=src, sc=sc, free=free, A=A, passive=passive,
-                           cotree=cotree, keep=keep, ldiag=ldiag, pairs=pairs, lpair=lpair)
-    return model._mqs_iter
+    if getattr(model, 'thick_kernel', False) and pairs.shape[1]:
+        lpair = lpair + np.asarray(model._thick_correction()[pairs[0], pairs[1]]).ravel()
+    return pairs, lpair
 
 
 def _pair_mutual(model, e, g):

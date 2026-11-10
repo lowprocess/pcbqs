@@ -54,3 +54,71 @@ def test_face_sheets_in_a_layered_dielectric():
         C, _, tl = q.capacitance_matrix()
         cs.append(abs(np.real(np.asarray(C))[tl['T'], tl['G']]))
     assert 1.0 < cs[1] / cs[0] < 1.08
+
+
+def _differential(C, t):
+    """Two conductors driven against each other (net charge zero): the capacitance the port sees."""
+    a, b = t['T'], t['G']
+    return (C[a, a] * C[b, b] - C[a, b] ** 2) / (C[a, a] + C[b, b] + 2 * C[a, b])
+
+
+@pytest.mark.parametrize('side', [False, True])
+def test_ac_solve_with_face_sheets_matches_their_capacitance(side):
+    """The AC PEEC solve with face sheets: at 1 kHz the open trace is the capacitance its faces (and sides) carry,
+    the same as capacitance_matrix; the charge stays free to move between a node's copies."""
+    q = MQS(microstrip(), {'T', 'G'}, terminals=TERMS, dmax=0.5, capacitance=True, er=1.0, conductor_loss='slab',
+            thickness_sheets=2, side_charge=side, log=lambda *a: None)
+    C, _, tl = q.capacitance_matrix()
+    Cd = _differential(np.real(np.asarray(C)), tl)
+    q.source('port', 'T', 'G', part_h=0.0)
+    f = np.array([1e3])
+    z = np.asarray(q.solve(f).z['port'])
+    assert (-1 / (2 * np.pi * f * z.imag))[0] == pytest.approx(Cd, rel=1e-6)
+
+
+def test_face_sheets_ac_solve_on_the_compressed_backend():
+    """The compressed backend solves face sheets with capacitance through extra unknowns (the charge moving between
+    a node's copies), to the dense backend's answer, from the electrostatic to the inductive regime."""
+    out = {}
+    for back in ('dense', 'hierarchical'):
+        q = MQS(microstrip(), {'T', 'G'}, terminals=TERMS, dmax=0.5, capacitance=True, er=1.0,
+                conductor_loss='slab', thickness_sheets=2, matrix_backend=back, log=lambda *a: None)
+        q.source('port', 'T', 'G', part_h=0.0)
+        r = q.solve(np.array([1e3, 1e8, 2e9]))
+        out[back] = (np.asarray(r.z['port']), r.charge)
+        if back == 'hierarchical':
+            assert max(i['relative_residual'] for i in q.solve_info) < 1e-7
+    np.testing.assert_allclose(out['hierarchical'][0], out['dense'][0], rtol=1e-4)
+    np.testing.assert_allclose(out['hierarchical'][1], out['dense'][1], rtol=1e-3, atol=1e-18)
+
+
+@pytest.mark.parametrize('pre', ['auto', 'graph'])
+def test_side_charge_on_the_compressed_backend(pre):
+    """Side panels join the compressed potential (panel pairs through the any-orientation moments): the
+    capacitance and the AC solve match the dense backend's, with either preconditioner."""
+    out = {}
+    for back in ('dense', 'hierarchical'):
+        q = MQS(microstrip(), {'T', 'G'}, terminals=TERMS, dmax=0.5, capacitance=True, er=1.0,
+                conductor_loss='slab', thickness_sheets=2, side_charge=True, matrix_backend=back,
+                log=lambda *a: None)
+        q.solver_preconditioner = pre
+        C, _, tl = q.capacitance_matrix()
+        q.source('port', 'T', 'G', part_h=0.0)
+        out[back] = (_differential(np.real(np.asarray(C)), tl), np.asarray(q.solve(np.array([1e3, 1e8, 2e9])).z['port']))
+        if back == 'hierarchical':
+            assert max(i['iterations'] for i in q.solve_info) < 200
+    assert out['hierarchical'][0] == pytest.approx(out['dense'][0], rel=1e-4)
+    np.testing.assert_allclose(out['hierarchical'][1], out['dense'][1], rtol=1e-4)
+
+
+def test_face_sheets_ac_solve_in_a_layered_dielectric():
+    """dielectric='stack' with face sheets: the AC solve's 1 kHz capacitance is capacitance_matrix's."""
+    b = microstrip()
+    b['stack']['layers'][0].update(er=4.4, tand=0.02)
+    q = MQS(b, {'T', 'G'}, terminals=TERMS, dmax=0.5, capacitance=True, dielectric='stack', conductor_loss='slab',
+            thickness_sheets=2, log=lambda *a: None)
+    C, _, tl = q.capacitance_matrix()
+    q.source('port', 'T', 'G', part_h=0.0)
+    f = np.array([1e3])
+    y = 1 / np.asarray(q.solve(f).z['port'])[0]
+    assert (y / (2j * np.pi * f[0])) == pytest.approx(_differential(np.asarray(C), tl), rel=1e-6)

@@ -133,10 +133,11 @@ class MQS:
         # FastHenry they were right only far from a plane, +200% R at 100 MHz with a plane 0.1 mm away, while the
         # uncorrected faces are within ~10% everywhere tested). The external field sets how the current divides:
         # the proximity effect a single sheet's slab cannot give (C14, validation/mqs_fasthenry.py).
-        # thickness_sheets: default two face sheets with conductor_loss='slab' (inductance only, homogeneous dielectric:
-        # validated against FastHenry, validation/README.md), else one sheet
+        # thickness_sheets: default two face sheets with conductor_loss='slab' (validated against FastHenry for
+        # inductance and FasterCap for capacitance, validation/README.md; with capacitance a node's two faces share
+        # its charge, peec.node_potential), else one sheet
         if thickness_sheets is None:
-            thickness_sheets = 2 if conductor_loss == 'slab' and not capacitance and dielectric == 'homogeneous' else 1
+            thickness_sheets = 2 if conductor_loss == 'slab' else 1
         # thickness_sheets=N with conductor_loss='dc' (experimental, the reference): N sheets at the centres of N
         # slices of the copper (cosine-graded: thinner at the faces, where the skin is), each at its slice's DC
         # sheet resistance, a triangle's copies one node. Skin
@@ -161,10 +162,10 @@ class MQS:
         # over their slabs' thickness (thick.py), which bounds the edge current a zero-thickness sheet makes singular
         self.thick_kernel = bool(thick_kernel)
         # side_charge=True (experimental): with capacitance and face sheets, the copper's sides as charged panels
-        # between the faces (side_charge.py; no current), dense backend, homogeneous dielectric
-        if side_charge and not (capacitance and matrix_backend == 'dense' and dielectric == 'homogeneous'):
-            raise NotImplementedError("side_charge needs capacitance=True, matrix_backend='dense', a homogeneous "
-                                      "dielectric and thickness_sheets=2")
+        # between the faces (side_charge.py; no current), homogeneous dielectric (either backend)
+        if side_charge and not (capacitance and dielectric == 'homogeneous'):
+            raise NotImplementedError("side_charge needs capacitance=True, a homogeneous dielectric and "
+                                      "thickness_sheets=2")
         self.side_charge = bool(side_charge)
         self._thick_D = None
         # ideal_terminals (default): a terminal's (and a via fan's) inner sheet edges carry no loop current, the
@@ -526,11 +527,12 @@ class MQS:
         n_rwg = getattr(self, 'n_rwg', len(self.br))
         for k in np.flatnonzero(~tree):
             a, b = ends[k]
-            if a == b and k < n_rwg and getattr(self, 'ideal_terminals', True) and not self.capacitance:
+            if a == b and k < n_rwg and getattr(self, 'ideal_terminals', True):
                 # a sheet edge inside one node (a terminal's pads, a via's fan) is inside an ideal equipotential: no
                 # loop. As its own loop it carried eddy current that the field drove and the sheet resistance
                 # dissipated: an isolated 20 mm strip's terminals took 15% of its R at 1 MHz (FastHenry, 2D PEEC).
-                # (Inductance-only models; the capacitance (PEEC) path keeps its own charge-continuity treatment.)
+                # With capacitance too: both ends are one node, so the edge's incidence column is zero and charge
+                # continuity does not see it.
                 continue
             if find(a) != find(b):                                # its ends on copper joined only through it
                 dead.append(k)

@@ -74,8 +74,8 @@ def test_thick_kernel_gives_a_bars_inductance_on_both_backends():
 
 
 def test_slab_loss_defaults_to_two_face_sheets():
-    """conductor_loss='slab' without capacitance: two face sheets by default (validated against FastHenry); one sheet
-    with capacitance (face sheets carry no charge yet) or when asked."""
+    """conductor_loss='slab': two face sheets by default (validated against FastHenry; with capacitance too, each
+    face carrying its own charge); one sheet when asked, or with 'dc' loss."""
     q = MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', log=lambda *a: None)
     assert q.thickness_sheets == 2
     assert MQS(strip(), {'S'}, terminals=TERMS, conductor_loss='slab', thickness_sheets=1,

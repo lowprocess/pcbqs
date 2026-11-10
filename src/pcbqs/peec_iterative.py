@@ -41,7 +41,7 @@ def _tree_preconditioner(m,diagonal,zscale):
     return LinearOperator((K.shape[1],K.shape[1]),matvec=apply,dtype=complex),size
 
 
-def _graph_preconditioner(m,diagonal,zscale):
+def _graph_preconditioner(m,diagonal,zscale,resistance=None,jw=0):
     """Graph solve for loop impedance, followed by a stable charge-tree solve.
 
     The graph Laplacian applies the inverse of Kc.T diag(Z) Kc without forming
@@ -53,20 +53,31 @@ def _graph_preconditioner(m,diagonal,zscale):
     Kc,Kt=K[:,:nl],K[:,nl:];cotree=m['cotree']
     position=np.full(A.shape[1],-1,int);position[passive]=np.arange(len(passive))
     d=diagonal[passive].copy();d[abs(d)<zscale*1e-12]=zscale*1e-12
-    inverse=1/d;Ap=A[:,passive]
-    graph=(Ap@diags(inverse)@Ap.T).tocsc()
+    Ap=A[:,passive]
+    # the passive branches' impedance inverse: diagonal, with each face-sheet edge pair's 2x2 block inverted
+    e,g=m['pairs'] if resistance is not None else (np.zeros(0,int),np.zeros(0,int))
+    dinv=1/d;rows,cols,vals=[np.arange(len(d))],[np.arange(len(d))],[dinv]
+    if len(e):
+        pe,pg=position[e],position[g];ok=(pe>=0)&(pg>=0);pe,pg=pe[ok],pg[ok]
+        zpair=(np.asarray(resistance[e,g]).ravel()+jw*m['lpair'])[ok]
+        det=d[pe]*d[pg]-zpair**2
+        dinv=dinv.copy();dinv[pe]=d[pg]/det;dinv[pg]=d[pe]/det
+        rows,cols,vals=[np.arange(len(d)),pe,pg],[np.arange(len(d)),pg,pe],[dinv,-zpair/det,-zpair/det]
+    Dinv=coo_matrix((np.concatenate(vals),(np.concatenate(rows),np.concatenate(cols))),shape=(len(d),len(d))).tocsr()
+    Zb=_branch_surrogate(m,diagonal,resistance,jw) if resistance is not None else diags(diagonal).tocsc()
+    graph=(Ap@Dinv@Ap.T).tocsc()
     lu=spilu(graph[keep][:,keep].tocsc(),drop_tol=1e-6,fill_factor=20)
     # Reuse the charge-coordinate inverse, whose tree block is independent of
     # the loop-diagonal block discarded here.
     charge_inverse,base_bytes=_tree_preconditioner(m,diagonal,zscale)
     def apply(y):
         force=np.zeros(A.shape[1],complex);force[cotree]=zscale*y[:nl]
-        trial=inverse*force[passive]
+        trial=Dinv@force[passive]
         voltage=np.zeros(A.shape[0],complex)
         voltage[keep]=lu.solve(np.asarray(Ap@trial).ravel()[keep])
-        loop=(trial-inverse*(Ap.T@voltage))[position[cotree]]
+        loop=(trial-Dinv@(Ap.T@voltage))[position[cotree]]
         rhs=y.copy()
-        rhs[nl:]-=np.asarray(Kt.T@(diagonal*(Kc@loop))).ravel()/zscale
+        rhs[nl:]-=np.asarray(Kt.T@(Zb@(Kc@loop))).ravel()/zscale
         result=charge_inverse@rhs;result[:nl]=loop
         return result
     size=base_bytes+sum(s.data.nbytes+s.indices.nbytes+s.indptr.nbytes for s in (lu.L,lu.U))
@@ -137,11 +148,82 @@ def prepare(model):
     # exact in operator products. No dense projection is used for the solution.
     Le,Lv=m['L'];vdiag=Lv.diagonal() if callable(Lv.diagonal) else Lv.diagonal
     ldiag=np.r_[Le.diagonal,vdiag,np.zeros(len(model.parts))]
+    from .mqs_iterative import face_pairs
+    pairs,lpair=face_pairs(model,Le)                 # face sheets: each edge pair's 2x2 block in the surrogates
+    copies=_charge_copies(model,P)
+    if copies is not None:
+        P=copies['node_P'];pscale=max(float(np.max(abs(copies['Pc'].diagonal))),np.finfo(float).tiny)
     model._peec=dict(A=A,K=K,T=T,P=P,nl=nl,B=B,keep=keep,tree_lu=tree_lu,
                      sources=sources,passive=passive,names=names,pscale=pscale,
                      source_components=(A[:,sources].T@B).toarray(),ldiag=ldiag,
-                     backend='hierarchical',factorizations=0,factor_bytes=0,cotree=cotree)
+                     backend='hierarchical',factorizations=0,factor_bytes=0,cotree=cotree,copies=copies,
+                     pairs=pairs,lpair=lpair)
     return model._peec
+
+
+def _near_field(Pc,nc):
+    """The dense leaves of a PotentialOperator's compressed kernel as a sparse charge-node matrix (W^T H_near W),
+    its exact diagonal kept."""
+    H,W=Pc.kernel,Pc.weights
+    rows,cols,vals=[],[],[]
+    for a,b,u,v,same in H.blocks:
+        if v is not None:continue
+        r,c=np.meshgrid(a,b,indexing='ij')
+        rows.append(r.ravel());cols.append(c.ravel());vals.append(np.asarray(u).ravel())
+        if not same:rows.append(c.ravel());cols.append(r.ravel());vals.append(np.asarray(u).ravel())
+    nt=H.shape[0]
+    Hn=coo_matrix((np.concatenate(vals) if vals else np.zeros(0),(np.concatenate(rows) if rows else np.zeros(0,int),
+                   np.concatenate(cols) if cols else np.zeros(0,int))),shape=(nt,nt)).tocsr()
+    Ps=(W.T@Hn@W).tocsr().astype(complex)
+    Ps.setdiag(np.asarray(Pc.diagonal,complex))
+    return Ps.tocsc()
+
+
+def _branch_surrogate(m,diagonal,resistance,jw):
+    """The branches' impedance for the preconditioner: each branch's own, and for face-sheet edge pairs their
+    coupling (resistance + jw mutual inductance, nearly the self terms: current circulating between the faces is
+    cheap, which a diagonal misses)."""
+    nb=len(diagonal);e,g=m['pairs']
+    if not len(e):return diags(diagonal).tocsc()
+    zpair=np.asarray(resistance[e,g]).ravel()+jw*m['lpair']
+    return (diags(diagonal)+coo_matrix((np.r_[zpair,zpair],(np.r_[e,g],np.r_[g,e])),shape=(nb,nb))).tocsc()
+
+
+class _NodeDiagonal:
+    """Face sheets: the node-level potential's diagonal, for the preconditioners only (each node's copies'
+    diagonal, area-weighted). Products go through the copies (_charge_copies)."""
+    def __init__(self,diagonal):self.diagonal=diagonal
+
+
+def _charge_copies(model,Pc):
+    """Face sheets with capacitance: the copies' charges q_c = D0 q + N u, D0 spreading a node's charge over its
+    copies by area and N's columns (copy i minus the node's first copy) moving it between them; u are extra
+    unknowns, held by N^T Pc q_c = 0 (a node's copies at one potential). None without face sheets."""
+    from .peec import charge_nodes
+    Bn=charge_nodes(model)
+    if Bn is None:return None
+    nc=Bn.shape[0];node=np.asarray(Bn.tocsr().indices)
+    area_c=np.asarray(getattr(Pc,'node_area',None) if getattr(Pc,'node_area',None) is not None else
+                      np.bincount(model.charge_of,weights=model.rwg.area,minlength=nc),float)
+    area_n=np.bincount(node,weights=area_c,minlength=model.n_nodes)
+    D0=coo_matrix((area_c/area_n[node],(np.arange(nc),node)),shape=(nc,model.n_nodes)).tocsc()
+    order=np.argsort(node,kind='stable');first=np.full(model.n_nodes,-1)
+    seen=np.zeros(model.n_nodes,bool);rows,cols,vals=[],[],[];npair=0
+    for c in order:
+        k=node[c]
+        if not seen[k]:seen[k]=True;first[k]=c;continue
+        rows+=[c,first[k]];cols+=[npair,npair];vals+=[1.,-1.];npair+=1
+    N=coo_matrix((vals,(rows,cols)),shape=(nc,npair)).tocsc()
+    # a sparse surrogate of Pc for the preconditioner: the compressed matrix's dense (near-field) leaves, exact
+    # for every close pair. The redistribution block N^T Pc N is differences of near-equal terms whose neighbour
+    # couplings are as large as its diagonal, so a diagonal surrogate converges slowly. Its diagonal (a copy and
+    # the node's first copy, always near) comes from it exactly
+    Ps=_near_field(Pc,nc)
+    du=np.asarray((N.T@Ps@N).diagonal(),complex)
+    scale=float(np.max(abs(np.asarray(Pc.diagonal)))) if nc else 1.
+    du[abs(du)<=1e-12*scale]=scale                     # (never expected: a guard against a zero pivot)
+    node_diag=np.asarray(D0.T@Pc.diagonal).ravel()
+    return dict(Bn=Bn,D0=D0,N=N,du=du,Pc=Pc,Ps=Ps,node_P=_NodeDiagonal(node_diag),nu=N.shape[1])
 
 
 def solve(model,freqs,amps=None):
@@ -160,7 +242,9 @@ def solve(model,freqs,amps=None):
     qpart=np.zeros(model.n_nodes,complex);vpart=np.zeros(B.shape[1],complex)
     if np.any(totals):
         if 'PinvB' not in m:
-            m['PinvB']=potential_solve(model,B.toarray())
+            cp=m['copies']
+            if cp is None:m['PinvB']=potential_solve(model,B.toarray())
+            else:m['PinvB']=np.asarray(cp['Bn'].T@potential_solve(model,(cp['Bn']@B).toarray()))
             m['component']=B.T@m['PinvB']
         vpart=np.linalg.solve(m['component'],-totals);qpart=m['PinvB']@vpart
     y0=m['tree_lu'].solve((-drive-qpart)[m['keep']]) if m['tree_lu'] is not None else np.zeros(0,complex)
@@ -179,12 +263,20 @@ def solve(model,freqs,amps=None):
         def impedance(x):return resistance@x+jw*model._inductive_voltage(x)+zp*x
         diagonal=resistance.diagonal()+jw*m['ldiag']+zp
         zscale=max(float(np.max(abs(diagonal))),np.finfo(float).tiny);alpha=zscale/m['pscale']
-        def product(x):
+        cp=m['copies'];nu=cp['nu'] if cp is not None else 0
+        def product(y):
+            x=y[:n]
             branch=K[:,:nl]@x[:nl]+jw*alpha*(K[:,nl:]@x[nl:])
-            out=np.asarray(K.T@impedance(branch)).ravel()/zscale
-            out[nl:]+=np.asarray(T.T@(P@(T@x[nl:]))).ravel()/m['pscale']
+            out=np.zeros(n+nu,complex)
+            out[:n]=np.asarray(K.T@impedance(branch)).ravel()/zscale
+            if cp is None:
+                out[nl:n]+=np.asarray(T.T@(P@(T@x[nl:]))).ravel()/m['pscale']
+            else:                                        # through the copies: q_c = D0 T x + N u
+                vc=cp['Pc']@(cp['D0']@(T@x[nl:])+cp['N']@y[n:])
+                out[nl:n]+=np.asarray(T.T@(cp['D0'].T@vc)).ravel()/m['pscale']
+                out[n:]=np.asarray(cp['N'].T@vc).ravel()/m['pscale']
             return out
-        rhs=-np.asarray(K.T@impedance(baseline)).ravel()/zscale
+        rhs=np.r_[-np.asarray(K.T@impedance(baseline)).ravel()/zscale,np.zeros(nu,complex)]
         history=[];preconditioner_bytes=0
         kind='none'
         if n:
@@ -198,27 +290,36 @@ def solve(model,freqs,amps=None):
                 kind='tree_diagonal'
             elif preconditioner=='graph' or estimated_bytes>_PROJECTED_PRECONDITIONER_BYTES:
                 try:
-                    M,preconditioner_bytes=_graph_preconditioner(m,diagonal,zscale)
+                    M,preconditioner_bytes=_graph_preconditioner(m,diagonal,zscale,resistance,jw)
                     kind='graph_ilu'
                 except RuntimeError:
                     M,preconditioner_bytes=_tree_preconditioner(m,diagonal,zscale)
                     kind='tree_diagonal'
             else:
-                approx=(K.T@diags(diagonal)@K).tocsc()/zscale
+                approx=(K.T@_branch_surrogate(m,diagonal,resistance,jw)@K).tocsc()/zscale
                 scaling=np.r_[np.ones(nl),np.full(n-nl,jw*alpha)]
                 approx=approx@diags(scaling)
-                electric=(T.T@diags(P.diagonal)@T).tocsc()/m['pscale']
-                approx=approx+block_diag((coo_matrix((nl,nl)),electric),format='csc')
+                if cp is None:
+                    electric=(T.T@diags(P.diagonal)@T).tocsc()/m['pscale']
+                    approx=approx+block_diag((coo_matrix((nl,nl)),electric),format='csc')
+                else:                                    # the copies' unknowns in the same surrogate
+                    G=hstack((cp['D0']@T,cp['N']),format='csc')
+                    electric=(G.T@cp['Ps']@G).tocsc()/m['pscale']
+                    approx=block_diag((approx,coo_matrix((nu,nu))),format='csc')
+                    approx=approx+block_diag((coo_matrix((nl,nl)),electric),format='csc')
                 try:
                     lu=spilu(approx.tocsc(),drop_tol=1e-4,fill_factor=10)
-                    M=LinearOperator((n,n),matvec=lu.solve,dtype=complex)
+                    M=LinearOperator(approx.shape,matvec=lu.solve,dtype=complex)
                     preconditioner_bytes=sum(mat.data.nbytes+mat.indices.nbytes+mat.indptr.nbytes for mat in (lu.L,lu.U))
                     kind='projected_ilu'
                 except RuntimeError:
                     d=approx.diagonal();d[abs(d)<np.finfo(float).tiny]=1
-                    M=LinearOperator((n,n),matvec=lambda x:x/d,dtype=complex)
+                    M=LinearOperator(approx.shape,matvec=lambda x:x/d,dtype=complex)
                     kind='diagonal'
-            op=LinearOperator((n,n),matvec=product,dtype=complex)
+            if cp is not None and M.shape[0]==n:         # tree/graph preconditioners: the copies' block diagonal
+                Mx,du=M,cp['du']/m['pscale']
+                M=LinearOperator((n+nu,n+nu),matvec=lambda y,Mx=Mx,du=du:np.r_[Mx@y[:n],y[n:]/du],dtype=complex)
+            op=LinearOperator((n+nu,n+nu),matvec=product,dtype=complex)
             log(f'peec: {freq:g} Hz, {n:,} unknowns, {kind}, {preconditioner_bytes/1024**2:.2f} MiB preconditioner')
             try:
                 x,residual=_gmres(op,rhs,M,model.solver_tol,model.solver_maxiter,history,log,restart)
@@ -227,10 +328,11 @@ def solve(model,freqs,amps=None):
                     relative_residual=error.relative_residual,preconditioner=kind,converged=False,
                     preconditioner_bytes=preconditioner_bytes,residual_history=history))
                 raise
-            correction=alpha*x[nl:]
-            currents[fi]=baseline+K[:,:nl]@x[:nl]+jw*(K[:,nl:]@correction)
+            correction=alpha*x[nl:n]
+            currents[fi]=baseline+K[:,:nl]@x[:nl]+jw*(K[:,nl:n]@correction)
             charge[fi]=qpart/jw-T@correction
-            pcorrection=P@(T@correction)
+            if cp is None:pcorrection=P@(T@correction)
+            else:pcorrection=np.asarray(cp['D0'].T@(cp['Pc']@(cp['D0']@(T@correction)+cp['N']@(alpha*x[n:])))).ravel()
             potential[fi]=np.asarray(B@vpart).ravel()/jw-pcorrection
             voltage=source_voltage/jw+A[:,sources].T@pcorrection
         else:

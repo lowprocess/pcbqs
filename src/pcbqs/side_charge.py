@@ -1,4 +1,4 @@
-"""Charge on the copper's sides (capacitance with face sheets; experimental, dense, homogeneous dielectric).
+"""Charge on the copper's sides (capacitance with face sheets; experimental, homogeneous dielectric, either backend).
 
 Two face sheets (thickness_sheets=2) give thick copper's charge its two faces, but not its sides: between two traces
 0.1 mm apart the facing sides are a small parallel-plate capacitor, and without them the mutual capacitance was 30%
