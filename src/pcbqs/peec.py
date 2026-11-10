@@ -98,7 +98,16 @@ def capacitance_matrix(model):
     a, b = np.asarray(model.br, int).reshape(-1, 2).T
     graph = coo_matrix((np.ones(len(a)), (a, b)), shape=(model.n_nodes, model.n_nodes))
     n, labels = connected_components(graph, directed=False)
-    B = np.eye(n)[labels]
+    charge_of = getattr(model, 'charge_of', None)
+    if charge_of is not None:                            # face sheets: a charge per triangle copy, on its node's conductor
+        rep = np.zeros(charge_of.max() + 1, int)
+        rep[charge_of] = model.node_of
+        side = getattr(model, 'side_owner', None)
+        if side is not None:                             # side panels: their triangles' nodes
+            rep = np.r_[rep, model.node_of[side]]
+        B = np.eye(n)[labels[rep]]
+    else:
+        B = np.eye(n)[labels]
     if model.matrix_backend == 'hierarchical':
         from .peec_iterative import potential_solve
         C = B.T @ potential_solve(model,B)
@@ -109,6 +118,8 @@ def capacitance_matrix(model):
 
 def prepare(model):
     """Frequency/excitation-independent projections, reused until parts change."""
+    if getattr(model, 'charge_of', None) is not None:
+        raise NotImplementedError('face sheets with capacitance: capacitance_matrix() only (no AC solve yet)')
     if model._peec is not None:
         return model._peec
     m = model._assemble()

@@ -97,7 +97,12 @@ In order:
    - Side walls: vertical strips joining the faces along copper edges. These need vertical-panel kernels,
      because today's integrals assume horizontal triangles. That covers the plane case's remaining current
      and the thin-trace capacitance (+12% missing).
-   - Charge on the face sheets (capacitance with thickness), then `dielectric='stack'` with faces.
+   - Charge on the face sheets (capacitance with thickness), then `dielectric='stack'` with faces. Done for the
+     homogeneous dielectric (2026-11-10): each face copy carries its own charge (`charge_of`), and
+     `side_charge=True` puts charged panels on the copper's sides (`side_charge.py`, dense). Against FasterCap's
+     copper boxes in air: plates -0.3%, microstrip -2.5% (two faces alone -7.5%, one sheet against thick +17% low),
+     two traces 0.1 mm apart self -5.5..-7.5%, mutual -10..-13% (faces alone -30%; the rest is the narrow-gap
+     edge-charge resolution, as one sheet's against thin copper). Capacitance_matrix only; no AC solve with faces.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 

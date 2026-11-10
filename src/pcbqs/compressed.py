@@ -231,12 +231,14 @@ def potential(model):
     lo,hi=_boxes(engine)
     H=HMatrix(entry,lo,hi,dtype=complex if pairs is not None else float,log=model.log,native=provider,
               workers=engine.info['workers'],**model._compression_options)
-    area=np.bincount(model.node_of,weights=g.area,minlength=model.n_nodes)
-    W=coo_matrix((g.area/area[model.node_of],(np.arange(len(g.area)),model.node_of)),shape=(len(g.area),model.n_nodes)).tocsr()
+    of=model.charge_of if getattr(model,'charge_of',None) is not None else model.node_of   # face sheets: a charge per copy
+    nn=int(of.max())+1
+    area=np.bincount(of,weights=g.area,minlength=nn)
+    W=coo_matrix((g.area/area[of],(np.arange(len(g.area)),of)),shape=(len(g.area),nn)).tocsr()
     # Exact grouped-contact self terms, without computing a node-square array.
-    diagonal=np.zeros(model.n_nodes,dtype=H.dtype)
-    order=np.argsort(model.node_of,kind='stable');offset=np.r_[0,np.cumsum(np.bincount(model.node_of))]
-    for node in range(model.n_nodes):
+    diagonal=np.zeros(nn,dtype=H.dtype)
+    order=np.argsort(of,kind='stable');offset=np.r_[0,np.cumsum(np.bincount(of))]
+    for node in range(nn):
         ids=order[offset[node]:offset[node+1]]
         if len(ids)==1:diagonal[node]=H.diagonal[ids[0]]
         else:
