@@ -11,6 +11,7 @@ the plane a uniform grid.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -74,16 +75,19 @@ EP NP0 NP1 w=1.2 h={T}
 CASES = dict(loop=loop_inp, plane_return=plane_return_inp)
 
 
-def fasthenry(name, inp, f, folder, timeout=None):
+def fasthenry(name, inp, f, folder, timeout=None, options=()):
     """Run FastHenry on `inp` in `folder`; its console output goes to fasthenry.log as it runs (a board-sized model
-    takes hours: watch it there). Returns (f, R, L) from Zc.mat."""
+    takes hours: watch it there). `options`: extra command-line flags (e.g. -t 1e-2 -b 1e-1, looser GMRES
+    tolerances than the defaults 1e-3 and 1e-2). Returns (f, R, L) from Zc.mat."""
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'Zc.mat').unlink(missing_ok=True)      # never read a previous run's result
     # FastHenry reads the first line as the title: without one it swallows `.units mm` (and solves in metres)
     (folder / f'{name}.inp').write_text(f'* pcbqs validation: {name}\n' + inp
                                         + f'.freq fmin={f[0]:g} fmax={f[-1]:g} ndec=1\n.end\n')
     with open(folder / 'fasthenry.log', 'w') as log:
-        subprocess.run([FASTHENRY, f'{name}.inp'], cwd=folder, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
+        line = ['stdbuf', '-oL'] if shutil.which('stdbuf') else []      # its stdio buffers 4 KB when not a tty
+        subprocess.run([*line, FASTHENRY, *options, f'{name}.inp'], cwd=folder, stdout=log, stderr=subprocess.STDOUT,
+                       timeout=timeout)
     text = (folder / 'Zc.mat').read_text()           # FastHenry exits non-zero even when it has finished
     rows = [tuple(map(float, m)) for m in
             re.findall(r'frequency = ([0-9.e+-]+) 1 x 1\s+([-0-9.e+]+)\s+([-0-9.e+]+)j', text)]

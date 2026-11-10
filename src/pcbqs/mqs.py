@@ -375,7 +375,11 @@ class MQS:
             if hasattr(Le, 'entry') and Le.entry is None:
                 raise ValueError('thickness_sheets=2 needs a freshly filled inductance (a cached, unpickled '
                                  'operator keeps no exact entries)')
-            if getattr(self, 'face_correction', 'pair') == 'overlap':
+            mode = getattr(self, 'face_correction', 'pair')
+            if mode == 'none':                       # the raw partial inductance between the faces (diagnostics)
+                self._face_c = (np.zeros(0, int), np.zeros(0, int), np.zeros(0))
+                return self._face_c
+            if mode == 'overlap':
                 pair_of = np.full(self.ne, -1)
                 pair_of[e] = np.arange(len(e))
                 r = self.rwg

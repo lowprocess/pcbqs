@@ -10,6 +10,7 @@ Palace's lumped port fills the gap; pcbqs's source and FastHenry's external pair
 lines in FastHenry) along the gap's two edges, so no tool shorts pad copper the others don't (C13).
 """
 import json
+import os
 import pickle
 import sys
 import time
@@ -32,6 +33,17 @@ BRIDGES = dict(C704=box(126.79, -67.29, 127.69, -65.84), C705=box(126.79, -69.26
 FINE = box(124.28, -74.51, 129.69, -64.84)            # the pads' envelope + 1 mm: pcbqs's fine zone
 F = np.array([1e6, 1e7, 1e8])
 DIR = OUT / 'cm5'
+LAYERS = None                                         # all six
+THICK = {}                                            # layer: thickness (mm), overriding the board's
+VARIANT = os.environ.get('CM5_VARIANT', '')
+if VARIANT.startswith('lite') or VARIANT == 'top':
+    # CM5-lite, for a FastHenry answer in minutes: F.Cu and In1 (the GND plane 0.1 mm below, the loop's main return)
+    # only, the pads + 1.5 mm, the vias between those two layers. The same copper in every tool, so like for like.
+    # Diagnostic variants: lite_t35 (In1 35 um instead of 15) and top (F.Cu alone, its own GND pour the return).
+    REGION = box(123.78, -75.01, 130.19, -64.34)
+    LAYERS = ('F.Cu',) if VARIANT == 'top' else ('F.Cu', 'In1.Cu')
+    THICK = {'In1.Cu': 0.035} if VARIANT == 'lite_t35' else {}
+    DIR = OUT / f'cm5_{VARIANT}'
 
 
 def case():
@@ -43,6 +55,9 @@ def case():
     from pcbqs.pdn.mesh import copper_of
     b = load_board(CM5, set(NETS))
     copper = {}
+    if LAYERS:
+        b['stack'] = dict(b['stack'], copper=[dict(c, t=THICK.get(c['name'], c['t'])) for c in b['stack']['copper']
+                                              if c['name'] in LAYERS])
     for c in b['stack']['copper']:
         lay = c['name']
         for n in NETS:
@@ -56,6 +71,9 @@ def case():
         assert top.buffer(1e-6).contains(s), f'sliver {name} is not on F.Cu copper'
     copper['F.Cu'] += [dict(net='CAP', polygon=mapping(p)) for p in BRIDGES.values()]
     vias = [v for v in b['vias'] if v.get('net') in NETS and REGION.contains(Point(v['x'], v['y']))]
+    if LAYERS:                                        # a via spans the kept layers only
+        z = [c['z'] for c in b['stack']['copper']]
+        vias = [dict(v, z0=max(v['z0'], min(z)), z1=min(v['z1'], max(z))) for v in vias] if len(z) > 1 else []
     out = dict(stack=b['stack'], copper=copper, vias=vias, outline=mapping(REGION), prims=dict(footprints=[]))
     DIR.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(pickle.dumps(out))
@@ -88,7 +106,7 @@ def geometry():
         ax.tick_params(labelsize=7)
     fig.suptitle('CM5 U702 input loop: +5V (orange), GND (blue), capacitor bridges (green), port (black)', fontsize=10)
     fig.tight_layout()
-    fig.savefig(IMAGES / 'cm5_geometry.png', dpi=130)
+    fig.savefig(IMAGES / f'{DIR.name}_geometry.png', dpi=130)
     plt.close(fig)
 
 
@@ -178,23 +196,55 @@ def fasthenry_inp(p, nh_outer=5, nh_inner=3):
     return head + '\n'.join(lines) + f"\n.external {ends['A'][0]} {ends['B'][0]}\n", n_seg
 
 
-def fasthenry(p, nh_outer=5, nh_inner=3):
-    """FastHenry on the p-mm raster; its progress is in <run folder>/fasthenry.log (0.2 mm: 28k segments)."""
+def fasthenry(p, freq=None, nh_outer=5, nh_inner=3, options=()):
+    """FastHenry on the p-mm raster at one frequency (FastHenry is single-threaded: run one process per frequency
+    side by side) or all of F; its progress is in <run folder>/fasthenry.log (0.2 mm: 28k segments)."""
     from mqs_fasthenry import fasthenry as run_fh
     t = time.perf_counter()
     inp, n_seg = fasthenry_inp(p, nh_outer, nh_inner)
-    fz, R, L = run_fh('cm5', inp, [1e6, 1e8], DIR / f'fasthenry_p{p:g}')
+    band = [freq, freq] if freq else [F[0], F[-1]]
+    tol = ''.join(options).replace('-', '').replace(' ', '')
+    tag = f'p{p:g}_nh{nh_outer}{nh_inner}' + (f'_{tol}' if tol else '') + (f'_f{freq:.0e}' if freq else '')
+    fz, R, L = run_fh('cm5', inp, band, DIR / f'fasthenry_{tag}', options=options)
     keep = np.isin(np.round(np.log10(fz)), np.log10(F))
-    row = dict(tool='fasthenry', mesh=p, n=n_seg, R=R[keep], L=L[keep], seconds=time.perf_counter() - t)
-    print(f"cm5: FastHenry p {p}: L {np.round(row['L'] * 1e9, 4)} nH, R {np.round(row['R'] * 1e3, 3)} mOhm "
+    row = dict(tool='fasthenry', mesh=p, nh=[nh_outer, nh_inner], options=' '.join(options), n=n_seg,
+               f=fz[keep], R=R[keep], L=L[keep],
+               seconds=time.perf_counter() - t)
+    print(f"cm5: FastHenry {tag}: L {np.round(row['L'] * 1e9, 4)} nH, R {np.round(row['R'] * 1e3, 3)} mOhm "
           f"({n_seg:,} segments, {row['seconds']:.0f} s)", flush=True)
     return row
 
 
+def fasthenry_merged(rows):
+    """FastHenry rows by (grid, filaments), each frequency's run merged into R and L over F (nan where missing)."""
+    out = {}
+    for x in rows:
+        if x['tool'] != 'fasthenry':
+            continue
+        key = (x['mesh'], tuple(x.get('nh', (5, 3))), x.get('options', ''))
+        m = out.setdefault(key, dict(mesh=x['mesh'], nh=key[1], options=key[2],
+                                     R=np.full(len(F), np.nan), L=np.full(len(F), np.nan)))
+        for fi, R, L in zip(x.get('f', F), x['R'], x['L']):
+            k = int(np.argmin(abs(np.log10(F) - np.log10(fi))))
+            m['R'][k], m['L'][k] = R, L
+    return sorted(out.values(), key=lambda m: (m['mesh'], -sum(m['nh']), m['options']))
+
+
 def save(rows):
+    """Merge rows into result.json (locked: parallel runs finish independently)."""
+    import fcntl
+    DIR.mkdir(parents=True, exist_ok=True)
+    with open(DIR / 'result.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _save(rows)
+
+
+def _save(rows):
     path = DIR / 'result.json'
     old = json.loads(path.read_text())['rows'] if path.is_file() else []
-    key = lambda r: (r['tool'], r['mesh'], r.get('sheets'), r.get('backend'), r.get('face'))
+    key = lambda r: (r['tool'], r['mesh'], r.get('sheets'), r.get('backend'), r.get('face'), str(r.get('nh')),
+                     r.get('options', ''),
+                     str(r.get('f')) if r['tool'] == 'fasthenry' else '')
     merged = {key(r): r for r in old}
     merged.update({key(r): r for r in rows})
     write_json(path, dict(f=F, rows=list(merged.values())))
@@ -216,12 +266,12 @@ def figure():
         rr = sorted((x for x in rows if pick(x)), key=lambda x: -x['mesh'])
         if rr:
             ax[0].plot([x['mesh'] for x in rr], [x['L'][-1] * 1e9 for x in rr], style_, color=colour, label=label)
-    fh = sorted((x for x in rows if x['tool'] == 'fasthenry'), key=lambda x: x['mesh'])
-    if fh:
+    fh = fasthenry_merged(rows)
+    if fh and np.isfinite(fh[0]['L'][-1]):
         ax[0].axhline(fh[0]['L'][-1] * 1e9, color=ANALYTIC, ls=':', label=f"FastHenry, {fh[0]['mesh']:g} mm grid")
     ax[0].invert_xaxis()
     ax[0].set(xlabel='mesh size (mm): pcbqs dmax, Palace h', ylabel='loop L at 100 MHz (nH)',
-              title='CM5 U702 input loop: inductance')
+              title=f"CM5 U702 input loop{' (lite: F.Cu, In1)' if LAYERS else ''}: inductance")
     ax[0].legend(frameon=False, fontsize=8)
     f = np.array(r['f'])
     for label, colour, style_, pick in series[:2]:
@@ -233,7 +283,7 @@ def figure():
     ax[1].set(xlabel='Hz', ylabel='R (mOhm)', title='resistance at the port')
     ax[1].legend(frameon=False, fontsize=8)
     fig.tight_layout()
-    fig.savefig(IMAGES / 'mqs_cm5.png', dpi=140)
+    fig.savefig(IMAGES / f'mqs_{DIR.name}.png', dpi=140)
     plt.close(fig)
 
 
@@ -245,6 +295,8 @@ def report():
         what = row['tool']
         if row['tool'] == 'pcbqs':
             what += f" sheets {row['sheets']} {row['backend']} {row.get('face') or ''}"
+        elif row['tool'] == 'fasthenry':
+            what += f" nh {row.get('nh')} {row.get('options', '')} f {np.round(np.log10(row.get('f', F)), 1)}"
         print(f"{what:32s} mesh {row['mesh']:<5g} n {row['n']:>9,}  L {np.round(L, 4)} nH"
               + (f"  R {np.round(R, 3)} mOhm" if R is not None else '') + f"  {row['seconds']:.0f} s")
 
@@ -260,8 +312,10 @@ if __name__ == '__main__':
                     'hierarchical' if 'hier' in sys.argv else 'dense', 'overlap' if 'overlap' in sys.argv else 'pair')])
     elif what == 'palace':
         save([palace(h) for h in args])
-    elif what == 'fasthenry':
-        save([fasthenry(p) for p in args])
+    elif what == 'fasthenry':                     # fasthenry P [FREQ [NH_OUTER NH_INNER]]; FASTHENRY_OPTS='-t 1e-2'
+        import os
+        opts = tuple(os.environ.get('FASTHENRY_OPTS', '').split())
+        save([fasthenry(args[0], *([args[1]] if len(args) > 1 else []), *map(int, args[2:4]), options=opts)])
     elif what == 'figure':
         figure()
     else:

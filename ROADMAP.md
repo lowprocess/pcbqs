@@ -105,7 +105,11 @@ In order:
         so DC is unchanged and the wall takes the side's skin current above ~3 MHz.
      2. Rooftops as branches in MQS (between consecutive boundary triangles' nodes), with their R, L and the
         mutual inductance to the sheets and vias; dense first, then the compressed backend's entries (native).
-     3. Check: DC unchanged; the strip loop, the plane return and CM5 against FastHenry.
+     3. Check: DC unchanged; the strip loop, the plane return and CM5 against FastHenry, for five models: one
+        sheet, one sheet + walls, two faces, two faces + walls (and FastHenry's volume as the reference). One sheet
+        + walls (boundary_walls already centres the panels on the layer) is the cheap candidate: thickness in L
+        (the edge current spread up the side) and C (side charge) at about half the unknowns of two faces, but
+        no face preference, so R near a return plane should stay low.
    - `face_correction='overlap'`: two face sheets now converge on a real six-layer board (CM5); see
      validation/README.md. Whether it becomes the default waits on FastHenry's CM5 result.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
