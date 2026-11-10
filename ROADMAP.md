@@ -210,6 +210,8 @@ In order:
 5. **Measurements (plan ready).** `validation/measurements.md`: VNA shunt-through at TP7/TP6 unpowered (as built,
    and optionally one 1206 jumper in place of the ceramics), VHB ripple at the regression operating point, near
    field at 1–3 mm. Predictions: `validation/wpthb_vhb_port.py`.
+   Waiting on a VNA. A purpose-made validation board is planned: `validation/test-board.md` lists its structures
+   (no layout or predictions yet).
 
 ## Models and validation
 

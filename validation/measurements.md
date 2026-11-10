@@ -62,6 +62,8 @@ convergence (115 pH at dmax 0.8, about 150 pH ± 7% at 0.25–0.6).
 
 ## Status
 
+- A board made for validation is planned: [test-board.md](test-board.md) lists what to put on it.
+
 - Predictions for test 1: `validation/wpthb_vhb_port.py` (results in `validation/results/wpthb_vhb_port.json`),
   with the part values as placeholders until the vendor models (TDK CGA5L3X5R1H106M160AB, Murata
   GRM219R61H105KA73J) are in.
