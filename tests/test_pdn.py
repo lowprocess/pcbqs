@@ -43,6 +43,29 @@ def test_vias_join_layers_and_carry_the_current():
     assert 1 / g == pytest.approx(1.6e-3 / (5.8e7 * np.pi * (0.15e-3 ** 2 - 0.125e-3 ** 2)))
 
 
+def test_overlapping_vias_are_meshed_as_one_ring():
+    """Two vias drilled into one another (wpthb's ground: 0.15 mm at 0.25 mm from a 0.4 mm one). Their rings cross,
+    and the minimum-angle refinement between them ran to 2.3 million vertices at any dmax. The larger ring is
+    meshed and both barrels join it: the mesh stays the size of the one without the small via, and the current
+    still passes."""
+    from pcbqs.pdn.mesh import overlapping_vias
+    assert overlapping_vias([(0, 0, 0.4), (0, 0.25, 0.15), (3, 0, 0.3), (3.7, 0, 0.3)]) == {1: 0}
+    assert overlapping_vias([(0, 0, 0.3), (0.5, 0, 0.3), (1.0, 0, 0.3)]) == {1: 0}    # a chain: the middle one only
+    cu = {'F.Cu': [('P', box(0, 0, 20, 10))], 'B.Cu': [('P', box(0, 0, 20, 10))]}
+    layers = [('B.Cu', 0.0, 0.035), ('F.Cu', 1.6, 0.035)]
+    src, load = dict(x=2, y=5, r=0.5, layer='F.Cu', V=1.0), dict(name='L', x=18, y=5, r=0.5, layer='B.Cu', I=2.0)
+    out = {}
+    for name, vias in (('one', [(10, 5, 0.4, 0.0, 1.6, 'P')]),
+                       ('two', [(10, 5, 0.4, 0.0, 1.6, 'P'), (10, 5.25, 0.15, 0.0, 1.6, 'P')])):
+        out[name] = dc.solve(board(layers, cu, vias), 'P', src, [load], dmax=1.0, log=lambda *a: None)
+    one, two = out['one'], out['two']
+    assert two.nodes == one.nodes
+    assert any('overlapping vias' in n for n in two.notes) and not any('overlapping' in n for n in one.notes)
+    assert sum(abs(v['segments'][0][2]) for v in two.vias) == pytest.approx(2.0, rel=1e-6)
+    assert 1.0 - two.loads['L']['V'] < 1.0 - one.loads['L']['V']          # a second barrel in parallel
+    assert 1.0 - two.loads['L']['V'] == pytest.approx(1.0 - one.loads['L']['V'], rel=0.1)
+
+
 def test_ground_return_puts_the_current_back():
     b = board([('F.Cu', 0.0, 0.035)], {'F.Cu': [('G', box(0, 0, 30, 10))]})
     r = dc.solve(b, 'G', dict(x=2, y=5, r=1, layer='F.Cu', V=1.0), [dict(name='L', x=28, y=5, r=1, layer='F.Cu', I=1.0)],

@@ -8,3 +8,4 @@ dist/
 *.so
 *.pyd
 tools/*.npy
+tools/perf/results/

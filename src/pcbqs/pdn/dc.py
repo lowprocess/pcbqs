@@ -63,8 +63,10 @@ class Network:
         pts = [(v['x'], v['y'], v['r']) for v in self.vias]
         # quality: a minimum angle, so the cells grow out from each via's ring instead of reaching from it to far
         # vertices in slivers (which underestimated every via junction's spreading: validation/dc_elmer.py)
+        self.mesh_info = {}
         self.sheets = net_sheets(board, self.nets, pts, dmax=dmax, regions=regions, fine=fzone,
-                                 dmax_fine=dmax_fine or (dmax / 4 if fzone is not None else None), quality=quality)
+                                 dmax_fine=dmax_fine or (dmax / 4 if fzone is not None else None), quality=quality,
+                                 info=self.mesh_info)
         if not self.sheets:
             raise ValueError(f"no copper of {', '.join(sorted(self.nets))}")
         off = 0
@@ -75,7 +77,10 @@ class Network:
         rows, cols, vals = [], [], []
 
         def link(a, b, g):
-            rows.extend([a, b, a, b]); cols.extend([a, b, b, a]); vals.extend([g, g, -g, -g])
+            """Conductance g between dof a and each of b (one dof, or an array of them)."""
+            a, b = np.broadcast_arrays(np.asarray(a, int).ravel(), np.asarray(b, int).ravel())
+            g = np.full(len(a), float(g))
+            rows.append(np.r_[a, b, a, b]); cols.append(np.r_[a, b, b, a]); vals.append(np.r_[g, g, -g, -g])
         self._link = link
         blocks = []
         for sh in self.sheets.values():
@@ -91,8 +96,7 @@ class Network:
             for z, lay in on:
                 sh = self.sheets[lay]
                 ring = sh.at(k)[1:] or sh.at(k)
-                for q in ring:
-                    link(j, sh.off + q, TIE_G)
+                link(j, sh.off + np.asarray(ring, int), TIE_G)
                 js.append((j, lay, z))
                 j += 1
             segs = []
@@ -107,13 +111,15 @@ class Network:
             if not ids:
                 self.notes.append(f"terminal {name}: on none of the copper of {', '.join(sorted(self.nets))}")
                 continue
-            for q in ids:
-                link(j, q, TIE_G)
+            link(j, ids, TIE_G)
             self.tj[name] = j
             j += 1
         self.links = []                         # series parts: (name, terminal a, terminal b, R)
         self.n = j
         self._rows, self._cols, self._vals = rows, cols, vals
+        if self.mesh_info.get('merged_vias'):
+            self.notes.append(f"overlapping vias (drilled into one another) meshed as one ring: "
+                              f"{self.mesh_info['merged_vias']} ring(s) merged over the layers")
         log(f"dc {', '.join(sorted(self.nets))}: {self.n_mesh:,} vertices on {len(self.sheets)} layer(s), "
             f"{sum(1 for s in self.via_segs if s)} vias, {len(self.tj)} terminals")
 
@@ -126,9 +132,9 @@ class Network:
             self.notes.append(f"{name}: a pad not on the copper: left out")
 
     def matrix(self):
-        r_ = np.concatenate([b[0] for b in self.blocks] + [np.asarray(self._rows, int)])
-        c_ = np.concatenate([b[1] for b in self.blocks] + [np.asarray(self._cols, int)])
-        d_ = np.concatenate([b[2] for b in self.blocks] + [np.asarray(self._vals, float)])
+        r_ = np.concatenate([b[0] for b in self.blocks] + self._rows).astype(int)
+        c_ = np.concatenate([b[1] for b in self.blocks] + self._cols).astype(int)
+        d_ = np.concatenate([b[2] for b in self.blocks] + self._vals).astype(float)
         return coo_matrix((d_, (r_, c_)), shape=(self.n, self.n)).tocsr()
 
     def solve(self, fixed, inject):
@@ -151,7 +157,10 @@ class Network:
         if lost:
             raise ValueError(f"terminal(s) {', '.join(lost)} on copper not connected to the source")
         free = np.flatnonzero(live & ~np.isin(np.arange(self.n), fx))
-        V[free] = spsolve(G[free][:, free].tocsc(), inj[free] - G[free][:, fx] @ V[fx])
+        if not inj[free].any() and len(set(fixed.values())) == 1:
+            V[free] = V[fx[0]]                  # no current anywhere (a return no load reaches): one voltage
+        else:
+            V[free] = spsolve(G[free][:, free].tocsc(), inj[free] - G[free][:, fx] @ V[fx])
         Vz = np.nan_to_num(V)
         # the loss as the power the terminals put in (Tellegen): V.G.V cancels across the stiff ties
         loss = float(Vz[fx] @ (G[fx] @ Vz) + Vz[free] @ inj[free])

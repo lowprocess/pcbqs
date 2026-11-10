@@ -112,6 +112,9 @@ class MQS:
         self.matrix_backend=matrix_backend
         self._compression_options=dict(tol=compression_tol,leaf=compression_leaf,eta=compression_eta)
         self.solver_tol,self.solver_maxiter=solver_tol,solver_maxiter
+        # set after construction: GMRES restart length; how copper ports are solved on the compressed backend
+        # (mqs_iterative.port_method: 'auto' | 'direct' | 'iterative', and 'auto' | 'graph' | 'faces')
+        self.solver_restart,self.port_solver,self.port_preconditioner=100,'auto','auto'
         self.solve_info=[]
         if not np.isfinite(er) or er <= 0:
             raise ValueError('er must be finite and positive')
@@ -212,7 +215,7 @@ class MQS:
             nd, tr, rings, regs = mesh_sheet(g, pts, dmax, regions=[p for _, p in polys], fine=fine,
                                              dmax_fine=dmax_fine if fine is not None else None,
                                              coarsen=coarsen,grow=grow,edge_rings=edge_rings,w_ref=edge_width,
-                                             edge_zone=edge_zone,via_sides=via_sides or None)
+                                             edge_zone=edge_zone,via_sides=via_sides or None,info=self.mesh_info)
             if not len(tr):
                 continue
             cen = nd[tr].mean(1)
@@ -593,11 +596,12 @@ class MQS:
 
     def _inductive_voltage(self, currents):
         Le, Lv = self._mats['L']
-        out = np.zeros_like(currents, dtype=complex)
+        real = not np.iscomplexobj(currents)
+        out = np.zeros_like(currents, dtype=float if real else complex)
         # Real matrices times complex currents: two real products, never a
-        # complex copy of the dense copper inductance.
+        # complex copy of the dense copper inductance. Real currents: one.
         for block, L in ((slice(0, self.ne), Le), (slice(self.ne, self.ne + self.nv), Lv)):
-            out[block] = L @ currents[block].real + 1j * (L @ currents[block].imag)
+            out[block] = L @ currents[block] if real else L @ currents[block].real + 1j * (L @ currents[block].imag)
         if self.thick_kernel and self.matrix_backend == 'hierarchical':   # the dense L already holds it
             n = self.n_rwg
             out[:n] += self._thick_correction() @ currents[:n]

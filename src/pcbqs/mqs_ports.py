@@ -38,26 +38,33 @@ class CopperPorts:
         if f.ndim!=1 or not np.isfinite(f).all() or (f<0).any():
             raise ValueError('port frequencies must be finite and nonnegative')
         q=self.q
-        if q.matrix_backend=='hierarchical':             # compressed: GMRES per port, no dense loop matrices
+        if q.matrix_backend=='hierarchical':             # compressed: direct or GMRES (mqs_iterative.port_method)
             from .mqs_iterative import port_matrix
             q._assemble();Z,branch=port_matrix(q,f,log=log)
             branch[:,len(q.br):]=0                      # fictitious port connectors are never radiators
             return PortResponse(f,self.names,Z,branch)
-        m=q._assemble();C=m['C'];offset=len(q.br)
+        m=q._assemble();offset=len(q.br)
         sc=np.array([m['src'][offset+i] for i in range(len(q.parts))])
-        free=np.setdiff1d(np.arange(C.shape[1]),sc)
-        Zs=[];responses=[]
-        for fi in f:
-            Z=m['Rl'].astype(complex)+2j*np.pi*fi*m['Ll']
-            delta=q._resistance_delta(fi) if fi else None
-            if delta is not None and delta.nnz:Z+=(C.T@delta@C).toarray()
-            X=solve(Z[np.ix_(free,free)],-Z[np.ix_(free,sc)],assume_a='sym',overwrite_a=True,check_finite=False)
-            zp=Z[np.ix_(sc,sc)]+Z[np.ix_(sc,free)]@X
-            branch=-(C[:,sc].toarray()+C[:,free]@X)
-            branch[offset:]=0 # fictitious port connectors are never radiators
-            Zs.append(zp);responses.append(branch)
-            if log:log(f'Copper ports: {fi:g} Hz')
-        return PortResponse(f,self.names,np.asarray(Zs),np.asarray(responses))
+        Z,branch=direct_ports(q,m['C'],m['Rl'],m['Ll'],sc,f,log)
+        branch[:,offset:]=0                             # fictitious port connectors are never radiators
+        return PortResponse(f,self.names,Z,branch)
+
+
+def direct_ports(q, C, Rl, Ll, sc, frequencies, log=None, note=None):
+    """Port impedances (F, P, P) and branch currents (F, nb, P) from the dense loop matrices Rl, Ll of the loop
+    basis C, the ports' loops the columns sc: the other loops eliminated by a direct solve at each frequency."""
+    free=np.setdiff1d(np.arange(C.shape[1]),sc);C=C.tocsc()
+    Zs=[];responses=[]
+    for fi in frequencies:
+        Z=Rl.astype(complex)+2j*np.pi*fi*Ll
+        delta=q._resistance_delta(fi) if fi else None
+        if delta is not None and delta.nnz:Z+=(C.T@delta@C).toarray()
+        X=solve(Z[np.ix_(free,free)],-Z[np.ix_(free,sc)],assume_a='sym',overwrite_a=True,check_finite=False) \
+            if len(free) else np.zeros((0,len(sc)),complex)
+        zp=Z[np.ix_(sc,sc)]+Z[np.ix_(sc,free)]@X
+        Zs.append(zp);responses.append(-(C[:,sc].toarray()+C[:,free]@X))
+        if log:log(f'Copper ports: {fi:g} Hz'+(f' ({note})' if note else ''))
+    return np.asarray(Zs),np.asarray(responses)
 
 
 def rl_equivalent(response, index=-1, tolerance=1e-7):

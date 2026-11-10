@@ -18,6 +18,7 @@ from shapely.affinity import scale
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import unary_union
 from scipy.sparse import coo_matrix
+from scipy.spatial import cKDTree
 
 from .._numerics.geo import mesh_polygons
 
@@ -142,13 +143,44 @@ def simplify_copper(geom, keep=(), points=(), drop_lone=True, area=1.0, sides=8)
     return (out[0] if len(out) == 1 else MultiPolygon(out)), counts
 
 
+def overlapping_vias(points, margin=0.1):
+    """Vias whose rings would cross or nearly touch, as {absorbed index: host index} over `points` [(x, y, r)].
+
+    Two rings closer than `margin` x the smaller radius (crossing, or one drilled into the other) leave the mesher
+    acute corners and slivers of copper between them; with a minimum-angle switch Triangle then refines without
+    end (wpthb's ground: two stitching vias 0.25 mm apart, 2.3 million vertices at any dmax). Such vias are one
+    plated hole electrically, so the larger one's ring is meshed and the others share its vertices. Largest
+    first: each via still free hosts the free vias its ring overlaps, so a chain is not collapsed onto one end.
+    """
+    if len(points) < 2:
+        return {}
+    xy = np.asarray([(p[0], p[1]) for p in points], float)
+    r = np.asarray([p[2] for p in points], float)
+    pairs = cKDTree(xy).query_pairs(2 * (1 + margin) * float(r.max()), output_type='ndarray')
+    d = np.hypot(*(xy[pairs[:, 0]] - xy[pairs[:, 1]]).T)
+    pairs = pairs[d < r[pairs].sum(1) + margin * r[pairs].min(1)]
+    near = {}
+    for a, b in pairs:
+        near.setdefault(int(a), []).append(int(b)); near.setdefault(int(b), []).append(int(a))
+    host = {}
+    for i in sorted(near, key=lambda k: (-r[k], k)):
+        if i in host:
+            continue
+        for k in near[i]:
+            if k not in host and not any(h == k for h in host.values()):
+                host[k] = i
+    return host
+
+
 def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), fine=None, dmax_fine=None,
-               grow=0.5, edge_rings=1, edge_zone=None, via_sides=None, quality=None):
+               grow=0.5, edge_rings=1, edge_zone=None, via_sides=None, quality=None, info=None):
     """Mesh one piece of copper (mm): (nodes mm, tris, [vertex ids of each point: centre + ring], [vertex ids of
     each region]) for the points (x, y, r) inside it (None where one is not) and the regions (shapely polygons, mm:
     pads), whose outlines are made mesh edges (a region on none of this copper: []). fine (shapely, mm) is meshed at
     dmax_fine (mm). coarsen: mesh_polygons' (cells grow away from the features to coarsen x dmax). via_sides: each
-    via's ring a regular polygon of that many sides with the via circle's perimeter (default: an octagon in it)."""
+    via's ring a regular polygon of that many sides with the via circle's perimeter (default: an octagon in it).
+    Vias whose rings overlap are meshed as the largest one's ring, shared (overlapping_vias); info (a dict), if
+    given, has their count added to info['merged_vias']."""
     for name,value in [('dmax',dmax),('w_ref',w_ref),('coarsen',coarsen),('grow',grow),('dmax_fine',dmax_fine)]:
         if value is not None and (not np.isfinite(value) or value <= 0):
             raise ValueError(name+' must be finite and positive')
@@ -162,6 +194,11 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
     xy = np.asarray([(x, y) for x, y, _ in points], float).reshape(-1, 2)
     hit = shapely.contains_xy(geom.buffer(1e-6), xy[:, 0], xy[:, 1]) if len(xy) else np.zeros(0, bool)
     inside = list(np.flatnonzero(hit))                     # the copper buffered once: not per point
+    merged = overlapping_vias([points[i] for i in inside])
+    merged = {inside[k]: inside[h] for k, h in merged.items()}     # absorbed point -> the point whose ring it shares
+    if info is not None:
+        info['merged_vias'] = info.get('merged_vias', 0) + len(merged)
+    inside = [i for i in inside if i not in merged]
     vias = [(points[i][0] * 1e-3, points[i][1] * 1e-3, points[i][2] * 1e-3 * grow_r) + ((int(via_sides),) if via_sides else ())
             for i in inside]
     g = scale(geom, 1e-3, 1e-3, origin=(0, 0))
@@ -182,6 +219,8 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
         ids = np.flatnonzero(d <= r * grow_r * 1.02 + 1e-9)
         c = int(np.argmin(d))
         rings[i] = [c] + [int(k) for k in ids if k != c]
+    for i, h in merged.items():
+        rings[i] = rings[h]
     reg = [[] for _ in regions]
     for k in live:
         q = regions[k].buffer(1e-4)
@@ -194,7 +233,7 @@ def mesh_sheet(geom, points=(), dmax=1.0, w_ref=None, coarsen=None, regions=(), 
 
 
 def net_sheets(board, net, points=(), dmax=1.0, layers=None, coarsen=None, regions=None, fine=None, dmax_fine=None,
-               quality=None):
+               quality=None, info=None):
     """{layer: Sheet} of the copper of `net` (a name or a set: a rail tree) on each copper layer (or `layers`), every
     point (x, y, r) of `points` that lies on a layer's copper made a vertex with its ring. regions: {layer:
     [polygon]} (pads) whose outlines become mesh edges; Sheet.region(k) their vertex ids. fine, dmax_fine: a region
@@ -207,7 +246,7 @@ def net_sheets(board, net, points=(), dmax=1.0, layers=None, coarsen=None, regio
             continue
         rg = (regions or {}).get(lay, [])
         nodes, tris, rings, reg = mesh_sheet(g, points, dmax, coarsen=coarsen, regions=rg, fine=fine,
-                                             dmax_fine=dmax_fine, quality=quality)
+                                             dmax_fine=dmax_fine, quality=quality, info=info)
         key = [i for i, r in enumerate(rings) if r is not None]
         out[lay] = Sheet(lay, zt[lay][0], zt[lay][1], g, nodes, tris, [points[i] for i in key],
                          [rings[i] for i in key], key, reg)

@@ -330,23 +330,62 @@ def test_compressed_mqs_matches_dense_without_capacitance():
             np.testing.assert_allclose(Z['hierarchical'][k], Z['dense'][k], rtol=1e-5)
 
 
-@pytest.mark.parametrize('sheets', [1, 2])
-def test_copper_ports_on_the_compressed_backend_match_dense(sheets):
-    """CopperPorts with matrix_backend='hierarchical': GMRES per port instead of dense loop matrices (face sheets
-    in the circuit tool's memory), the same port matrix and branch currents, DC included."""
+@pytest.mark.parametrize('sheets,solver,precond', [(1, 'direct', 'auto'), (1, 'iterative', 'graph'),
+                                                   (2, 'direct', 'auto'), (2, 'iterative', 'graph'),
+                                                   (2, 'iterative', 'faces')])
+def test_copper_ports_on_the_compressed_backend_match_dense(sheets, solver, precond):
+    """CopperPorts with matrix_backend='hierarchical', by each of its routes (mqs_iterative.port_method): the dense
+    loop matrices from compressed products, GMRES with the graph preconditioner, and with the face-sheet one. The
+    same port matrix and branch currents as the dense backend, DC included."""
     from test_mqs import trace_board
     from shapely.geometry import box
     from pcbqs.mqs import MQS
     terms = {'s': [('F.Cu', box(2, 9.6, 2.6, 10.4))], 'g': [('F.Cu', box(2, 7.7, 2.6, 8.5))],
              'm': [('F.Cu', box(10, 9.6, 10.6, 10.4))]}
-    out = {}
+    out, said = {}, []
     for back in ('dense', 'hierarchical'):
         q = MQS(trace_board(), 'N', terminals=terms, dmax=1, conductor_loss='slab', thickness_sheets=sheets,
                 matrix_backend=back, solver_tol=1e-11, log=lambda *_: None)
+        q.port_solver, q.port_preconditioner = solver, precond
         q.source('p', 's', 'g', part_h=0)
         q.source('r', 'm', 'g', part_h=0)
-        out[back] = CopperPorts(q).extract([0, 1e5, 2e7])
+        out[back] = CopperPorts(q).extract([0, 1e5, 2e7], log=said.append)
+    assert all(i['method'] == solver for i in q.solve_info)
+    if solver == 'iterative':
+        assert all(i['preconditioner'] == precond for i in q.solve_info), said
     a, b = out['dense'], out['hierarchical']
     np.testing.assert_allclose(b.impedance, a.impedance, rtol=1e-6, atol=1e-12)
     for k in range(3):                                   # to the compression tolerance (1e-6) of the largest
         assert np.abs(b.currents[k] - a.currents[k]).max() < 2e-5 * np.abs(a.currents[k]).max()
+
+
+def test_face_preconditioner_takes_fewer_iterations_and_port_method_chooses():
+    """Face sheets: the common-mode / difference-loop preconditioner against the graph one on the same ports, and
+    what 'auto' picks: direct while the loops are fewer than GMRES's products, the face preconditioner beyond."""
+    from test_mqs import trace_board
+    from shapely.geometry import box
+    from pcbqs.mqs import MQS
+    from pcbqs import mqs_iterative
+    terms = {'s': [('F.Cu', box(2, 9.6, 2.6, 10.4))], 'g': [('F.Cu', box(2, 7.7, 2.6, 8.5))],
+             'm': [('F.Cu', box(10, 9.6, 10.6, 10.4))]}
+    its = {}
+    for precond in ('graph', 'faces'):
+        q = MQS(trace_board(), 'N', terminals=terms, dmax=1, conductor_loss='slab', thickness_sheets=2,
+                matrix_backend='hierarchical', log=lambda *_: None)
+        q.port_solver, q.port_preconditioner = 'iterative', precond
+        q.source('p', 's', 'g', part_h=0)
+        q.source('r', 'm', 'g', part_h=0)
+        CopperPorts(q).extract([0, 1e5, 2e7])
+        its[precond] = sum(i['iterations'] for i in q.solve_info)
+    assert its['faces'] < 0.6 * its['graph'], its
+    q.port_solver = q.port_preconditioner = 'auto'
+    loops = len(q._mqs_iter['free'])
+    assert mqs_iterative.port_method(q, 1000)[0] == 'direct'
+    old = mqs_iterative.DIRECT_LOOPS, mqs_iterative.PRODUCTS_PER_SOLVE
+    try:
+        mqs_iterative.PRODUCTS_PER_SOLVE = 1             # 2 ports x 3 frequencies: GMRES's products under the loops
+        assert loops > 6 and mqs_iterative.port_method(q, 3) == ('iterative', 'graph')
+        mqs_iterative.PRODUCTS_PER_SOLVE, mqs_iterative.DIRECT_LOOPS = old[1], loops // 4
+        assert mqs_iterative.port_method(q, 1000)[0] == 'iterative'
+    finally:
+        mqs_iterative.DIRECT_LOOPS, mqs_iterative.PRODUCTS_PER_SOLVE = old

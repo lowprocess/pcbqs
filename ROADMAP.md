@@ -3,13 +3,17 @@
 Covers the converter near field (`pcbqs.mqs`), rail PDN (`pcbqs.pdn`), switching
 circuits (`pcbqs.power_circuit`) and their kicad2ems window pages. Findings
 referenced as C/I/U numbers are in [docs/power-tools-review.md](docs/power-tools-review.md).
-Estimates are working days. Last updated 2026-11-10 (C13, measurement plan, R/L/C face model, PDN C9/C10/I6, I5, raw solver steps).
+Estimates are working days. Last updated 2026-11-10 (C13, measurement plan, R/L/C face model, PDN C9/C10/I6, I5, raw solver steps, port extraction speed, overlapping vias).
 
 ## Done recently
 
 - Thick copper validated against FastHenry and a 2D cross-section PEEC: a terminal eddy-current bug fixed
   (`ideal_terminals`), thick copper placed with the dielectric gaps kept (`copper_centres`), finite-thickness kernels
   (`thick_kernel`), stacked sheets as the reference; `conductor_loss='slab'` now defaults to two face sheets.
+- PDN/DC meshing: vias drilled into one another are meshed as one ring (`pdn.mesh.overlapping_vias`, reported in
+  the notes), and the quality mesher has a Steiner-point cap with a warning. wpthb PDN at dmax 0.4: 28.5 s / 4.3 GB
+  -> 3.9 s / 0.24 GB with the same drop and loss (two overlapping ground vias had made 4.4 million triangles).
+  DC links are assembled as arrays and a rail with no load skips its solve.
 - Real-board regressions (`tests/test_regression_boards.py`): CM5 U702's near field and wpthb's DC drop and PDN at
   coarse settings against stored results (`tests/data/regression_boards.json`; `--update` after a deliberate
   change), skipped where the board is not installed. About 37 s with the board cache.
@@ -128,8 +132,21 @@ In order:
      wpthb (24 ports, 11 frequencies): one sheet dense 69 s / 5.4 GB; one sheet compressed 545 s per-port GMRES ->
      151 s lockstep / 1.4 GB, results within 0.1% of dense; two faces dense 266 s / 25 GB, compressed per-port
      2334 s / 2.1 GB, lockstep 420 s / 4.0 GB (settled ripple -5.7%, spike +0.4%, efficiency and input power
-     0.05%). Next: fewer iterations (a better port preconditioner, a recycled Krylov space across ports), then
-     decide whether two faces becomes the circuit default.
+     0.05%).
+   - Port extraction speed (2026-11-10, `tools/benchmark_ports.py`, `tools/perf/`): `port_method` now picks a
+     direct solve on dense loop matrices built from the compressed inductance when the loops are few
+     (`loop_matrices`), and for two faces a two-level preconditioner (`mqs_precond.FaceLoops`: exact common-mode
+     solve, sparse solve on the difference loops). wpthb extraction: one sheet 91.6 -> 11.6 s (2.5 GB); two faces
+     342 -> 115 s (21,790 -> 4,171 iterations, 3.8 -> 5.5 GB), both equal to the old route within 1e-7. Whole
+     circuit case: one sheet compressed 151 -> 72 s / 2.6 GB (dense 69 s / 5.4 GB); two faces 420 -> 185 s /
+     5.7 GB, answers unchanged (ripple -5.6% against one sheet, efficiency 0.05%).
+   - Circuit default: stays one sheet. Two faces now costs 2.6x the time for a 6% ripple change and nothing else
+     above 0.4%; revisit with a measurement that isolates the copper (item 5's jumper variant, or a
+     validation board); the powered ripple cannot resolve 6% until the parts are vendor models. `hierarchical` is now the
+     circuit's default backend (same time as dense, half the memory); `mesh.matrix_backend: dense` restores the
+     old route.
+   - Next for two faces: iterations still grow with frequency (217 at DC, 575 at 20 MHz) and the dense
+     common-mode setup is 19 s; a local loop basis (tile-wise projection) would address both.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 

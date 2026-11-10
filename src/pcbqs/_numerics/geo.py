@@ -305,6 +305,7 @@ def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), ama
     # into fans); without it a small feature (a via's octagon) fans out to far vertices in long slivers, and the
     # linear elements then underestimate the log spreading around it (DC: ~0.1 mOhm per via junction)
     q = f'q{quality:g}' if quality else ''
+    steiner = expected = 0
     hfield = None
     if coarsen and coarsen > 1:
         F = _features(geom, lines, vias, min(dmax, dmax_fine or dmax))
@@ -377,6 +378,13 @@ def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), ama
     org = verts.mean(0)
     A = dict(vertices=(verts - org) / dmax, segments=segs)
     amax = (amax or 0.5 * dmax ** 2) / dmax ** 2
+    if q:
+        # a cap on the vertices the minimum angle may add (Triangle's S): acute input (rings that cross, slivers)
+        # otherwise refines without end. `expected`: the vertices of equilateral cells at the area limits
+        fa = sum(p_.area for p_ in fine_parts)
+        expected = len(verts) + 1.2 * ((geom.area - fa) / (amax * dmax ** 2) + (fa / (0.5 * dmax_fine ** 2) if fa else 0))
+        steiner = int(10 * expected + 20000)
+        q += f'S{steiner}'
     if hfield is not None:
         # coarse first (the largest cells the field allows), then each triangle refined to the field's area at its
         # centroid (fine regions: their own dmax). No quality switch (q), as below: it would split the thin
@@ -414,6 +422,11 @@ def mesh_polygons(geom, dmax, w_ref, ncross=6, grade=1.0, lines=(), vias=(), ama
         T = tr.triangulate(A, f"p{q}Qa")
     else:
         T = tr.triangulate(A, f"p{q}Qa{amax:.8f}")
+    if q and len(T['vertices']) - len(verts) >= steiner:
+        import warnings
+        warnings.warn(f'mesh refinement stopped at {steiner:,} added vertices ({expected:,.0f} expected for this copper '
+                      f'at dmax): features closer than the mesh can resolve, e.g. overlapping vias or slivers of '
+                      f'copper; the minimum angle is not met there', RuntimeWarning, stacklevel=2)
     nodes, tris = T['vertices'] * dmax + org, T['triangles']
     cent = nodes[tris].mean(1)
     tris = tris[shapely.contains_xy(geom.buffer(tol), cent[:, 0], cent[:, 1])]

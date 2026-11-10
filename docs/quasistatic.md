@@ -239,6 +239,28 @@ or a face pair's 2×2 block. It matches the dense solve to 1e-5 or better.
 | Strip loop, 47,548 triangles | out of memory (32 GB) | 13 s, 1.7 GB |
 | Two face sheets, 96k triangles | — | 2 min, 7.5 GB |
 
+Port extraction for circuits (`mqs_iterative.port_matrix`) picks its route from
+the problem size (`port_method`):
+
+- **Direct.** The dense loop matrices are built from the compressed inductance
+  by products (`loop_matrices`) and factorised per frequency. It is chosen when
+  the loops number at most `DIRECT_LOOPS` (8,000) and also at most
+  `PRODUCTS_PER_SOLVE` (60) × ports × frequencies, the point where building the
+  matrix costs fewer products than iterating.
+- **Iterative.** All ports advance in lockstep through GMRES, one compressed
+  product per step for every port, warm-started across frequencies.
+
+With two face sheets the iteration uses a two-level preconditioner
+(`mqs_precond.FaceLoops`). The loops split into common-mode loops (both faces of
+a branch carrying the same current) and difference loops (current down one face
+and back along the other). The common-mode block, which holds the long-range
+inductance, is formed densely and solved exactly. The difference loops are
+local, so a sparse solve with each branch's own impedance and its nearest
+mutuals covers them. If the split is not available (no face pairs, or too many
+common-mode loops) it falls back to the graph preconditioner.
+`Quasistatic.port_solver` (`'auto'`, `'direct'`, `'iterative'`) and
+`port_preconditioner` (`'auto'`, `'graph'`, `'faces'`) override the choice.
+
 ## Validation and limits
 
 Tests cover Wheeler's inductance formula, image-theory magnetic fields and
