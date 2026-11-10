@@ -131,12 +131,20 @@ class MQS:
         # 1D two-port, Zs [[coth kt, csch kt], [csch kt, coth kt]], less the vacuum field the partial inductance
         # already puts between the faces. The external field then sets how the current divides between the faces:
         # the proximity effect a single sheet's slab cannot give (C14, validation/mqs_fasthenry.py).
-        if thickness_sheets not in (1, 2) or isinstance(thickness_sheets, bool):
-            raise ValueError('thickness_sheets must be 1 or 2')
-        if thickness_sheets == 2 and conductor_loss != 'slab':
-            raise ValueError("thickness_sheets=2 needs conductor_loss='slab' (the faces are coupled through the slab)")
-        if thickness_sheets == 2 and dielectric == 'stack':
-            raise NotImplementedError('thickness_sheets=2 with dielectric=stack (the images need copper on interfaces)')
+        # thickness_sheets=N with conductor_loss='dc' (experimental, the reference): N sheets at the centres of N
+        # slices of the copper (cosine-graded: thinner at the faces, where the skin is), each at its slice's DC
+        # sheet resistance, a triangle's copies one node. Skin
+        # and proximity effect come from the sheets' mutual inductance alone, as FastHenry's filaments through the
+        # thickness: no slab formula, no correction. N times the unknowns.
+        if not isinstance(thickness_sheets, (int, np.integer)) or isinstance(thickness_sheets, bool) or thickness_sheets < 1:
+            raise ValueError('thickness_sheets must be a positive integer')
+        if thickness_sheets == 2 and conductor_loss == 'slab':
+            pass                                             # the face model
+        elif thickness_sheets >= 2 and conductor_loss != 'dc':
+            raise ValueError("thickness_sheets=2 with conductor_loss='slab' is the face model; N stacked sheets need "
+                             "conductor_loss='dc'")
+        if thickness_sheets >= 2 and dielectric == 'stack':
+            raise NotImplementedError('thickness_sheets with dielectric=stack (the images need copper on interfaces)')
         self.thickness_sheets = int(thickness_sheets)
         if dielectric == 'stack' and er != 1:
             raise ValueError('er applies to homogeneous dielectric; stack uses board permittivities')
@@ -197,8 +205,15 @@ class MQS:
                 off += len(nd)
                 self.layer_tris[key] = np.arange(nt0, nt0 + len(tr))
                 self.sheet_layer[key] = lay
-                zs = z + (s - 0.5) * t if n_s == 2 else z    # two sheets: the copper's faces, centred on its z
-                layer_of += [lay] * len(tr); z_of += [zs * 1e-3] * len(tr); t_of += [t / n_s * 1e-3] * len(tr)
+                ts = t / n_s
+                if n_s == 2 and conductor_loss == 'slab':    # two sheets: the copper's faces, centred on its z
+                    zs = z + (s - 0.5) * t
+                elif n_s > 1:                                # N stacked sheets: slices graded toward the faces
+                    lo, hi = (0.5 - 0.5 * np.cos(np.pi * np.array([s, s + 1]) / n_s))
+                    zs, ts = z + ((lo + hi) / 2 - 0.5) * t, (hi - lo) * t
+                else:
+                    zs = z
+                layer_of += [lay] * len(tr); z_of += [zs * 1e-3] * len(tr); t_of += [ts * 1e-3] * len(tr)
                 if s:
                     copies.append((first, nt0, len(tr)))
         if not tris:

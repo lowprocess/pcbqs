@@ -123,6 +123,22 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   - Palace needed one fix in `mqs_palace.palace_mesh`: copper inside a via rod was left behind as a disc bounding
     no volume (MFEM's STable3D abort). Such surfaces are now found by position and dropped.
 
+- **Two face sheets near a plane, and the stacked-sheet reference** (`face_study.py`): a 1 mm trace over a plane
+  1.6 or 0.1 mm away (centre to centre), 15 or 35 um thick, against FastHenry (refined: 61 x 9 filaments, within
+  1.6% of its default run).
+  - Two faces with the overlap correction: R within 0.1% at 1.6 mm, but +254% at 0.1 mm and 100 MHz, current
+    circulating between each conductor's faces. No setting of the face correction works at both spacings: the slab
+    two-port is driven by the faces' own currents, while the copper responds to the field at its faces, which a
+    trace 65 um above the plane dominates. Not for close planes until reformulated (ROADMAP).
+  - `MQS(thickness_sheets=N, conductor_loss='dc')`: N sheets through the copper, cosine-graded toward its faces,
+    each at its slice's DC sheet resistance: skin and proximity effect from mutual inductance alone, no slab
+    formula. N = 6, dmax 0.25, 10 cells across the trace: at 0.1 mm, R within 4% and L within 1% at 1–100 MHz; at
+    1.6 mm, L within 2% but R -11..+6% and moving with edge refinement (each sheet's free edge crowds current
+    without bound, where copper turns it down its side: the side walls' job). 5 minutes for 66k triangles: the
+    reference, not the default.
+  - Across the board the trace needs about 10 cells (`edge_rings`, `edge_width` = trace width): at dmax 0.5 a 1 mm
+    trace is two triangles wide and every model was -21% at 10 MHz. Part of every earlier face-sheet error was this.
+
 ## Not done yet
 
 - **Measurement.** VNA shunt-through on a PDN, and a near-field probe at 1–3 mm, on wpthb.

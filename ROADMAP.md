@@ -111,7 +111,16 @@ In order:
         (the edge current spread up the side) and C (side charge) at about half the unknowns of two faces, but
         no face preference, so R near a return plane should stay low.
    - `face_correction='overlap'`: two face sheets now converge on a real six-layer board (CM5); see
-     validation/README.md. Whether it becomes the default waits on FastHenry's CM5 result.
+     validation/README.md.
+   - Validation against FastHenry (`validation/face_study.py`, CM5-lite) found two faces wrong near a plane:
+     +254% R at 100 MHz with a 35 um plane 0.1 mm under the trace (+0.1% with it 1.6 mm away). The slab two-port is
+     driven by the faces' own currents; it has to be driven by the tangential field at the faces, from all currents,
+     with the gap's vacuum field (from all currents, not only the pair's own) removed. Next: that formulation in the
+     dense solver, then the compressed backend (a field-kernel H-matrix), checked against the reference below.
+   - Reference mode: `thickness_sheets=N, conductor_loss='dc'` (graded stacked sheets, no slab formula), within
+     4% / 1% (R / L) of FastHenry near a plane; far from one, R moves with edge refinement until side walls close
+     the sheets' edges. Walls go on the stacked reference first (the clean test of the walls' benefit), then on
+     the face model.
 2. **Capacitance (0.5 day left).** Against FasterCap with zero-thickness copper, in air: plates < 0.1%,
    microstrip −2.4%, two traces 0.1 mm apart −4% self / −11% mutual (FasterCap ±3% there). On FR-4 the effective
    permittivity is within 1% of Hammerstad–Jensen; FasterCap gave non-physical FR-4 results, so FR-4 relies on the
