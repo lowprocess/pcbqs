@@ -226,7 +226,7 @@ def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, 
         pw.series(s.part.ref, f'{s.part.ref}:a', f'{s.part.ref}:b', s.R)
     rp = pw.solve({'source': volts}, {ref: -i for ref, i in rail.loads.items()})
     gt = {'source': terminal(rail.ground_source_pads, layers)}
-    gt.update({ref: terminal(rail.parts[ref].on(g), layers) for ref in rail.loads})
+    gt.update({ref: terminal(rail.pads_of(rail.parts[ref])[1], layers) for ref in rail.loads})   # (a --load @RETURN)
     no_gnd = [ref for ref in rail.loads if not gt[ref]]
     for ref in no_gnd:
         gt.pop(ref)
@@ -237,7 +237,8 @@ def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, 
     for ref, i in rail.loads.items():
         vp, vg = rp.terminals.get(ref, np.nan), rg.terminals.get(ref, 0.0)
         loads[ref] = dict(V=vp - vg, drop=volts - (vp - vg), power_drop=volts - vp, ground_rise=vg, I=i)
-    notes = rp.notes + rg.notes + [f"{r}: no ground pad (its return not modelled)" for r in no_gnd]
+    notes = rp.notes + rg.notes + [f"{r}: no ground pad (its return not modelled; --load {r}=AMPS@RETURN names the "
+                                   f"part it returns through)" for r in no_gnd]
     if loads:
         log(f"dc rail {rail.net}: {(rp.loss + rg.loss) * 1e3:.1f} mW in the copper; worst drop "
             f"{max(l['drop'] for l in loads.values()) * 1e3:.2f} mV")

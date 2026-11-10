@@ -113,15 +113,81 @@ def _graph_preconditioner(p, d, zpair):
     lap = (A @ Dinv @ A.T).tocsc()[keep][:, keep]
     lu = splu(lap.tocsc())
 
-    def apply(y):
-        force = np.zeros(nb, complex)
+    def apply(y):                                        # y: (loops,) or (loops, k) columns
+        force = np.zeros((nb,) + np.shape(y)[1:], complex)
         force[cotree] = y
         trial = Dinv @ force
-        v = np.zeros(A.shape[0], complex)
-        v[keep] = lu.solve(np.asarray(A @ trial).ravel()[keep])
-        return (trial - Dinv @ np.asarray(A.T @ v).ravel())[cotree]
+        v = np.zeros((A.shape[0],) + np.shape(y)[1:], complex)
+        v[keep] = lu.solve(np.ascontiguousarray(np.asarray(A @ trial)[keep]))
+        return (trial - Dinv @ np.asarray(A.T @ v))[cotree]
     size = sum(s.data.nbytes + s.indices.nbytes + s.indptr.nbytes for s in (lu.L, lu.U))
-    return LinearOperator((len(cotree), len(cotree)), matvec=apply, dtype=complex), size
+    M = LinearOperator((len(cotree), len(cotree)), matvec=apply, matmat=apply, dtype=complex)
+    M.block = apply
+    return M, size
+
+
+def _lockstep_gmres(op, M, B, X0, tol, maxiter, restart):
+    """GMRES on k right-hand sides at once (B: (n, k)), right-preconditioned, each column its own Krylov space
+    but every step one operator product on all the active columns (a compressed matrix read once for k columns).
+    Columns that converge drop out at the next restart. Returns (X, iterations per column, relative residuals)."""
+    n, k = B.shape
+    X = np.array(X0, complex)
+    bn = np.maximum(np.linalg.norm(B, axis=0), np.finfo(float).tiny)
+    its = np.zeros(k, int)
+    R = B - op(X)
+    active = np.flatnonzero(np.linalg.norm(R, axis=0) / bn > tol)
+    while len(active) and its[active].max() < maxiter:
+        m = int(min(restart, maxiter - its[active].max()))
+        r = R[:, active]
+        beta = np.linalg.norm(r, axis=0)
+        ka = len(active)
+        V = np.zeros((m + 1, n, ka), complex)
+        V[0] = r / beta
+        H = np.zeros((m + 1, m, ka), complex)
+        cs = np.zeros((m, ka), complex)
+        sn = np.zeros((m, ka), complex)
+        g = np.zeros((m + 1, ka), complex)
+        g[0] = beta
+        Z = np.zeros((m, n, ka), complex)
+        done = np.zeros(ka, bool)
+        last = np.full(ka, m - 1)
+        for j in range(m):
+            Z[j] = M(V[j])
+            w = op(Z[j])
+            for i in range(j + 1):                       # modified Gram-Schmidt, per column
+                h = np.einsum('nk,nk->k', V[i].conj(), w)
+                H[i, j] = h
+                w -= V[i] * h
+            hn = np.linalg.norm(w, axis=0)
+            H[j + 1, j] = hn
+            V[j + 1] = w / np.where(hn > 0, hn, 1)
+            for i in range(j):                           # the earlier Givens rotations (copies: H[i, j] is a view)
+                a, b = H[i, j].copy(), H[i + 1, j].copy()
+                H[i, j] = cs[i].conj() * a + sn[i].conj() * b
+                H[i + 1, j] = -sn[i] * a + cs[i] * b
+            a, b = H[j, j].copy(), H[j + 1, j].copy()
+            den = np.sqrt(abs(a) ** 2 + abs(b) ** 2)
+            den = np.where(den > 0, den, 1)
+            cs[j], sn[j] = a / den, b / den
+            H[j, j] = cs[j].conj() * a + sn[j].conj() * b
+            H[j + 1, j] = 0
+            g[j + 1] = -sn[j] * g[j]
+            g[j] = cs[j].conj() * g[j]
+            newly = (~done) & (abs(g[j + 1]) / bn[active] <= tol)
+            last[newly] = j
+            done |= newly
+            its[active[~done | newly]] += 1
+            if done.all():
+                break
+        for c in range(ka):                              # each column's update from its own Hessenberg
+            jj = last[c] + 1 if done[c] else j + 1
+            y = np.linalg.solve(np.triu(H[:jj, :jj, c]), g[:jj, c]) if jj else np.zeros(0)
+            X[:, active[c]] += np.einsum('j,jn->n', y, Z[:jj, :, c])
+        R[:, active] = B[:, active] - op(X[:, active])
+        res = np.linalg.norm(R[:, active], axis=0) / bn[active]
+        active = active[res > tol]
+    res = np.linalg.norm(R, axis=0) / bn
+    return X, its, res
 
 
 def solve(model, freqs, amps=None):
@@ -183,3 +249,55 @@ def solve(model, freqs, amps=None):
         model.solve_info.append(dict(frequency_Hz=float(fi), iterations=len(history), relative_residual=float(residual),
                                      preconditioner='graph_lu', preconditioner_bytes=int(mbytes), converged=True))
     return Result(f, I, Z, [part['name'] for part in model.parts], Zc)
+
+
+def port_matrix(model, freqs, log=None):
+    """Copper ports on the compressed backend (mqs_ports.CopperPorts): for each frequency (0 allowed: DC) the port
+    impedance matrix (P, P) and the branch currents (nb, P) of a unit current into each port in turn, the others
+    open. One GMRES per port, sharing each frequency's preconditioner; no dense loop matrix is formed, so face
+    sheets fit in memory. Same conventions as the dense extraction: branch = -(the source loops' currents)."""
+    p = _prepare(model)
+    m = model._mats
+    Cf, Cs, src, free = p['Cf'], p['Cs'], p['src'], p['free']
+    nb = m['nb']
+    if any(part['kind'] != 'I' for part in model.parts):
+        raise ValueError('copper ports take current sources only')
+    restart = _restart(model)
+    Zs, Bs = [], []
+    model.solve_info = []
+    warm = None
+    for fi in np.atleast_1d(np.asarray(freqs, float)):
+        w = 2 * np.pi * fi
+        R = (m['R'] + (model._resistance_delta(fi) if fi else 0 * m['R'])).tocsr()
+
+        def total(x):
+            return R @ x + (1j * w * model._inductive_voltage(x) if fi else 0)
+        d = (R.diagonal() + 1j * w * p['ldiag']).astype(complex)
+        scale = max(float(np.max(abs(d))), np.finfo(float).tiny)
+        d = np.where(abs(d) < scale * 1e-12, scale * 1e-12, d)
+        e, g = p['pairs']
+        zpair = (np.asarray(R[e, g]).ravel() + 1j * w * p['lpair']).astype(complex) if len(e) else np.zeros(0, complex)
+        M, _ = _graph_preconditioner(p, d, zpair) if len(free) else (None, 0)
+        base = Cs.toarray().astype(complex)              # every port's own loop, at once
+        iterations = 0
+        if len(free):
+            rhs = -np.asarray(Cf.T @ total(base))
+            block = lambda X: np.asarray(Cf.T @ total(Cf @ X))
+            X0 = warm if warm is not None else np.zeros_like(rhs)
+            X, its, res = _lockstep_gmres(block, M.block, rhs, X0, model.solver_tol, model.solver_maxiter,
+                                          min(restart, 60))
+            if (res > max(5 * model.solver_tol, 1e-13)).any():
+                raise ConvergenceError(1, float(res.max()), int(its.max()))
+            warm = X                                     # the next frequency starts here
+            iterations = int(its.sum())
+            I = base + Cf @ X
+        else:
+            I = base
+        Zp = np.asarray(Cs.T @ total(I))
+        branch = -I
+        Zs.append(0.5 * (Zp + Zp.T))                     # reciprocal (GMRES leaves ~tol asymmetry)
+        Bs.append(branch)
+        model.solve_info.append(dict(frequency_Hz=float(fi), iterations=iterations, ports=Cs.shape[1]))
+        if log:
+            log(f'Copper ports: {fi:g} Hz ({iterations:,} GMRES iterations over {Cs.shape[1]} ports)')
+    return np.asarray(Zs), np.asarray(Bs)

@@ -29,7 +29,8 @@ OPTIONS = [
     ('source', 'str', '', "the part it is fed from (default: the power inductor feeding the tree)", G_RAIL),
     ('ground_source', 'str', '', "the part whose ground pads its return goes back to (default: "
      "the parts on that inductor's switch node)", G_RAIL),
-    ('load', 'list', [], "a load: REF=AMPS (repeat)", G_RAIL),
+    ('load', 'list', [], "a load: REF=AMPS, or REF=AMPS@RETURN when its return is another part's ground pads "
+     "(a bridge's high side through its low side) (repeat)", G_RAIL),
     ('spread_load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
      "(an assumption, for a first look when the loads are not known)", G_RAIL),
     ('max_ohms', 'float', 1.0, "the largest resistor the tree follows (sense and 0 ohm links)", G_RAIL),
@@ -50,6 +51,9 @@ OPTIONS = [
     ('fmax', 'float', 2e9, "highest frequency, Hz", G_PDN),
     ('points', 'int', 160, "frequencies (log-spaced)", G_PDN),
     ('target', 'float', 0.0, "the target impedance, ohms (0: volts x ripple / step)", G_PDN),
+    ('load_target', 'list', [], "a load's own target impedance: REF=OHMS (repeat); overrides --target for it", G_PDN),
+    ('no_target', 'bool', False, "no target impedance (a switching bridge's input, where V x ripple / step means "
+     "little); loads given --load-target keep theirs", G_PDN),
     ('ripple', 'float', 0.05, "the allowed ripple, a fraction of the voltage", G_PDN),
     ('step', 'float', 0.0, "the load step, A (0: half the loads' current)", G_PDN),
     ('no_pdn', 'bool', False, "the DC drop only", G_PDN),
@@ -114,8 +118,18 @@ def run(a):
         raise SystemExit('pdn: --rail is required')
     if a.plane_min < 0:                                 # every option checked before the (slow) board import
         raise SystemExit('pdn: error: --plane-min must be nonnegative')
-    loads = {r: v[0] for r, v in ref_values(a.load, '--load', 'REF=AMPS').items()}
+    returns = {}
+    plain = []
+    for item in a.load:                                 # REF=AMPS[@RETURN]
+        head, at, back = item.partition('@')
+        if at:
+            if not back.strip():
+                raise SystemExit(f'pdn: error: --load {item!r}: expected REF=AMPS@RETURN')
+            returns[head.partition('=')[0].strip()] = back.strip()
+        plain.append(head)
+    loads = {r: v[0] for r, v in ref_values(plain, '--load', 'REF=AMPS[@RETURN]').items()}
     dcr = {r: v[0] for r, v in ref_values(a.dcr, '--dcr', 'REF=OHMS').items()}
+    load_targets = {r: v[0] for r, v in ref_values(a.load_target, '--load-target', 'REF=OHMS').items()}
     caps = {r: dict(zip(('C', 'ESR', 'ESL'), v)) for r, v in ref_values(a.cap, '--cap', 'REF=C[,ESR[,ESL]]', 3).items()}
     say(f'reading {os.path.basename(a.board)}')
     board = load_board(a.board, {a.rail, *ground})
@@ -126,7 +140,7 @@ def run(a):
         raise SystemExit('pdn: no loads: --load REF=AMPS, or --spread-load AMPS')
     kw = dict(ground=ground, loads=loads, source=a.source or None, ground_source=a.ground_source or None,
               max_ohms=a.max_ohms, through=tuple(x for x in a.through.split(',') if x),
-              stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr)
+              stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr, returns=returns)
     rail = Rail(board, a.rail, **kw)
     if not a.board.endswith('.json') and not rail.nets <= {a.rail}:      # the tree's other nets: read with it
         say(f'rail tree: {len(rail.nets)} nets; reading their copper')
@@ -168,10 +182,15 @@ def run(a):
         Z0 = pdn.z(f, observe=obs, bare=True)
         t_z = time.time() - t
         step = a.step or 0.5 * sum(loads.values())
-        target = a.target or a.volts * a.ripple / step
+        target = None if a.no_target else (a.target or a.volts * a.ripple / step)
+        unknown = sorted(set(load_targets) - set(loads))
+        if unknown:
+            out['notes'].append(f"--load-target for {', '.join(unknown)}: not a load (ignored)")
+        targets = {r: load_targets.get(r, target) for r in obs}         # None: no target for that load
         out['pdn'] = dict(f=f.tolist(), target=target,
                           z={r: dict(mag=np.abs(Z[r]).tolist(), deg=np.degrees(np.angle(Z[r])).tolist(),
-                                     bare=np.abs(Z0[r]).tolist(), over=bands(f, Z[r], target)) for r in obs},
+                                     bare=np.abs(Z0[r]).tolist(), target=targets[r],
+                                     over=bands(f, Z[r], targets[r]) if targets[r] else []) for r in obs},
                           cavities=[dict(rail=c.rail_layer, ground=c.ground_layer, d=c.d, er=c.er, area=c.geom.area,
                                          C=capacitance(c.geom.area, c.d, c.er)) for c in pdn.cavities],
                           parts={n: dict(role=i['role'], mount_nH=i['mount'] * 1e9, node=i['rail'].node,
@@ -186,11 +205,13 @@ def run(a):
             fh.write('f_Hz,' + ','.join(f'{r}_mag,{r}_deg' for r in obs) + '\n')
             for i in range(len(f)):
                 fh.write(f'{f[i]:.6g},' + ','.join(f'{abs(Z[r][i]):.6g},{np.degrees(np.angle(Z[r][i])):.3f}' for r in obs) + '\n')
-        figs.append(z_figure(f, Z, Z0, target, a.out))
+        figs.append(z_figure(f, Z, Z0, targets, a.out))
         worst = max(obs, key=lambda r: np.abs(Z[r]).max()) if obs else None
-        if worst:
-            say(f'PDN done in {t_b + t_z:.1f} s; target {target * 1e3:.1f} mOhm; {worst} over it at '
+        if worst and targets.get(worst):
+            say(f'PDN done in {t_b + t_z:.1f} s; target {targets[worst] * 1e3:.1f} mOhm; {worst} over it at '
                 f'{len(out["pdn"]["z"][worst]["over"])} band(s)')
+        elif worst:
+            say(f'PDN done in {t_b + t_z:.1f} s; no target')
     out['seconds']['total'] = round(time.time() - t0, 1)
     with open(os.path.join(a.out, 'pdn.json'), 'w') as fh:
         json.dump(out, fh, indent=1)
@@ -240,13 +261,29 @@ def dc_figures(board, dc, volts, out):
     return files
 
 
-def z_figure(f, Z, Z0, target, out):
+def z_figure(f, Z, Z0, targets, out):
+    """|Z| per load, the planes alone dotted. `targets`: {load: ohms or None} (or one value for all). The axis is
+    set by the loaded curves and targets, so a bare-planes curve reaching 1e11 ohm on a tiny cavity (I6) runs
+    off the top instead of flattening them."""
     plt = _plt()
+    if not isinstance(targets, dict):
+        targets = {r: targets for r in Z}
     fig, ax = plt.subplots(figsize=(9, 4.6))
+    shown = []
     for k, (r, z) in enumerate(Z.items()):
         ax.loglog(f, np.abs(z), c=f'C{k % 10}', lw=1.8, label=r)
         ax.loglog(f, np.abs(Z0[r]), ':', c=f'C{k % 10}', lw=0.8)
-    ax.axhline(target, c='r', lw=1, label=f'target {target * 1e3:.1f} mOhm')
+        shown.append(np.abs(z))
+    levels = sorted({t for t in targets.values() if t})
+    for t in levels:
+        who = [r for r, v in targets.items() if v == t]
+        ax.axhline(t, c='r', lw=1, label=f"target {t * 1e3:.1f} mOhm" + (f" ({', '.join(who)})" if len(levels) > 1 else ''))
+    if shown:
+        data = np.concatenate(shown)
+        data = data[np.isfinite(data) & (data > 0)]
+        if len(data):
+            lo, hi = min([data.min(), *levels]), max([data.max(), *levels])
+            ax.set_ylim(lo / 3, hi * 3)
     ax.set_xlabel('Hz'); ax.set_ylabel('|Z| (Ohm)'); ax.grid(True, which='both', alpha=0.3)
     ax.set_title('impedance each load sees (dotted: the planes alone)', fontsize=10)
     ax.legend(fontsize=7, ncol=2)

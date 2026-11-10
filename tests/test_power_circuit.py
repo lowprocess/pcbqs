@@ -328,3 +328,25 @@ def test_compressed_mqs_matches_dense_without_capacitance():
             Z[backend] = (np.asarray(r.z['p']), np.asarray(r.zc['p']))
         for k in range(2):
             np.testing.assert_allclose(Z['hierarchical'][k], Z['dense'][k], rtol=1e-5)
+
+
+@pytest.mark.parametrize('sheets', [1, 2])
+def test_copper_ports_on_the_compressed_backend_match_dense(sheets):
+    """CopperPorts with matrix_backend='hierarchical': GMRES per port instead of dense loop matrices (face sheets
+    in the circuit tool's memory), the same port matrix and branch currents, DC included."""
+    from test_mqs import trace_board
+    from shapely.geometry import box
+    from pcbqs.mqs import MQS
+    terms = {'s': [('F.Cu', box(2, 9.6, 2.6, 10.4))], 'g': [('F.Cu', box(2, 7.7, 2.6, 8.5))],
+             'm': [('F.Cu', box(10, 9.6, 10.6, 10.4))]}
+    out = {}
+    for back in ('dense', 'hierarchical'):
+        q = MQS(trace_board(), 'N', terminals=terms, dmax=1, conductor_loss='slab', thickness_sheets=sheets,
+                matrix_backend=back, solver_tol=1e-11, log=lambda *_: None)
+        q.source('p', 's', 'g', part_h=0)
+        q.source('r', 'm', 'g', part_h=0)
+        out[back] = CopperPorts(q).extract([0, 1e5, 2e7])
+    a, b = out['dense'], out['hierarchical']
+    np.testing.assert_allclose(b.impedance, a.impedance, rtol=1e-6, atol=1e-12)
+    for k in range(3):                                   # to the compression tolerance (1e-6) of the largest
+        assert np.abs(b.currents[k] - a.currents[k]).max() < 2e-5 * np.abs(a.currents[k]).max()

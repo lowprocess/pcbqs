@@ -215,3 +215,38 @@ def test_cli_describes_cap():
     import pcbqs.pdn.cli as cli
     options = {o['key']: o for o in cli.describe()['options']}
     assert options['cap']['kind'] == 'list' and options['cap']['flag'] == '--cap'
+
+
+def _with_high_side(b):
+    """Q1: a load with a rail pad only (a bridge's high-side FET: its current returns through the low side)."""
+    b['prims']['footprints'].append(fp('Q1', 'FET', [pad('1', 'P', 15.0, 16.0, 0.8, 0.8)], lib='SON-8'))
+    return b
+
+
+def test_a_load_returns_through_another_part():
+    """--load REF=A@RETURN (C9): a load without ground pads returns through the named part's, so its ground rise
+    is modelled instead of noted as missing."""
+    b = _with_high_side(board())
+    alone = solve_rail(Rail(b, 'P', loads={'Q1': 1.0}), 3.3, dmax=0.8, log=lambda *a: None)
+    assert alone['loads']['Q1']['ground_rise'] == 0 and any('Q1: no ground pad' in n for n in alone['notes'])
+    back = solve_rail(Rail(b, 'P', loads={'Q1': 1.0}, returns={'Q1': 'U1'}), 3.3, dmax=0.8, log=lambda *a: None)
+    assert back['loads']['Q1']['ground_rise'] > 0 and not any('Q1: no ground pad' in n for n in back['notes'])
+    with pytest.raises(ValueError):
+        Rail(b, 'P', loads={'Q1': 1.0}, returns={'Q1': 'R2'})            # R2 has no ground pad
+
+
+def test_cli_load_returns_and_targets(tmp_path):
+    """The PDN CLI: --load REF=A@RETURN, per-load targets (--load-target) and none (--no-target) (C10)."""
+    import json
+    from pcbqs.pdn.cli import main
+    path = tmp_path / 'b_board.json'
+    path.write_text(json.dumps(_with_high_side(board())))
+    common = [str(path), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--load', 'Q1=1@U1', '--dmax', '1',
+              '--points', '7']
+    main(common + ['--load-target', 'U1=0.02', '--out', str(tmp_path / 'a')])
+    r = json.loads((tmp_path / 'a' / 'pdn.json').read_text())
+    assert r['loads']['Q1']['ground_rise'] > 0
+    assert r['pdn']['z']['U1']['target'] == 0.02 and r['pdn']['z']['Q1']['target'] == r['pdn']['target'] > 0
+    main(common + ['--no-target', '--out', str(tmp_path / 'b')])
+    r = json.loads((tmp_path / 'b' / 'pdn.json').read_text())
+    assert r['pdn']['target'] is None and all(z['target'] is None and z['over'] == [] for z in r['pdn']['z'].values())

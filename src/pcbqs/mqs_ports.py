@@ -37,7 +37,13 @@ class CopperPorts:
         f=np.atleast_1d(np.asarray(frequencies,float))
         if f.ndim!=1 or not np.isfinite(f).all() or (f<0).any():
             raise ValueError('port frequencies must be finite and nonnegative')
-        q=self.q;m=q._assemble();C=m['C'];offset=len(q.br)
+        q=self.q
+        if q.matrix_backend=='hierarchical':             # compressed: GMRES per port, no dense loop matrices
+            from .mqs_iterative import port_matrix
+            q._assemble();Z,branch=port_matrix(q,f,log=log)
+            branch[:,len(q.br):]=0                      # fictitious port connectors are never radiators
+            return PortResponse(f,self.names,Z,branch)
+        m=q._assemble();C=m['C'];offset=len(q.br)
         sc=np.array([m['src'][offset+i] for i in range(len(q.parts))])
         free=np.setdiff1d(np.arange(C.shape[1]),sc)
         Zs=[];responses=[]

@@ -163,6 +163,8 @@ class Rail:
     through: tuple = ()
     stop: tuple = ()
     dcr: dict = field(default_factory=dict)         # {ref: ohms}: series parts' DC resistance
+    returns: dict = field(default_factory=dict)     # {load ref: ref}: a load returning through another part's ground
+                                                    # pads (a bridge's high side through its low side), C9
 
     def __post_init__(self):
         self.parts = {p.ref: p for p in parts_of(self.board)}
@@ -240,12 +242,20 @@ class Rail:
         for r in self.loads:
             if not self.parts[r].on(self.nets):
                 raise ValueError(f"load {r} has no pad on the rail ({', '.join(sorted(self.nets))})")
+        for r, back in self.returns.items():
+            if r not in self.loads:
+                raise ValueError(f"return given for {r}, which is not a load")
+            if back not in self.parts:
+                raise ValueError(f"load {r}'s return {back} is not on the board")
+            if not self.parts[back].on(g):
+                raise ValueError(f"load {r}'s return {back} has no pad on the ground ({', '.join(sorted(g))})")
 
     def pads_of(self, part, role=None):
         """(rail pads, ground pads) of a part: the source's are source_pads and ground_source_pads."""
         if role == 'source':
             return self.source_pads, self.ground_source_pads
-        return part.on(self.nets), part.on(set(self.ground))
+        back = self.returns.get(part.ref)
+        return part.on(self.nets), (self.parts[back] if back else part).on(set(self.ground))
 
     def describe(self):
         lines = [f"rail {self.net}: nets {', '.join(sorted(self.nets))}"]

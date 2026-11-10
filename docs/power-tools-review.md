@@ -22,8 +22,8 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 | C6 | Coaxial via segments used 1e-7 m separation for their mutual inductance; vias through inner copper were over-inductive (Jetson X −1.6% after fixing). | `mqs.py` `_via_matrices` | Fixed (earlier this branch's base) |
 | C7 | Precharge hard-codes the template's references and drops (C19–C24, CA*, L3, C25/C27/C30; 0.055/0.085 Ω). Another board, or a renamed or replaced L3, starts far from steady state. Warm starts now replace it after the first (pilot) run. | `power_bridge.py:98-101,150` | Partly: warm starts; generic DC precharge on ROADMAP |
 | C8 | The periodicity check ignores supply current, and input power is averaged over one switching cycle, so a slowly decaying input-filter mode biases input power and efficiency (≤ 0.66% on wpthb in both old and new code). | `power_circuit.py:160,181` | ROADMAP |
-| C9 | High-side FET loads have no ground pad, so a bridge's DC return (through the low-side FET) is not modelled; the tool only notes it. | `pdn/dc.py:250` | ROADMAP: `--load REF=A@RETURN` |
-| C10 | The PDN target defaults to V × 5% ÷ (half the loads' current) even for a switching bridge, where it has little meaning. | `pdn/cli.py:196-197` | ROADMAP: per-load/no target |
+| C9 | High-side FET loads have no ground pad, so a bridge's DC return (through the low-side FET) is not modelled; the tool only notes it. | `pdn/dc.py:250` | Fixed 2026-11-10: `--load REF=A@RETURN` |
+| C10 | The PDN target defaults to V × 5% ÷ (half the loads' current) even for a switching bridge, where it has little meaning. | `pdn/cli.py:196-197` | Fixed 2026-11-10: `--load-target REF=OHMS`, `--no-target` |
 | C11 | DC pads were not equipotential: a 1e6 S tie shared over all of a pad's vertices, with current entering at its edge, left pads ~20 µV/A off (+1% on a strip, growing with refinement). Found by `validation/dc_elmer.py`. | `pdn/dc.py` | Fixed: 1e6 S per vertex |
 | C12 | DC meshes had slivers from each via's ring to vertices ~2 mm away (Triangle without a minimum angle), underestimating every via junction's spreading by ~0.1 mΩ, regardless of `dmax`. Jetson +1V15 drop 5.78 → 6.18 mV, its PDN peak +5.7% once fixed. | `_numerics/geo.py`, `pdn/dc.py` | Fixed: 25° minimum angle for DC meshes |
 | C13 | A terminal is one node, so a part crosses its pads instantly and large pads lower a small loop's inductance (20 × 10 mm loop: 37.4 nH with 1 mm pads, 38.8 nH with 0.25 mm). Otherwise inductance matches FastHenry to 0.3–2% and |H| matches Palace to ~5%. | `mqs.py`, `contacts.py` | Fixed 2026-11-10: chip parts attach where their end cap and fillet are (`pad_contact`, 83–95% of KiCad pads; whole pads were within 3%); see `validation/README.md` |
@@ -33,12 +33,12 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 
 | # | Finding | Where | Status |
 |---|---|---|---|
-| I1 | `bus_ripple_V` is measured at every solver timestep (edge spikes), while saved waveforms are resampled at T/256 and hide them; the GUI plots the resampled data. Easy to misread (it was misread during this review). | `power_bridge.py:153` | Fixed: `bus_ripple_V` is the settled ripple (final cycle at T/256, as plotted) and `bus_spike_pp_V` the solver-step p-p; the window shows both. Plotting raw points remains open |
+| I1 | `bus_ripple_V` is measured at every solver timestep (edge spikes), while saved waveforms are resampled at T/256 and hide them; the GUI plots the resampled data. Easy to misread (it was misread during this review). | `power_bridge.py:153` | Fixed: `bus_ripple_V` is the settled ripple (final cycle at T/256, as plotted) and `bus_spike_pp_V` the solver-step p-p; the window shows both, and plots the solver's own steps on request |
 | I2 | Each tool re-imports the KiCad board (25 s for Jetson) on every run; nothing is shared between the three tools or the GUI pages. | CLIs | Fixed: `load_board` caches imports by content hash (Jetson +1V15 11.8 → 0.5 s) |
 | I3 | Two near-field paths: `pcbqs.mqs` (assumed pulse spectrum) and `power_circuit --fields` (simulated currents); results are not cross-referenced. | `mqs_cli.py`, `power_circuit.py` | ROADMAP |
 | I4 | PDN and Near field forms are generated from `--describe` (good: new options appear without GUI changes). The Circuit page is hand-built around the wpthb template instead. | `powercircuittab.py` | ROADMAP: `--describe` for power_circuit |
-| I5 | Converter discovery stops at ambiguous input nets (VCC/VDD/VDRV on five Jetson bucks); the user must know the right net. | `mqs_cli.py:125` | ROADMAP: offer candidates in the GUI |
-| I6 | The PDN impedance plot's bare-planes curve can reach 10¹¹ Ω on boards with a tiny cavity, flattening the useful curves. | `pdn/cli.py` figure | ROADMAP: clip or drop it |
+| I5 | Converter discovery stops at ambiguous input nets (VCC/VDD/VDRV on five Jetson bucks); the user must know the right net. | `mqs_cli.py:125` | Fixed 2026-11-10: Find converters in the Near field page |
+| I6 | The PDN impedance plot's bare-planes curve can reach 10¹¹ Ω on boards with a tiny cavity, flattening the useful curves. | `pdn/cli.py` figure | Fixed 2026-11-10: the axis follows the loaded curves (CLI figure and window) |
 
 ## UI flow (kicad2ems window)
 

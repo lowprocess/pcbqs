@@ -3,7 +3,7 @@
 Covers the converter near field (`pcbqs.mqs`), rail PDN (`pcbqs.pdn`), switching
 circuits (`pcbqs.power_circuit`) and their kicad2ems window pages. Findings
 referenced as C/I/U numbers are in [docs/power-tools-review.md](docs/power-tools-review.md).
-Estimates are working days. Last updated 2026-11-10 (C13 started, measurement plan).
+Estimates are working days. Last updated 2026-11-10 (C13, measurement plan, R/L/C face model, PDN C9/C10/I6, I5, raw solver steps).
 
 ## Done recently
 
@@ -43,10 +43,11 @@ Estimates are working days. Last updated 2026-11-10 (C13 started, measurement pl
    of supply current; average input power over whole slow-mode periods, or
    extrapolate the decaying mode (vector extrapolation of the per-cycle state)
    instead of simulating it out.
-3. ~~Ripple reported twice (I1)~~: done (see above); still open, the window plotting raw solver points.
-4. **PDN loads and targets (C9, C10, I6; 1 day).** `--load REF=A@RETURN` for loads
-   whose return is another part (a bridge's low side); per-load targets or none;
-   clip the bare-planes curve.
+3. ~~Ripple reported twice (I1)~~: done, and the window plots the solver's own steps on request (Solver steps:
+   `steps.*` in transient.npz, the plotted signals' final two periods before ngspice's linearize).
+4. ~~PDN loads and targets (C9, C10, I6)~~, done 2026-11-10: `--load REF=A@RETURN` (a load returning through
+   another part's ground pads: its ground rise modelled), `--load-target REF=OHMS` and `--no-target`, and the
+   impedance plot's axis set by the loaded curves (the bare-planes curve runs off the top; the window too).
 5. ~~Real-board regressions~~: done for CM5 (near field) and wpthb (PDN); a wpthb circuit case (56 s) is
    still open.
 
@@ -56,8 +57,9 @@ Estimates are working days. Last updated 2026-11-10 (C13 started, measurement pl
    from the tool, as Power Integrity and Near field do; per-group parasitic
    overrides; default to the template's switch model and warn on `switch` with ngspice.
 7. ~~Shared board import (I2)~~: done (see above).
-8. **Converter candidates (I5; 0.5 day).** When the input net is ambiguous, offer
-   the candidates in the Near field page instead of failing.
+8. ~~Converter candidates (I5)~~, done 2026-11-10: the Near field page's Find converters lists each converter and
+   input net (`pcbqs.mqs --list-converters`) and fills converter, input and capacitors from the pick; a run
+   that fails on an ambiguous net points to it.
 9. **Cross-tool flows (U4, I3; 2.5 days).** Near field converter → Circuit
    template (parts, loop copper); Circuit input-current spectrum → PDN loads;
    compare `pcbqs.mqs` assumed-pulse fields with `power_circuit --fields`.
@@ -120,6 +122,14 @@ In order:
      18% high with capacitance on).
    - Still open here: side charge in a layered dielectric, the narrow-gap edge-charge resolution, and the tree
      preconditioner (a fallback) with face sheets.
+   - Circuit tool with two face sheets (in progress 2026-11-10): `mesh.matrix_backend: hierarchical` extracts the
+     copper ports by GMRES on the compressed copper (`mqs_iterative.port_matrix`: all ports in lockstep, one
+     compressed product per step for every port, warm-started across frequencies), no dense loop matrices.
+     wpthb (24 ports, 11 frequencies): one sheet dense 69 s / 5.4 GB; one sheet compressed 545 s per-port GMRES ->
+     151 s lockstep / 1.4 GB, results within 0.1% of dense; two faces dense 266 s / 25 GB, compressed per-port
+     2334 s / 2.1 GB (settled ripple -5.6%, all else < 0.1%); two faces lockstep: timing run in progress. Next:
+     fewer iterations (a better port preconditioner, a recycled Krylov space across ports), then decide whether
+     two faces becomes the circuit default.
    - The 2–3% inductance drop with face sheets.
    - Default: once the CM5 loop agrees, two face sheets plus the compressed backend for `conductor_loss='slab'`.
 

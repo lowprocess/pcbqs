@@ -326,6 +326,9 @@ def make_board_ports(board, config, log=print):
         # one sheet by default: two face sheets moved wpthb's settled bus ripple 6% (power, efficiency, phase, currents
         # under 0.03%) at 4.7x the time and 25 GB (copper ports need the dense loop matrices); mesh.thickness_sheets: 2
         thickness_sheets=int(selected.get('thickness_sheets', 1)),
+        # mesh.matrix_backend: 'hierarchical' extracts the ports by GMRES on the compressed copper (no dense loop
+        # matrices: two face sheets fit in memory); 'dense' (default) solves them directly
+        matrix_backend=selected.get('matrix_backend', 'dense'),
         fill_backend=selected.get('backend', 'auto'),
         fill_workers=selected.get('workers', 8),
         log=log,

@@ -20,6 +20,11 @@ SOLVER_DEFAULTS = dict(
 )
 
 
+
+# signals the window plots; their solver-step values are saved too (steps.<label>, steps.time_s)
+STEP_LABELS = ('bus.V', 'input.V', 'supply.V', 'bridge.V', 'PRIMARY.V', 'SECONDARY.V', 'PRIMARY.winding_I',
+               'SECONDARY.winding_I', 'L3.I', 'R9.I')
+
 def solver_options(options=None):
     """Validated ngspice .options: SOLVER_DEFAULTS overridden by `options`."""
     merged = {**SOLVER_DEFAULTS, **(options or {})}
@@ -393,6 +398,15 @@ class Circuit:
             if port_vectors
             else []
         )
+        # the plotted signals at the solver's own steps (before linearize resamples them), for the window's
+        # waveforms: switching-edge spikes that the uniform samples miss (I1). Final two periods kept.
+        step_vectors = [(name, label) for name, label in zip(output_names, labels) if label in STEP_LABELS]
+        step_export = (
+            ['set filetype=binary', 'write transient-steps.raw ' + ' '.join(n for n, _ in step_vectors),
+             'set filetype=ascii']
+            if step_vectors
+            else []
+        )
         lines = [
             'Transient power circuit',
             *self.lines,
@@ -408,6 +422,7 @@ class Circuit:
             *lets,
             *measures,
             *adaptive_export,
+            *step_export,
             'linearize ' + ' '.join(output_names),
             'wrdata transient.dat ' + ' '.join(output_names),
             'rusage all',
@@ -457,6 +472,19 @@ class Circuit:
             'time_s': table[:, 0],
             **{k: table[:, i + 1] * self.signal_signs.get(k, 1) for i, k in enumerate(labels)},
         }
+        steps = out / 'transient-steps.raw'
+        if step_vectors and steps.is_file():
+            from .power_waveforms import read_raw
+
+            raw = read_raw(steps)
+            t = raw.get('time')
+            if t is not None:
+                take = t >= stop - 2 / f
+                res['steps.time_s'] = t[take]
+                for name, label in step_vectors:
+                    if name in raw:
+                        res['steps.' + label] = raw[name][take] * self.signal_signs.get(label, 1)
+            steps.unlink()
         np.savez_compressed(out / 'transient.npz', **res)
         (out / 'signals.json').write_text(json.dumps(dict(zip(labels, vectors)), indent=2))
         measured = {}
@@ -507,7 +535,7 @@ def periodic_samples(result, f, cycles=4, samples=512):
     values = {
         k: np.interp(t, time, v).reshape(cycles, samples)
         for k, v in result.items()
-        if k != 'time_s' and not k.startswith('_')
+        if k != 'time_s' and not k.startswith(('_', 'steps.'))      # steps.*: the solver's own time base
     }
     errors = {k: float(np.max(abs(v[-1] - v[-2])) / max(np.max(abs(v[-1])), 1e-9)) for k, v in values.items()}
     return t.reshape(cycles, samples), values, errors
