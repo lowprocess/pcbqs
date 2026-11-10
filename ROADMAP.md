@@ -7,6 +7,9 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
 
 ## Done recently
 
+- Ripple reported twice (I1): `bus_ripple_V` is now the settled ripple (the final cycle sampled at T/256, as the
+  saved waveforms are) and `bus_spike_pp_V` the peak to peak on the solver's own steps, edge spikes included; the
+  window's Circuit table shows both. Results from before this report the spike value as `bus_ripple_V`.
 - Shared board import (I2): `pcbqs._cli.load_board` caches each KiCad import by content hash and net subset in
   `~/.cache/pcbqs/boards` (`PCBQS_CACHE_DIR`, `PCBQS_NO_CACHE=1`), so the three tools and the window import a board
   once (Jetson +1V15: 11.8 s, then 0.5 s).
@@ -34,8 +37,7 @@ Estimates are working days. Last updated 2026-11-09 (evening: validation, C14 st
    of supply current; average input power over whole slow-mode periods, or
    extrapolate the decaying mode (vector extrapolation of the per-cycle state)
    instead of simulating it out.
-3. **Ripple reported twice (I1; 0.5 day).** Settled (sampled) ripple and
-   edge-spike p-p as separate results; the window plots raw solver points.
+3. ~~Ripple reported twice (I1)~~: done (see above); still open, the window plotting raw solver points.
 4. **PDN loads and targets (C9, C10, I6; 1 day).** `--load REF=A@RETURN` for loads
    whose return is another part (a bridge's low side); per-load targets or none;
    clip the bare-planes curve.

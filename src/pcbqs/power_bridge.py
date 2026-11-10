@@ -263,8 +263,11 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
 
 def metrics(result, f, match, samples=512):
     """Results of a run: ngspice's measurements over the final cycle (on its adaptive grid, so narrow
-    input/diode pulses count) and the cycle-to-cycle change of the main signals."""
+    input/diode pulses count) and the cycle-to-cycle change of the main signals. The bus voltage is reported
+    twice (I1): bus_ripple_V, the settled ripple, peak to peak of the final cycle sampled at T/256 as the saved
+    waveforms are; bus_spike_pp_V, peak to peak on the solver's own steps, switching-edge spikes included."""
     _, _, errors = periodic_samples(result, f, samples=samples)
+    _, waves, _ = periodic_samples(result, f, samples=256)
     measured = result['_measures']
     power = measured['load_power_W']
     pin = measured['input_power_W']
@@ -279,7 +282,9 @@ def metrics(result, f, match, samples=512):
         input_power_W=pin,
         gate_drive_power_W=gate,
         efficiency=power / (pin + gate) if pin + gate > 0 else None,
-        **{k: measured[k] for k in ('primary_rms_A', 'secondary_rms_A', 'primary_peak_A', 'bus_ripple_V')},
+        **{k: measured[k] for k in ('primary_rms_A', 'secondary_rms_A', 'primary_peak_A')},
+        bus_ripple_V=float(np.ptp(waves['bus.V'][-1])),
+        bus_spike_pp_V=measured['bus_ripple_V'],
         periodic_error={
             k: errors[k] for k in ['PRIMARY.winding_I', 'SECONDARY.winding_I', 'bus.V', 'supply.I', 'load.V']
         },
