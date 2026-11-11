@@ -229,6 +229,9 @@ def build(model, state=None, copper=None):
         deck.add(part, drives, period, state, pin_nodes)
     for i, c in enumerate(model.get('couplings', [])):
         deck.coupling(i, c)
+    for node in dict.fromkeys(n for part in model['parts'] if part['ref'] in deck.kinds for n in part['nodes']):
+        if node not in GROUND:                                      # every node's voltage: node.<name>
+            deck.voltage('node.' + node, node, '0')
     if copper and copper['ports']:
         before = (state or {}).get('__copper__')
         if before is None and state is not None:                    # the first run on the board: each pad's copper

@@ -252,3 +252,73 @@ def test_boost_on_its_board(boost_copper, tmp_path):
     # the loop's inductance against the diode's capacitance: its reverse voltage overshoots on the board
     assert board['parts']['D1']['peak_V'] > 1.15 * alone['parts']['D1']['peak_V']
     assert (Path(board['folder']) / 'waveforms.png').is_file() and (out / 'copper-model.json').is_file()
+
+
+# ---- the fields over the board ----
+def test_a_signals_harmonics_put_it_back_together():
+    from pcbqs.circuit import fields as F
+    T = 5e-6
+    t = np.arange(8 * 256 + 1) * T / 256
+    x = 1.5 + 0.8 * np.cos(2 * np.pi * t / T + 0.4) - 0.3 * np.sin(2 * np.pi * 3 * t / T)
+    c, at = F.harmonics_of(dict(time_s=t, a=x), ['a'], T, 8)
+    assert c.shape == (9, 1) and c[0, 0] == pytest.approx(1.5) and abs(c[1, 0]) == pytest.approx(0.4, rel=1e-6)
+    assert abs(c[3, 0]) == pytest.approx(0.15, rel=1e-6) and abs(c[2, 0]) < 1e-9
+    n = np.arange(9)[:, None]
+    back = (np.r_[1.0, np.full(8, 2.0)][:, None] * c * np.exp(2j * np.pi * n * (at - at[0])[None, :] / T)).real.sum(axis=0)
+    assert back == pytest.approx(np.interp(at, t, x), abs=1e-9)
+    assert F.settings(dict(fields=dict(harmonics=8)))['harmonics'] == 8 and F.settings({})['heights_mm'] == (1.0, 5.0)
+
+
+def test_a_volt_on_a_net_is_a_field_over_that_net(boost_copper):
+    """E for one volt on each net alone: strongest over that net's own island, and the islands' capacitances are
+    those of their plates over the ground plane with the fringe on top."""
+    from pcbqs._cli import load_board
+    from pcbqs.circuit import fields as F
+    model, cu, out, said = boost_copper
+    board = load_board(model['board']['file'])
+    x, y = np.linspace(2, 36, 35), np.linspace(-13, -1, 13)         # over the three islands, 1 mm up
+    unit, cap = F.unit_fields(M.resolve(model), board, x, y, np.array([1.5 + 1.0]), lambda *a: None)
+    assert set(unit) == {'in', 'sw', 'out', 'GND'}
+    plate = lambda w, h: 8.854e-12 * 4.5 * w * h * 1e-6 / 1.5e-3    # the island alone, as a parallel plate
+    assert plate(13, 10) < cap['sw'] < 1.6 * plate(13, 10) and plate(10, 10) < cap['in'] < 1.6 * plate(10, 10)
+    assert cap['in'] == pytest.approx(cap['out'], rel=0.05) and cap['GND'] > cap['sw']
+    mag = {n: np.linalg.norm(E[:, :, 0, :], axis=-1) for n, E in unit.items()}
+    cols = dict(sw=(x > 13) & (x < 25), out=x > 26.5)
+    cols['in'] = x < 11.5
+    for net, other in (('in', 'out'), ('out', 'in'), ('sw', 'in')):
+        assert mag[net][cols[net]].mean() > 3 * mag[net][cols[other]].mean(), net
+    assert np.abs(unit['sw'][:, :, 0, 2]).max() > 100              # V/m for a volt, a millimetre up: of the order of V / d
+
+
+@ngspice
+def test_boost_fields_come_from_its_own_currents_and_voltages(boost_copper):
+    """H over the loop the switch and the diode commutate round, E over the switch node, both from the run."""
+    from pcbqs.circuit import run
+    model, cu, out, said = boost_copper
+    log = []
+    summary = run(model, out, log=log.append, copper=True, fields=True)
+    case = summary['cases'][0]
+    f = case['fields']
+    assert f['harmonics'] == 16 and f['highest_Hz'] == pytest.approx(3.2e6) and f['heights_mm'] == [1.0, 5.0]
+    assert f['net_voltage_swing_V']['sw'] == pytest.approx(24.4, abs=1.5) and f['net_voltage_swing_V']['in'] < 0.5
+    assert 0 <= f['port_current_AC_left_out'] < 0.2 and f['grid']['converged']
+    with np.load(f['file']) as d:
+        x, y, H, E = d['x_mm'], d['y_mm'], d['H_ac_rms_A_per_m'], d['E_ac_rms_V_per_m']
+        Et, t = d['E_V_per_m'], d['time_s']
+        assert d['H_A_per_m'].shape == (64, len(x), len(y), 2, 3) and Et.shape == d['H_A_per_m'].shape
+        assert (d['H_rms_A_per_m'] >= H - 1e-6).all() and (d['E_rms_V_per_m'] >= E - 1e-3).all()
+    at = lambda F, k: (x[np.unravel_index(F[:, :, k].argmax(), F[:, :, k].shape)[0]], y[np.unravel_index(F[:, :, k].argmax(), F[:, :, k].shape)[1]])
+    ex, ey = at(E, 1)                                              # 5 mm up: over the switch node's island
+    assert 12 < ex < 26 and -12.5 < ey < -1.5
+    hx, hy = at(H, 1)                                              # over Q1, D1 and the output capacitor: the hot loop
+    assert 17 < hx < 31
+    assert H[:, :, 0].max() > 3 * H[:, :, 1].max() and E[:, :, 0].max() > 2 * E[:, :, 1].max()     # falls off with height
+    i, j = np.abs(x - 19).argmin(), np.abs(y + 7).argmin()         # over the middle of the switch node, 5 mm up
+    ez = Et[:, i, j, 1, 2]
+    assert ez.max() - ez.min() > 10 * abs(Et[:, np.abs(x - 7).argmin(), j, 1, 2].max() - Et[:, np.abs(x - 7).argmin(), j, 1, 2].min())
+    high = ez > (ez.max() + ez.min()) / 2                          # up while the switch is off: 1 - duty of the period
+    assert high.mean() == pytest.approx(1 - case['knobs']['drives.pwm.duty'], abs=0.04)
+    assert (out / 'run' / 'fields.png').is_file() and case['notes'] == []
+    assert any('fields at 1 mm' in line for line in log)
+    again = run(model, out, log=lambda s: None, copper=True, fields=True)['cases'][0]
+    assert again['notes'] == [] and again['fields']['E_ac_rms_max_V_per_m'] == f['E_ac_rms_max_V_per_m']

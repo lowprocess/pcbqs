@@ -10,6 +10,7 @@ it is running.
     python -m pcbqs.circuit boost.json --out result --jobs 4
     python -m pcbqs.circuit boost.json --set parameters.vin=9 --set R1.resistance_ohm=24
     python -m pcbqs.circuit boost.json --out result --copper          # with its board's copper
+    python -m pcbqs.circuit boost.json --out result --fields          # and the H and E fields over the board
     python -m pcbqs.circuit --from-kicad board.kicad_pcb > model.json  # the parts of a KiCad design
 
 (`python -m pcbqs.power_circuit` is the older, format 1 tool for one circuit: a phase-shifted full bridge into a
@@ -95,6 +96,7 @@ and `waveforms.png`:
 - `coupled`: each set of coupled inductors with the power the set loses (one winding alone passes power to the
   other, so its own `power_W` is not a loss)
 - `copper` (with `--copper`): `board`, `loss_W`, `fit_error`, `ports` (pad, its net's reference pad, `rms_A`)
+- `fields` (with `--fields`): the largest H and E on each plane, each net's swing and capacitance, the files
 - `stored_energy_change_W`: what went into the capacitors and inductors over the reported period, counted out of
   the parts' powers, the loss and the efficiency
 - `periodic_error`, `energy_drift_relative`, `reltol`, `runs`, `periods`, `history` (every run of the search)
@@ -147,6 +149,38 @@ board where the circuit alone gives 24 V. Nothing in the examples damps that rin
 resistance, so it is larger than on a bench; give the parts their ESL and their losses, or a snubber, to see
 what a real one does.
 
+## Fields over the board
+
+`--fields` (which implies `--copper`) writes, for every case, the fields on planes 1 and 5 mm above the top copper
+over the last period: `fields.npz` (H and E in time, their RMS maps, H's harmonics) and `fields.png` (the AC RMS
+maps over the board's copper).
+
+- **H** comes from the currents in the copper. The reported run's port currents are taken apart into harmonics
+  of the period (16 by default, from ngspice's own steps); the solver that gave the circuit its copper model
+  gives the current everywhere in the copper for those, and H by Biot-Savart; the harmonics are put back
+  together over the period.
+- **E** comes from the voltages on the copper. Each net's copper is a conductor at its node's voltage, the
+  ground at zero. The charge that puts on it is solved once on the same mesh, in the board's dielectric stack,
+  for a volt on each net; E at any instant is those fields weighted by the nets' voltages then. A switch node
+  swinging 24 V over a 13 x 10 mm island gives about 4 kV/m AC RMS a millimetre up and 0.9 kV/m at 5 mm.
+
+```json
+"fields": {"harmonics": 16, "heights_mm": [1, 5], "pitch_mm": 0.75}
+```
+
+A case's `fields` has the largest values on each plane (`H_ac_rms_max_A_per_m`, `E_ac_rms_max_V_per_m`, the
+peaks, the RMS with the steady part), each net's voltage swing and capacitance, and the share of the port
+currents' AC above the last harmonic kept.
+
+What is in them and what is not:
+
+- The copper and its vias only. No part's own field: not an inductor's stray field, not the E of a part's body
+  above the board. Those need a model of each part.
+- Quasi-static: the Coulomb E of the charges without the induced E of changing currents, and no radiation. It is
+  what a near-field probe a few millimetres up sees, not a far field.
+- The board taken as grounded: its ground copper at zero volts against its surroundings.
+- H is band-limited to the harmonics kept; the ringing at the edges is above them. E is not band-limited.
+
 ## From KiCad
 
 `--from-kicad` reads a board (`.kicad_pcb`), a schematic (`.kicad_sch`, through `kicad-cli`) or a KiCad XML
@@ -192,4 +226,5 @@ board; the hard-switched ones ring to twice their bus and more.
 
 ## Not here yet
 
-Field export from the copper's currents, the temperature sweep and the report pages of `pcbqs.power_circuit`.
+Parts' own fields (an inductor's stray field, a part body's E), the fields in kicad2ems's viewer, the temperature
+sweep and the report pages of `pcbqs.power_circuit`.

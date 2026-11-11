@@ -17,6 +17,7 @@ def main(argv=None):
     ap.add_argument('--set', action='append', default=[], metavar='PATH=VALUE',
                     help="set a value of the model before running, e.g. --set drives.pwm.duty=0.4 (repeatable)")
     ap.add_argument('--copper', action='store_true', help="with the copper of the model's board between its parts' pads")
+    ap.add_argument('--fields', action='store_true', help='with the copper, and the H and E fields over the board')
     ap.add_argument('--board', metavar='FILE', help='the board (.kicad_pcb), when the model names none or another')
     ap.add_argument('--from-kicad', metavar='FILE', help='print a model of the parts of a KiCad board, schematic or '
                     'XML netlist, to complete with a source, a load and drives')
@@ -60,8 +61,8 @@ def main(argv=None):
         if a.board:
             model.setdefault('board', {})['file'] = a.board
         M.validate(model)
-        summary = run(model, a.out, jobs=a.jobs, log=lambda s: print(s, flush=True), copper=a.copper)
-    except (M.ModelError, BoardError) as e:
+        summary = run(model, a.out, jobs=a.jobs, log=lambda s: print(s, flush=True), copper=a.copper, fields=a.fields)
+    except (M.ModelError, BoardError, ValueError) as e:
         print(f"circuit: error: {e}", file=sys.stderr)
         return 2
     for row in summary['cases']:

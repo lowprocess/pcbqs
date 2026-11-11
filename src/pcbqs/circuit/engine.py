@@ -385,6 +385,10 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
                 shutil.copy2(folder / 'ngspice.log', folder / f"ngspice-failed-{k}.log")
             log(f"{label}ngspice did not converge; retrying " + ('with the other integration method' if k == 0 else 'from the DC start'))
     (folder / 'transient.dat').unlink(missing_ok=True)              # reproducible from circuit.cir
+    if deck.ports:                                                  # the copper's currents, harmonic by harmonic, from
+        from ..power_waveforms import save_port_spectrum            # ngspice's own steps (for the fields)
+        save_port_spectrum(folder, list(deck.signals), f, harmonics=max(31, int((model.get('fields') or {}).get('harmonics', 16))))
+    (folder / 'adaptive-ports.raw').unlink(missing_ok=True)
     return result, deck, count_out_storage(collect(result['_measures'], deck), result, model, deck), k
 
 
@@ -501,7 +505,8 @@ def run_case(model, point, out, log=print, copper=None):
             if 'ngspice transient failed' not in str(exc):
                 raise
             notes.append(f"ngspice could not hold reltol {strict:g}: reported at reltol {a['search_reltol']:g}")
-    for name in ('transient.npz', 'circuit.cir', 'ngspice.log', 'signals.json', 'measurements.json', 'performance.json'):
+    for name in ('transient.npz', 'circuit.cir', 'ngspice.log', 'signals.json', 'measurements.json', 'performance.json',
+                 'port-spectrum.npz'):
         if (folder / name).exists():
             shutil.copy2(folder / name, out / name)
     for f in trials.glob('*/transient.npz'):
@@ -535,17 +540,19 @@ def run_case(model, point, out, log=print, copper=None):
     return row
 
 
-def run(model, out, jobs=1, log=print, copper=False):
+def run(model, out, jobs=1, log=print, copper=False, fields=False):
     """Every point of the model's sweep, `jobs` at a time; <out>/circuit.json has them all:
     {format, name, complete, cases: [run_case's rows], failed: [{sweep, error}]}. A point that fails is reported
     and the others still run. copper: with the model's board between the parts' pads (circuit/copper.py),
-    extracted once for all the points."""
+    extracted once for all the points. fields: with copper, and the H and E fields over the board for every
+    point (circuit/fields.py)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     M.validate(model)
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / 'model.json').write_text(json.dumps(model, indent=1))
     points = M.cases(model)
+    copper = copper or fields
     if copper:
         from .copper import prepare
         copper = prepare(model, out, log)
@@ -581,4 +588,9 @@ def run(model, out, jobs=1, log=print, copper=False):
     finally:
         reset_runs()
     write(True)
+    if fields and rows:
+        from .fields import export
+        summary = json.loads((out / 'circuit.json').read_text())
+        export(model, summary, copper, out, log)
+        (out / 'circuit.json').write_text(json.dumps(summary, indent=1))
     return json.loads((out / 'circuit.json').read_text())

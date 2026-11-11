@@ -236,6 +236,7 @@ def validate(model):
             _need(isinstance(board.get(key, {}), dict), f"board.{key}: an object")
         for ref in board.get('parts', {}):
             _need(str(ref).lower() in refs, f"board.parts: {ref!r} is not a part of the model")
+    _need(isinstance(model.get('fields', {}), dict), 'fields: an object (harmonics, heights_mm, pitch_mm)')
     for path, values in model.get('sweep', {}).items():
         _need(isinstance(values, list) and values, f"sweep.{path}: a list of values")
         if not path.startswith('targets.'):
@@ -251,11 +252,13 @@ AUTOMATIC = ('source_power_W', 'load_power_W', 'efficiency', 'loss_W')        # 
 
 
 def signal_names(model):
-    """The signals a measure may use: the probes' names and every part's <ref>.V and <ref>.I."""
+    """The signals a measure may use: the probes' names, every part's <ref>.V and <ref>.I, and every node's
+    voltage node.<name>."""
     out = set(model.get('probes', {}))
     for p in model.get('parts', []):
         if isinstance(p, dict) and isinstance(p.get('ref'), str):
             out |= {p['ref'] + '.V', p['ref'] + '.I'}
+            out |= {'node.' + n for n in p.get('nodes', []) if isinstance(n, str)}
     return out
 
 
