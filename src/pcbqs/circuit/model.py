@@ -209,6 +209,9 @@ def validate(model):
         if 'voltage' in pr:
             v = pr['voltage']
             _need(isinstance(v, list) and len(v) == 2, f"probes.{name}: voltage needs two nodes")
+            known = {n for p in parts for n in p['nodes']} | {'0', 'GND', 'gnd'}
+            for n in v:
+                _need(n in known, f"probes.{name}: no part is on node {n!r}")
         else:
             _need(str(pr['current']).lower() in refs, f"probes.{name}: no part {pr['current']!r}")
     for name, ms in model.get('measures', {}).items():

@@ -52,6 +52,7 @@ def broken(change):
     (lambda m: m['parts'][0].pop('dc_V'), 'needs one of dc_V, dc_A or wave'),
     (lambda m: m['parts'][-1].update(power_W=5), 'needs one of resistance_ohm, power_W or current_A'),
     (lambda m: m['measures'].update(x={'avg': 'vnothing'}), "'vnothing' is not a probe"),
+    (lambda m: m['probes'].update(vx={'voltage': ['nowhere', '0']}), "no part is on node 'nowhere'"),
     (lambda m: m['measures'].update(x={'median': 'vout'}), 'one of avg, rms, pp, max, min'),
     (lambda m: m['targets'][0].update(measure='vx'), "measure 'vx' is not one of"),
     (lambda m: m['targets'][0].update(adjust='drives.pwm.width'), 'not in the model'),
