@@ -277,3 +277,24 @@ def test_the_command_line_needs_a_loss(tmp_path):
     from pcbqs.thermal.__main__ import main
     with pytest.raises(SystemExit):
         main([str(EXAMPLES / '06_boost.kicad_pcb'), '--out', str(tmp_path)])
+
+
+def test_the_options_describe_themselves_for_the_window(capsys, tmp_path):
+    """kicad2ems-gui builds its Thermal form from --describe --json, as for pdn and mqs; a run records where its
+    heat came from (the board, the circuit run and its case) and its picture beside the numbers."""
+    from pcbqs.thermal.__main__ import main
+    assert main(['--describe', '--json']) == 0
+    d = json.loads(capsys.readouterr().out)
+    opts = {o['key']: o for o in d['options']}
+    assert d['format'] == 1 and opts['loss']['kind'] == 'list' and opts['loss']['flag'] == '--loss'
+    assert opts['film_edge']['flag'] == '--film-edge' and opts['film']['default'] == 10.0
+    assert {'circuit', 'case', 'theta', 'ambient', 'film_bottom', 'method', 'size'} <= set(opts)
+    demo('05_buck_synchronous')
+    out = tmp_path / 'th'
+    assert main([str(EXAMPLES / '05_buck_synchronous.kicad_pcb'), '--loss', 'L1=0.4', '--out', str(out)]) == 0
+    res = json.loads((out / 'thermal.json').read_text())
+    assert res['board'].endswith('05_buck_synchronous.kicad_pcb') and res['circuit'] == '' and res['case'] is None
+    assert res['figure'] == 'thermal.png' and (out / res['figure']).is_file()
+    with pytest.raises(SystemExit):
+        main([str(EXAMPLES / '05_buck_synchronous.kicad_pcb'), '--loss', 'L1=0.4', '--method', 'cubes',
+              '--out', str(out)])

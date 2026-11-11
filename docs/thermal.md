@@ -10,7 +10,11 @@ Elmer through kicad2ems-fem, and the two agree within 2 K on eleven boards (belo
     python -m pcbqs.thermal board.kicad_pcb --loss U1=1.2 --theta U1=8 --film 12 --ambient 40
     python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --film-edge 0  # the edges insulated
 
-It writes `thermal.json` (each part's temperature, each layer's hottest and mean, heat in and out),
+In kicad2ems-gui it is the **Thermal** analysis: its form comes from `python -m pcbqs.thermal --describe --json`,
+and with no losses typed it takes the Circuit page's latest run.
+
+It writes `thermal.json` (each part's temperature, each layer's hottest and mean, heat in and out, the board and
+the circuit case they came from),
 `thermal.npz` (the maps) and `thermal.png`; with `--method both` a picture per solver and
 `thermal-compare.png`.
 

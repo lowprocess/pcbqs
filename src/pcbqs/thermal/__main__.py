@@ -3,6 +3,7 @@
     python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --loss D1=0.5
     python -m pcbqs.thermal --circuit circuit-results            # the board and the losses of a circuit run
     python -m pcbqs.thermal --circuit circuit-results --method both
+    python -m pcbqs.thermal --describe --json                     # the options, for kicad2ems-gui's form
 """
 import argparse
 import json
@@ -12,6 +13,26 @@ from pathlib import Path
 import numpy as np
 
 from . import Problem, solve, losses_of, FILM, AMBIENT
+
+
+OPTIONS = [            # (key, kind, default, help, group): _cli's table, which --describe gives the window
+    ('loss', 'list', [], "A footprint's loss, REF=W (repeatable); with a circuit run, these replace its figures", 'Heat'),
+    ('circuit', 'str', '', "A circuit run's results folder (python -m pcbqs.circuit): its board and its parts' "
+     'losses', 'Heat'),
+    ('case', 'str', '', "The circuit run's case, by name; empty: the one with the most loss", 'Heat'),
+    ('theta', 'list', [], "From a part's pads to the part itself, REF=K/W (repeatable)", 'Parts'),
+    ('ambient', 'float', AMBIENT, 'The air, C', 'Air'),
+    ('film', 'float', FILM, 'Convection and radiation from the faces, W/m2/K (the top face, with film-bottom)', 'Air'),
+    ('film_bottom', 'float', None, 'The bottom face, W/m2/K, when it differs', 'Air'),
+    ('film_edge', 'float', None, "The board's edges and cut-outs, W/m2/K; empty: the faces' mean, 0: insulated", 'Air'),
+    ('method', 'str', 'grid', 'grid, mesh, or both (and their difference)', 'Solver'),
+    ('size', 'float', None, 'mm: the grid pitch (0.5) or the mesh\'s longest edge (1)', 'Solver'),
+]
+
+
+def describe():
+    from .._cli import describe as describe_options
+    return describe_options(OPTIONS)
 
 
 def _pairs(items, what, ap):
@@ -28,26 +49,20 @@ def _pairs(items, what, ap):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='python -m pcbqs.thermal', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    from .._cli import add_options, load_board, print_describe
     ap.add_argument('board', nargs='?', help='a .kicad_pcb or a kicad2ems board.json')
-    ap.add_argument('--loss', action='append', default=[], metavar='REF=W', help="a footprint's loss, W (repeatable)")
-    ap.add_argument('--circuit', metavar='FOLDER', help='the results folder of a circuit run (python -m pcbqs.circuit): '
-                    'its board and the losses of its parts')
-    ap.add_argument('--case', help="the circuit run's case, by name (default: the one with the most loss)")
-    ap.add_argument('--method', choices=('grid', 'mesh', 'both'), default='grid')
-    ap.add_argument('--size', type=float, help='mm: the pitch of the grid (default 0.5) or the longest edge of the '
-                    'mesh (default 1)')
-    ap.add_argument('--film', type=float, default=FILM, help=f'W/m2/K to the air on both faces (default {FILM:g})')
-    ap.add_argument('--film-bottom', type=float, help='W/m2/K on the bottom face, when it differs')
-    ap.add_argument('--film-edge', type=float, help="W/m2/K at the board's edges and cut-outs (default: the mean "
-                    "of the faces'; 0: insulated)")
-    ap.add_argument('--ambient', type=float, default=AMBIENT, help=f'C (default {AMBIENT:g})')
-    ap.add_argument('--theta', action='append', default=[], metavar='REF=K/W',
-                    help="from a part's pads to the part itself, K/W (repeatable)")
     ap.add_argument('--out', default='thermal-results', help='the results folder (default: thermal-results)')
+    ap.add_argument('--describe', action='store_true', help='the options (with --json: for kicad2ems-gui)')
+    ap.add_argument('--json', action='store_true')
+    add_options(ap, OPTIONS)
     a = ap.parse_args(argv)
-    from .._cli import load_board
+    if a.describe:
+        print_describe(describe(), a.json)
+        return 0
+    if a.method not in ('grid', 'mesh', 'both'):
+        ap.error(f"--method {a.method!r}: grid, mesh or both")
     losses, left = _pairs(a.loss, '--loss', ap), []
-    board_file = a.board
+    board_file, case_name = a.board, None
     if a.circuit:
         folder = Path(a.circuit)
         try:
@@ -65,7 +80,8 @@ def main(argv=None):
         from_run, left = losses_of(case, model)
         losses = {**from_run, **losses}
         board_file = board_file or (model.get('board') or {}).get('file')
-        print(f"losses of case {case['name']}")
+        case_name = case['name']
+        print(f"losses of case {case_name}")
     if not board_file:
         ap.error('a board, or --circuit with a model that names one')
     if not losses:
@@ -86,7 +102,9 @@ def main(argv=None):
     from .picture import picture, compare, difference
     methods = ('grid', 'mesh') if a.method == 'both' else (a.method,)
     res = {m: solve(p, m, a.size if len(methods) == 1 else None) for m in methods}
-    summary = {m: r.summary() for m, r in res.items()}
+    summary = {m: dict(r.summary(), board=str(Path(board_file).resolve()), circuit=str(a.circuit or ''),
+                       case=case_name, figure=f'thermal-{m}.png' if len(res) > 1 else 'thermal.png')
+               for m, r in res.items()}
     arrays = {}
     for m, r in res.items():
         arrays[f'{m}_T'] = r.T
