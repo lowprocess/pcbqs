@@ -133,8 +133,8 @@ Without copper every pin on a node is one point. With it, one pad of each net is
 pad, else a load's, else the first; `board.reference` chooses another) and every other pad reaches it through a
 port of a passive R-L model of the copper: all the nets' ports in one model, so the coupling between them is in
 it. The model is extracted by the quasi-static solver (`pcbqs.mqs`) from DC to 20 MHz and at every switching
-frequency and its tenth harmonic, fitted, and kept in `<out>/copper-model.json`. The examples' boards take 3 to
-25 s.
+frequency and its tenth harmonic, fitted, and kept in `<out>/copper-model.json`. The examples' boards take from
+a second to under a minute.
 
 The copper costs ngspice about ten times the time, and moves a converter's operating point very little. So the
 circuit alone is settled first and its targets met; the copper is put in where that ended, and the runs go on
@@ -169,7 +169,7 @@ Each example has a layout beside it (`examples/*.kicad_pcb`, KiCad 8), written b
 pcbqs.circuit.boards`: an island of copper for each net on the top layer, ground strips stitched to a ground plane
 on the bottom, and every part across the gap between its two nets' islands. Two layers, 1.5 mm, 35 um copper. The
 generator checks each (every pad on its net, each net in one piece, 0.4 mm between nets), and the tests read every
-file back through KiCad's importer and get the example's netlist.
+file back through kicad2ems's KiCad importer and get the example's netlist.
 
 All ten run with their copper (ngspice 45.2):
 
