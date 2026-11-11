@@ -398,6 +398,12 @@ class Circuit:
                 [f'let measure{i}={expr}',
                  f'meas tran m{i} {kind} measure{i} from={stop - 1 / f - self.measure_lead:.17g} to={stop + self.measure_lead:.17g}']
             )
+        if measures:
+            # meas prints its result to 6 digits but keeps 7: print them again with every digit kept (a sum of
+            # several, the power balance, is otherwise a few parts per million off by rounding alone)
+            names = [f'm{i}' for i in range(len(self.measures))]
+            measures += ['set numdgt=15', *('print ' + ' '.join(names[k:k + 16]) for k in range(0, len(names), 16)),
+                         'unset numdgt']
         port_vectors = [name for name, label in zip(output_names, labels) if re.fullmatch(r'PCB\d+\.I', label)]
         adaptive_export = (
             ['set filetype=binary', 'write adaptive-ports.raw ' + ' '.join(port_vectors), 'set filetype=ascii']
@@ -495,10 +501,10 @@ class Circuit:
         (out / 'signals.json').write_text(json.dumps(dict(zip(labels, vectors)), indent=2))
         measured = {}
         for i, label in enumerate(self.measures):
-            match = re.search(rf'^m{i}\s*=\s*([+\-0-9.eE]+)', stdout, re.M)
-            if not match:
+            found = re.findall(rf'^m{i}\s*=\s*([+\-0-9.eE]+)', stdout, re.M)
+            if not found:
                 raise RuntimeError('ngspice measure failed: ' + label)
-            measured[label] = float(match[1])
+            measured[label] = float(found[-1])                  # the print's digits, else meas's own
         (out / 'measurements.json').write_text(json.dumps(measured, indent=2))
         res['_measures'] = measured
         if port_vectors:
