@@ -13,8 +13,8 @@ One point goes like this (analysis: the model's settings for it, all optional):
        period of the half-run before it, within periodic_tolerance (0.003) of that signal's size (a slow drift or
        a ringing output filter shows over half a run when it does not from one period to the next), and what the
        circuit stores (the energy in its capacitors and inductors) changes over a period by no more than
-       energy_tolerance (0.002) of the power it handles: that change is the error of an efficiency taken over
-       the period. A run that has not settled is followed by one twice as long, up to eight times `cycles`,
+       energy_tolerance (0.002) of the power it handles. What still goes into storage over the reported period
+       is counted out of the parts' powers, the loss and the efficiency. A run that has not settled is followed by one twice as long, up to eight times `cycles`,
        started from the middle of whatever was still ringing.
     4. Settled, each target is compared with its measure; a knob that is off moves by a secant step, kept inside
        its range, and the runs go on. A target whose measure cannot reach its value inside the range ends the
@@ -72,6 +72,9 @@ def add_measures(deck, model):
         deck.measures[f"part.{ref}.power_W"] = ('AVG', f"@{ref}.V@*@{ref}.I@")
         for name, (stat, expr) in PART_STATS[kind].items():
             deck.measures[f"part.{ref}.{name}"] = (stat, expr.replace('{r}', ref))
+    for i in range(len(deck.ports)):                                # the board's copper, port by port
+        deck.measures[f"copper.{i}.power_W"] = ('AVG', f"@PCB{i}.V@*@PCB{i}.I@")
+        deck.measures[f"copper.{i}.rms_A"] = ('RMS', f"@PCB{i}.I@")
     labels = sorted(deck.signals, key=len, reverse=True)
     token = re.compile('|'.join(re.escape(l) for l in labels) or r'$^')
     for name, ms in model.get('measures', {}).items():
@@ -83,16 +86,22 @@ def collect(measured, deck):
     """ngspice's measurements as the results: the model's measures, each part's statistics, the totals."""
     parts = {ref: dict(type=kind) for ref, kind in deck.kinds.items()}
     measures = {}
+    ports = [dict(p) for p in deck.ports]
     for key, v in measured.items():
         if key.startswith('measure.'):
             measures[key[8:]] = v
+        elif key.startswith('copper.'):
+            _, i, name = key.split('.', 2)
+            ports[int(i)][name] = v
         else:
             _, ref, name = key.split('.', 2)
             parts[ref][name] = v
     delivered = {r: -p['power_W'] for r, p in parts.items() if p['type'] == 'source'}
     source = sum(v for v in delivered.values() if v > 0)
     load = sum(p['power_W'] for p in parts.values() if p['type'] == 'load') + sum(-v for v in delivered.values() if v < 0)
-    absorbed = sum(p['power_W'] for p in parts.values() if p['type'] != 'source')
+    copper = sum(p.pop('power_W') for p in ports)                   # a port alone passes power to the others it
+                                                                    # is coupled to: only their sum is the copper's loss
+    absorbed = sum(p['power_W'] for p in parts.values() if p['type'] != 'source') + copper
     gate = sum(p.get('gate_power_W', 0.0) for p in parts.values())
     loss = source + gate - load
     for group in deck.coupled:                                      # windings pass power to each other: what a
@@ -100,7 +109,8 @@ def collect(measured, deck):
             parts[ref]['coupled_with'] = [r for r in group if r != ref]
     return dict(
         measures=measures, parts=parts,
-        coupled=[dict(inductors=g, power_W=sum(parts[r]['power_W'] for r in g)) for g in deck.coupled], source_power_W=source, load_power_W=load, loss_W=loss,
+        coupled=[dict(inductors=g, power_W=sum(parts[r]['power_W'] for r in g)) for g in deck.coupled],
+        copper=dict(loss_W=copper, ports=ports) if ports else None, source_power_W=source, load_power_W=load, loss_W=loss,
         gate_drive_power_W=gate, efficiency=load / (source + gate) if source + gate > 0 and load > 0 else None,
         # what the sources deliver against what every other part absorbs: the gate resistors' share is not a part's
         power_balance_relative=abs(sum(delivered.values()) - absorbed) / max(abs(source), 1e-12) if source > 0 else None)
@@ -145,35 +155,61 @@ def periodic_error(result, deck, period, ignore=()):
     return out
 
 
-def energy_drift(result, model, deck, period):
-    """The power going into (+) or coming out of what the circuit stores, period by period back over the
-    half-run: [W], the last period first. The energy in every capacitor, inductor (with its couplings) and
-    source's series inductance at the end of a period, less that a period earlier, over the period. In a
-    settled circuit it is nothing; in one that is not, it is by how much the sources' power and the loads' and
-    losses' fail to add up over that period, so it is the error of an efficiency taken there."""
+def stored_energy(result, model, deck, period):
+    """What each part stores at the end of each period, back over the half-run: {ref: [J], the last period's end
+    first}, with 'couplings' for the mutual energy of coupled inductors. A capacitor: C V^2 / 2 of its own
+    voltage; an inductor and a source's series inductance: L I^2 / 2."""
     t = np.asarray(result['time_s'])
     n = int(np.floor((t[-1] - t[0]) / period + 1e-6))
     ends = t[-1] - np.arange(max(n // 2, 1) + 1) * period
     at = lambda key: np.interp(ends, t, result[key])
-    energy, current = 0.0, {}
+    out, current = {}, {}
     for p in model['parts']:
         ref, kind = p['ref'], p['type']
         if ref not in deck.kinds:
             continue
         if kind == 'capacitor':
-            v = at(ref + '.cap_V' if ref + '.cap_V' in result else ref + '.V')
-            energy = energy + 0.5 * p['value'] * p.get('bias_factor', 1.0) * v ** 2
+            out[ref] = 0.5 * p['value'] * p.get('bias_factor', 1.0) * at(ref + '.cap_V' if ref + '.cap_V' in result else ref + '.V') ** 2
         elif kind == 'inductor':
             current[ref] = at(ref + '.winding_I' if ref + '.winding_I' in result else ref + '.I')
-            energy = energy + 0.5 * p['value'] * current[ref] ** 2
+            out[ref] = 0.5 * p['value'] * current[ref] ** 2
         elif kind == 'source' and p.get('L_H'):
-            energy = energy + 0.5 * p['L_H'] * at(ref + '.I') ** 2
+            out[ref] = 0.5 * p['L_H'] * at(ref + '.I') ** 2
     value = {p['ref']: p['value'] for p in model['parts'] if p['type'] == 'inductor'}
+    mutual = 0.0 * ends
     for c in model.get('couplings', []):
         a, b = c['inductors']
         if a in current and b in current:
-            energy = energy + c['k'] * np.sqrt(value[a] * value[b]) * current[a] * current[b]
-    return (energy[:-1] - energy[1:]) / period if np.ndim(energy) else np.zeros(1)
+            mutual = mutual + c['k'] * np.sqrt(value[a] * value[b]) * current[a] * current[b]
+    out['couplings'] = mutual
+    return out
+
+
+def energy_drift(result, model, deck, period):
+    """The power going into (+) or coming out of what the circuit stores, period by period back over the
+    half-run: [W], the last period first. In a settled circuit it is nothing; in one that is not, it is by how
+    much the sources' power and the loads' and losses' fail to add up over that period."""
+    energy = sum(stored_energy(result, model, deck, period).values())
+    return (energy[:-1] - energy[1:]) / period
+
+
+def count_out_storage(stats, result, model, deck):
+    """The run's powers with what went into storage over the last period counted out: a capacitor's or an
+    inductor's power is what it lost, not what it lost and kept; the loss is the parts' losses, and the efficiency
+    is the load's power over that and the losses. A filter still ringing by a hundredth of a per cent moves more
+    power in and out of its capacitor than that capacitor loses, and none of it is loss."""
+    kept = {ref: float(e[0] - e[1]) / deck.period for ref, e in stored_energy(result, model, deck, deck.period).items()}
+    for ref, w in kept.items():
+        if ref in stats['parts'] and stats['parts'][ref]['type'] in ('capacitor', 'inductor'):
+            stats['parts'][ref]['power_W'] -= w
+    total = sum(kept.values())
+    stats['stored_energy_change_W'] = total
+    stats['loss_W'] -= total
+    supplied = stats['source_power_W'] + stats['gate_drive_power_W'] - total
+    stats['efficiency'] = stats['load_power_W'] / supplied if supplied > 0 and stats['load_power_W'] > 0 else None
+    for group in stats['coupled']:
+        group['power_W'] = sum(stats['parts'][r]['power_W'] for r in group['inductors']) - kept.get('couplings', 0.0)
+    return stats
 
 
 def unsteadiness(result, model, deck, stats):
@@ -223,6 +259,12 @@ def end_state(result, model, deck, period=None):
             out[ref] = dict(initial_V=last(ref + '.V'))
         elif kind == 'source' and p.get('L_H'):
             out[ref] = dict(initial_A=last(ref + '.I'))
+    out['__currents__'] = {p['ref']: float(result[p['ref'] + '.I'][-1]) for p in model['parts'] if p['ref'] + '.I' in result}
+    if deck.ports:                                                  # the copper's port and modal currents
+        modes = []
+        while f"MODE{len(modes)}.I" in result:
+            modes.append(last(f"MODE{len(modes)}.I"))
+        out['__copper__'] = dict(ports=[last(f"PCB{i}.I") for i in range(len(deck.ports))], modes=modes)
     return out
 
 
@@ -302,7 +344,7 @@ def measured_value(name, stats):
     return stats[name]
 
 
-def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False):
+def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False, copper=None):
     """One ngspice run of a resolved model, with what it measured. A run that ngspice abandons ('timestep too
     small' at a hard-switched edge) is tried again with trapezoidal integration, then from the DC start.
 
@@ -316,7 +358,7 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
     if state is not None:
         attempts.append((solver, None))
     for k, (opts, start) in enumerate(attempts):
-        deck = build(model, start)
+        deck = build(model, start, copper)
         add_measures(deck, model)
         period = deck.period
         spc = a['samples_per_cycle']
@@ -343,12 +385,13 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
                 shutil.copy2(folder / 'ngspice.log', folder / f"ngspice-failed-{k}.log")
             log(f"{label}ngspice did not converge; retrying " + ('with the other integration method' if k == 0 else 'from the DC start'))
     (folder / 'transient.dat').unlink(missing_ok=True)              # reproducible from circuit.cir
-    return result, deck, collect(result['_measures'], deck), k
+    return result, deck, count_out_storage(collect(result['_measures'], deck), result, model, deck), k
 
 
-def fingerprint(model):
-    h = hashlib.sha256(json.dumps({k: v for k, v in model.items() if k not in ('name', 'description', 'sweep', 'schematic')},
+def fingerprint(model, copper=None):
+    h = hashlib.sha256(json.dumps({k: v for k, v in model.items() if k not in ('name', 'description', 'sweep', 'schematic', 'board')},
                                   sort_keys=True).encode())
+    h.update((copper or {}).get('fingerprint', 'no copper').encode())
     from .. import power_spice
     from . import deck as D
     for module in (power_spice, D, M, __import__(__name__, fromlist=['x'])):
@@ -356,7 +399,7 @@ def fingerprint(model):
     return h.hexdigest()
 
 
-def run_case(model, point, out, log=print):
+def run_case(model, point, out, log=print, copper=None):
     """One sweep point: {sweep, knobs, targets, measures, parts, totals, settled, history, ...}, also written to
     <out>/case.json beside the final run's circuit.cir, transient.npz (every signal, uniformly sampled),
     measurements.json and waveforms.png. An unchanged model's point is read back, not run again."""
@@ -364,7 +407,7 @@ def run_case(model, point, out, log=print):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     base = M.resolve(model, point)
-    key = fingerprint(base)
+    key = fingerprint(base, copper)
     saved = out / 'case.json'
     if saved.exists() and (out / 'transient.npz').exists():
         row = json.loads(saved.read_text())
@@ -375,8 +418,11 @@ def run_case(model, point, out, log=print):
     knobs = [Knob(t) for t in base.get('targets', [])]
     label = (M.case_name(point) + ': ') if point else ''
     state, history, notes, total = None, [], [], 0
-    cycles = int(a['cycles'])
+    cycles = base_cycles = int(a['cycles'])
     accepted = None
+    # with a board: the search is done on the circuit alone, which is quick, and the copper is put in where that
+    # settled: it moves a converter's operating point very little, and costs ngspice ten times the time
+    with_copper, pending = None, copper
     trials = out / 'trials'
     if trials.exists():
         shutil.rmtree(trials)
@@ -389,15 +435,16 @@ def run_case(model, point, out, log=print):
         resolved = M.resolve(current)
         folder = trials / f"{trial:02d}"
         log(label + f"run {trial + 1}: {cycles} periods" + (''.join(f", {kn.path} = {kn.x:.6g}" for kn in knobs))
-            + ('' if state is None else ' (continuing)'))
-        result, deck, stats, retries = simulate(resolved, state, cycles, folder, a, a['search_reltol'], log, label)
+            + ('' if state is None else ' (continuing)') + (" with the board's copper" if with_copper else ''))
+        result, deck, stats, retries = simulate(resolved, state, cycles, folder, a, a['search_reltol'], log, label,
+                                                copper=with_copper)
         total += cycles
         state = end_state(result, resolved, deck)
         errors = periodic_error(result, deck, deck.period, a.get('ignore', ()))
         worst = max(errors.values(), default=0.0)
         drifting, _ = unsteadiness(result, resolved, deck, stats)
         entry = dict(trial=trial, cycles=cycles, knobs={kn.path: kn.x for kn in knobs}, periodic_error=worst,
-                     energy_drift=drifting,
+                     energy_drift=drifting, copper=with_copper is not None,
                      retries=retries, **{k: stats[k] for k in ('source_power_W', 'load_power_W', 'efficiency')},
                      measures=stats['measures'])
         history.append(entry)
@@ -416,9 +463,13 @@ def run_case(model, point, out, log=print):
         errs = [kn.error(measured_value(kn.measure, stats)) for kn in knobs]
         entry['target_error'] = dict(zip([kn.measure for kn in knobs], errs))
         if all(abs(e) <= (kn.tolerance or a['target_tolerance']) for kn, e in zip(knobs, errs)):
+            if pending is not None:                                 # the circuit alone is settled: now on its board
+                with_copper, pending = pending, None
+                cycles = base_cycles = max(int(a['cycles']) // 4, 20)
+                continue
             accepted = (folder, result, deck, stats, resolved)
             break
-        cycles = int(a['cycles'])
+        cycles = base_cycles
         for kn, e in zip(knobs, errs):
             kn.record(e)
             if abs(e) > (kn.tolerance or a['target_tolerance']):
@@ -435,9 +486,11 @@ def run_case(model, point, out, log=print):
             n = int(a['final_cycles'])
             for _ in range(3):
                 log(label + f"reported run: {n} periods at reltol {strict:g}")
-                r2, d2, s2, _retries = simulate(resolved, state, n, final, a, strict, log, label, final=True)
+                r2, d2, s2, _retries = simulate(resolved, state, n, final, a, strict, log, label, final=True, copper=copper)
+                # the strict solver's own steady state is a little off the search's, and what that leaves ringing
+                # is counted out of the powers (count_out_storage): five times the search's allowance
                 if (max(periodic_error(r2, d2, d2.period, a.get('ignore', ())).values(), default=0.0) <= a['periodic_tolerance']
-                        and unsteadiness(r2, resolved, d2, s2)[1] <= a['energy_tolerance']):
+                        and unsteadiness(r2, resolved, d2, s2)[1] <= 5 * a['energy_tolerance']):
                     folder, result, deck, stats, reported = final, r2, d2, s2, strict
                     break
                 state = end_state(r2, resolved, d2)
@@ -455,6 +508,15 @@ def run_case(model, point, out, log=print):
         f.unlink()
     (out / 'model.json').write_text(json.dumps(resolved, indent=1))
     notes += plausibility(stats)
+    if copper:
+        stats['copper'] = dict(stats['copper'] or dict(loss_W=0.0, ports=[]), board=Path(copper['file']).name,
+                               fit_error=copper['fit_error'])
+        if copper['absent']:
+            notes.append(f"not on the board, so at their nets' nodes with no copper to them: {', '.join(copper['absent'])}")
+        tolerance = (model.get('board') or {}).get('mesh', {}).get('fit_tolerance', 0.03)
+        if copper['fit_error'] is not None and copper['fit_error'] > 2 * tolerance:
+            notes.append(f"the copper's R-L model is {100 * copper['fit_error']:.1f} % from the extracted impedance at "
+                         f"its worst frequency")
     row = dict(
         fingerprint=key, sweep=point or {}, name=M.case_name(point), folder=str(out), period_s=deck.period,
         knobs={kn.path: kn.x for kn in knobs},
@@ -473,16 +535,20 @@ def run_case(model, point, out, log=print):
     return row
 
 
-def run(model, out, jobs=1, log=print):
+def run(model, out, jobs=1, log=print, copper=False):
     """Every point of the model's sweep, `jobs` at a time; <out>/circuit.json has them all:
     {format, name, complete, cases: [run_case's rows], failed: [{sweep, error}]}. A point that fails is reported
-    and the others still run."""
+    and the others still run. copper: with the model's board between the parts' pads (circuit/copper.py),
+    extracted once for all the points."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     M.validate(model)
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / 'model.json').write_text(json.dumps(model, indent=1))
     points = M.cases(model)
+    if copper:
+        from .copper import prepare
+        copper = prepare(model, out, log)
     folders = [out / M.case_name(p) for p in points]
     if len({str(f) for f in folders}) != len(folders):
         raise M.ModelError('two sweep points have the same folder name: make the swept values distinct')
@@ -497,7 +563,7 @@ def run(model, out, jobs=1, log=print):
 
     try:
         with ThreadPoolExecutor(max_workers=max(1, min(int(jobs), len(points)))) as pool:
-            pending = {pool.submit(run_case, model, p, f, log): i for i, (p, f) in enumerate(zip(points, folders))}
+            pending = {pool.submit(run_case, model, p, f, log, copper or None): i for i, (p, f) in enumerate(zip(points, folders))}
             try:
                 for future in as_completed(pending):
                     i = pending[future]

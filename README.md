@@ -30,7 +30,8 @@ Execution controls use `PCBQS_FILL_BACKEND`, `PCBQS_FILL_THREADS`,
 remain supported. Static-fill plugins use the `pcbqs.static_backends` entry group.
 
 - [Quasistatic guide](docs/quasistatic.md)
-- [Circuits](docs/circuit.md): any circuit of parts, nodes and drives, with ten examples
+- [Circuits](docs/circuit.md): any circuit of parts, nodes and drives; ten examples, each with a board whose
+  copper can be put in; KiCad boards, schematics and netlists read into a model
 - [Operational circuits](docs/power-circuit.md): the full bridge with the board's copper
 - [Validation and limits](docs/quasistatic-validation.md)
 - [Migration](docs/migration.md)

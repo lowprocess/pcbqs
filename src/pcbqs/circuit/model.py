@@ -228,6 +228,14 @@ def validate(model):
               f"{', '.join(AUTOMATIC)}")
         _need(isinstance(t['range'], list) and len(t['range']) == 2, f"targets[{i}]: range is [low, high]")
         get(model, t['adjust'])
+    board = model.get('board')
+    if board is not None:
+        _need(isinstance(board, dict), 'board: an object (file, parts, nets, reference, mesh)')
+        _need(not board.get('file') or isinstance(board['file'], str), 'board.file: a path')
+        for key in ('parts', 'nets', 'reference', 'mesh'):
+            _need(isinstance(board.get(key, {}), dict), f"board.{key}: an object")
+        for ref in board.get('parts', {}):
+            _need(str(ref).lower() in refs, f"board.parts: {ref!r} is not a part of the model")
     for path, values in model.get('sweep', {}).items():
         _need(isinstance(values, list) and values, f"sweep.{path}: a list of values")
         if not path.startswith('targets.'):
@@ -328,7 +336,15 @@ def load(path):
         model = json.loads(path.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
         raise ModelError(f"{path.name}: not JSON ({e})") from None
-    return validate(model)
+    return validate(_beside(model, path.parent))
+
+
+def _beside(model, folder):
+    """The model with its board's file as a full path: one written relative is beside the model."""
+    board = model.get('board')
+    if isinstance(board, dict) and board.get('file') and not Path(board['file']).expanduser().is_absolute():
+        board['file'] = str((Path(folder) / board['file']).resolve())
+    return model
 
 
 def templates():
@@ -347,5 +363,5 @@ def template(name):
     for f in files('pcbqs.circuit').joinpath('examples').iterdir():
         stem = f.name[:-5]
         if f.name.endswith('.json') and name in (stem, stem.split('_', 1)[-1]):
-            return json.loads(f.read_text(encoding='utf-8'))
+            return _beside(json.loads(f.read_text(encoding='utf-8')), Path(str(f)).parent)
     raise ModelError(f"no template {name!r}: {', '.join(templates())}")

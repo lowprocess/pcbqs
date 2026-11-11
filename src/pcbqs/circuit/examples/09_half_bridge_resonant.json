@@ -124,5 +124,12 @@
    130000.0,
    160000.0
   ]
+ },
+ "board": {
+  "file": "09_half_bridge_resonant.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "R1": "J2"
+  }
  }
 }

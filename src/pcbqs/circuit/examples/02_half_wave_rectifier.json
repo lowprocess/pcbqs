@@ -85,5 +85,12 @@
  },
  "analysis": {
   "cycles": 40
+ },
+ "board": {
+  "file": "02_half_wave_rectifier.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "R1": "J2"
+  }
  }
 }

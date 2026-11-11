@@ -69,10 +69,13 @@ class Deck(Circuit):
         self.nodes.update({g: '0' for g in GROUND})
         self.kinds = {}                                             # ref: its part type
         self.coupled = []                                           # the sets of inductors coupled to each other
+        self.ports = []                                             # the board's copper ports, PCB<i> in this order
         self.step_labels = ()
 
-    def add(self, part, drives, period, state=None):
+    def add(self, part, drives, period, state=None, pin_nodes=None):
         ref, kind, (a, b) = part['ref'], part['type'], part['nodes']
+        if pin_nodes:                                               # on a board: its own pads' nodes (circuit/copper.py)
+            a, b = pin_nodes.get((ref, 0), a), pin_nodes.get((ref, 1), b)
         if not part.get('enabled', True):
             return
         self.kinds[ref] = kind
@@ -212,17 +215,27 @@ class Deck(Circuit):
         self.coupled = [g for g in self.coupled if g not in joined] + [sorted({a, b}.union(*joined))]
 
 
-def build(model, state=None):
+def build(model, state=None, copper=None):
     """The deck of a resolved model. state: {ref: {initial_V, initial_A, initial_I}} from a previous run's end
     (engine.end_state): every capacitor, inductor and switch starts where that run stopped, and the run uses
-    them (uic); None: ngspice works out the DC solution at time zero, where every gate is still low."""
+    them (uic); None: ngspice works out the DC solution at time zero, where every gate is still low.
+    copper (copper.prepare's): the board's copper between the parts' pads, each pad a node of its own."""
+    from . import copper as C
     deck = Deck()
     period = period_of(model)
     drives = model.get('drives', {})
+    pin_nodes = C.nodes(model, copper) if copper else None
     for part in model['parts']:
-        deck.add(part, drives, period, state)
+        deck.add(part, drives, period, state, pin_nodes)
     for i, c in enumerate(model.get('couplings', [])):
         deck.coupling(i, c)
+    if copper and copper['ports']:
+        before = (state or {}).get('__copper__')
+        if before is None and state is not None:                    # the first run on the board: each pad's copper
+            before = dict(ports=C.port_currents(model, copper, state.get('__currents__', {})))    # carries its part's current
+        before = before or {}
+        deck.copper(copper['model'], C.port_nodes(model, copper), before.get('ports'), before.get('modes'))
+        deck.ports = copper['ports']
     for name, pr in model.get('probes', {}).items():
         if 'voltage' in pr:
             deck.voltage(name, pr['voltage'][0], pr['voltage'][1])

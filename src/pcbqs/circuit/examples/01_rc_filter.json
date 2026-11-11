@@ -64,5 +64,11 @@
   "vout_ripple": {
    "pp": "vout"
   }
+ },
+ "board": {
+  "file": "01_rc_filter.kicad_pcb",
+  "parts": {
+   "V1": "J1"
+  }
  }
 }

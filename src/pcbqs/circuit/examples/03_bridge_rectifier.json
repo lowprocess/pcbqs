@@ -125,5 +125,12 @@
  },
  "analysis": {
   "cycles": 40
+ },
+ "board": {
+  "file": "03_bridge_rectifier.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "P1": "J2"
+  }
  }
 }

@@ -138,5 +138,12 @@
    2,
    4
   ]
+ },
+ "board": {
+  "file": "05_buck_synchronous.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "I1": "J2"
+  }
  }
 }

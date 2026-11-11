@@ -24,6 +24,8 @@ def waveforms(out, row, model, deck):
     losses = {r: p['power_W'] for r, p in row['parts'].items() if p['type'] not in ('source', 'load')
               and not p.get('coupled_with')}
     losses.update({'+'.join(g['inductors']): g['power_W'] for g in row.get('coupled', [])})     # a transformer: its windings together
+    if row.get('copper'):
+        losses['copper'] = row['copper']['loss_W']
     losses = {r: w for r, w in losses.items() if w > 0}
     fig, axs = plt.subplots(3 if losses else 2, 1, figsize=(8, 7.5 if losses else 5.5), constrained_layout=True)
     for ax, keys, unit in ((axs[0], volts, 'V'), (axs[1], amps, 'A')):

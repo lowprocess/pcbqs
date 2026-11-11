@@ -247,3 +247,40 @@ def test_what_the_circuit_stores_must_have_stopped_changing():
     stats = dict(source_power_W=10.7, load_power_W=10.0, parts=dict(R1=dict(power_W=10.0)))
     often, last = E.unsteadiness(ring, m, deck, stats)
     assert often > 0.03 and last == pytest.approx(abs(drift[0]) / 10.7)          # against a tolerance of 0.002
+
+
+def test_what_went_into_storage_is_counted_out_of_the_powers():
+    """A ringing output capacitor takes power that is not loss: its own power is what it lost, and the efficiency
+    is the load's power over the load's and the losses'."""
+    m = M.resolve(M.template('buck'))
+    ring, deck, T = waves(100, lambda k: 1 + 0.001 * np.sin(2 * np.pi * (k - 100) / 50 + 0.3), period=4e-6)
+    kept = E.energy_drift(ring, m, deck, T)[0]
+    assert abs(kept) > 0.01                                         # watts, in and out of 47 uF and 22 uH
+    parts = dict(V1=dict(type='source', power_W=-10.7 - kept), R1=dict(type='load', power_W=10.0),
+                 C2=dict(type='capacitor', power_W=0.002 + 0.8 * kept), L1=dict(type='inductor', power_W=0.12 + 0.2 * kept),
+                 D1=dict(type='diode', power_W=0.578))
+    stats = dict(parts=parts, source_power_W=10.7 + kept, load_power_W=10.0, loss_W=0.7 + kept, gate_drive_power_W=0.0,
+                 efficiency=10.0 / (10.7 + kept), coupled=[])
+    out = E.count_out_storage(stats, ring, m, deck)
+    assert out['stored_energy_change_W'] == pytest.approx(kept) and out['loss_W'] == pytest.approx(0.7)
+    assert out['efficiency'] == pytest.approx(10.0 / 10.7)
+    stored = E.stored_energy(ring, m, deck, T)
+    c2 = float(stored['C2'][0] - stored['C2'][1]) / T
+    assert out['parts']['C2']['power_W'] == pytest.approx(0.002 + 0.8 * kept - c2) and out['parts']['D1']['power_W'] == 0.578
+
+
+def test_a_models_board_is_checked_and_found_beside_it(tmp_path):
+    m = M.template('boost')
+    assert m['board']['file'].endswith('06_boost.kicad_pcb') and __import__('pathlib').Path(m['board']['file']).is_file()
+    m['board']['file'] = 'layout/my.kicad_pcb'
+    (tmp_path / 'model.json').write_text(__import__('json').dumps(m))
+    assert M.load(tmp_path / 'model.json')['board']['file'] == str((tmp_path / 'layout' / 'my.kicad_pcb').resolve())
+    for change, says in ((lambda b: b['parts'].update(L9='L1'), "board.parts: 'L9' is not a part of the model"),
+                         (lambda b: b.update(nets=['in']), 'board.nets: an object'),
+                         (lambda b: b.update(file=3), 'board.file: a path')):
+        bad = M.template('boost')
+        change(bad['board'])
+        with pytest.raises(M.ModelError, match=says):
+            M.validate(bad)
+    assert E.fingerprint(M.resolve(m)) == E.fingerprint(M.resolve(M.template('boost')))      # the board is not the circuit
+    assert E.fingerprint(M.resolve(m), dict(fingerprint='abc')) != E.fingerprint(M.resolve(m))

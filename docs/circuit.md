@@ -9,6 +9,8 @@ it is running.
     python -m pcbqs.circuit --template boost > boost.json
     python -m pcbqs.circuit boost.json --out result --jobs 4
     python -m pcbqs.circuit boost.json --set parameters.vin=9 --set R1.resistance_ohm=24
+    python -m pcbqs.circuit boost.json --out result --copper          # with its board's copper
+    python -m pcbqs.circuit --from-kicad board.kicad_pcb > model.json  # the parts of a KiCad design
 
 (`python -m pcbqs.power_circuit` is the older, format 1 tool for one circuit: a phase-shifted full bridge into a
 coupled receiver, with the board's copper. It is unchanged; its model will move to this format.)
@@ -92,6 +94,9 @@ and `waveforms.png`:
   `avg_A`
 - `coupled`: each set of coupled inductors with the power the set loses (one winding alone passes power to the
   other, so its own `power_W` is not a loss)
+- `copper` (with `--copper`): `board`, `loss_W`, `fit_error`, `ports` (pad, its net's reference pad, `rms_A`)
+- `stored_energy_change_W`: what went into the capacitors and inductors over the reported period, counted out of
+  the parts' powers, the loss and the efficiency
 - `periodic_error`, `energy_drift_relative`, `reltol`, `runs`, `periods`, `history` (every run of the search)
 - `notes`: anything the result should be read with, such as a voltage no circuit gives
 
@@ -113,8 +118,78 @@ frequency sweep), `full_bridge_phase_shift` (two drives; the phase between them 
 `tests/test_circuit_examples.py` against its closed form: ripple and duty for the converters, harmonic by
 harmonic for the resonant tank, charge and power balance for the rest.
 
+## On a board
+
+```json
+"board": {"file": "06_boost.kicad_pcb", "parts": {"V1": "J1", "R1": "J2"}}
+```
+
+With `--copper` the board's copper is part of the circuit. A part's pin is the pads of its footprint on its
+node's net (`0` is the board's GND), so nothing is said twice: the model says which part is on which node, the
+board which pad is on which net. `board.parts` names a part's footprint when its reference differs (a source is a
+connector), `board.nets` a node's net when its name differs.
+
+Without copper every pin on a node is one point. With it, one pad of each net is the node itself (a source's
+pad, else a load's, else the first; `board.reference` chooses another) and every other pad reaches it through a
+port of a passive R-L model of the copper: all the nets' ports in one model, so the coupling between them is in
+it. The model is extracted by the quasi-static solver (`pcbqs.mqs`) from DC to 20 MHz and at every switching
+frequency and its tenth harmonic, fitted, and kept in `<out>/copper-model.json`. The examples' boards take 3 to
+25 s.
+
+The copper costs ngspice about ten times the time, and moves a converter's operating point very little. So the
+circuit alone is settled first and its targets met; the copper is put in where that ended, and the runs go on
+from there. A case reports `copper`: the board, the fit's error, the copper's loss, and each port's RMS
+current. A part with no footprint on the board is at its net's node, and the notes say so.
+
+What the copper shows is mostly at the edges. The loop a switch and a diode commutate around has a few
+nanohenries, and against the diode's and the switch's capacitance that rings: the boost's diode sees 57 V on its
+board where the circuit alone gives 24 V. Nothing in the examples damps that ring but the parts' series
+resistance, so it is larger than on a bench; give the parts their ESL and their losses, or a snubber, to see
+what a real one does.
+
+## From KiCad
+
+`--from-kicad` reads a board (`.kicad_pcb`), a schematic (`.kicad_sch`, through `kicad-cli`) or a KiCad XML
+netlist and prints a model of what it can tell, each part between the two nets its pins are on:
+
+- resistors, capacitors and inductors, by symbol, reference or the footprint's library, with the value as KiCad
+  writes it (`4k7`, `22u`, `0R01`) and `ESR`, `ESL`, `DCR` fields;
+- diodes, anode to cathode by pin names (`A`, `K`), else pad 2 to pad 1;
+- MOSFETs with pins `D`, `G`, `S`, as switches from drain to source.
+
+A node is the net's name. A board that was read becomes the model's `board`. Left to add, since KiCad does not
+say: which connector is the source and which the load, the drives, and what to measure. `pcbqs.circuit.kicad`
+has the same for a model that exists (`apply`: add parts, or bring their values and nets up to date).
+
+## Example boards
+
+![The ten example boards](images/circuit-boards.png)
+
+Each example has a layout beside it (`examples/*.kicad_pcb`, KiCad 8), written by `python -m
+pcbqs.circuit.boards`: an island of copper for each net on the top layer, ground strips stitched to a ground plane
+on the bottom, and every part across the gap between its two nets' islands. Two layers, 1.5 mm, 35 um copper. The
+generator checks each (every pad on its net, each net in one piece, 0.4 mm between nets), and the tests read every
+file back through KiCad's importer and get the example's netlist.
+
+All ten run with their copper (ngspice 45.2):
+
+| Example | Ports | Efficiency alone | on its board | Copper loss | Highest part voltage, alone to on its board |
+|---|---|---|---|---|---|
+| `rc_filter` | 3 | | | 0 mW | |
+| `half_wave_rectifier` | 5 | 94.29 % | 94.28 % | 0.2 mW | D1 31.5 to 31.5 V |
+| `bridge_rectifier` | 10 | 94.08 % | 94.06 % | 5.0 mW | D2 32.3 to 32.3 V |
+| `buck` | 10 | 93.61 % | 93.57 % | 7.5 mW | D1 11.9 to 30.1 V |
+| `buck_synchronous`, 4 A | 10 | 94.25 % | 94.12 % | 28.8 mW | Q2 11.9 to 24.0 V |
+| `boost` | 10 | 97.49 % | 97.50 % | 2.3 mW | D1 24.0 to 57.0 V |
+| `buck_boost` | 10 | 95.72 % | 95.75 % | 2.3 mW | D1 27.0 to 65.8 V |
+| `flyback` | 16 | 82.18 % | 82.04 % | 4.3 mW | D2 64.2 to 81.4 V |
+| `half_bridge_resonant`, 130 kHz | 9 | 98.14 % | 98.08 % | 6.1 mW | Q2 24.8 to 27.0 V |
+| `full_bridge_phase_shift` | 15 | 94.51 % | 94.45 % | 14.3 mW | Q1 24.8 to 46.2 V |
+
+The efficiencies are within a few hundredths of a per cent of each other either way, which is what the settling
+tolerance allows; the copper's own loss is the column beside them. The soft-switched tank hardly notices its
+board; the hard-switched ones ring to twice their bus and more.
+
 ## Not here yet
 
-The board's copper (`--copper`, the PCB terminals and their feedback into the circuit), the temperature sweep and
-the report pages of `pcbqs.power_circuit`. They go by net names, not by what the circuit is, and will move over
-with the full-bridge model.
+Field export from the copper's currents, the temperature sweep and the report pages of `pcbqs.power_circuit`.

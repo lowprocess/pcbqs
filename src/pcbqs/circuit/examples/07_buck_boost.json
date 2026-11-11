@@ -128,5 +128,12 @@
    "measure": "vout_avg",
    "value": "vout"
   }
- ]
+ ],
+ "board": {
+  "file": "07_buck_boost.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "R1": "J2"
+  }
+ }
 }

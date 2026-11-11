@@ -203,5 +203,14 @@
    "measure": "load_power_W",
    "value": "pout"
   }
- ]
+ ],
+ "board": {
+  "file": "10_full_bridge_phase_shift.kicad_pcb",
+  "parts": {
+   "V1": "J1",
+   "L1": "J2",
+   "L2": "J3",
+   "R1": "J4"
+  }
+ }
 }
