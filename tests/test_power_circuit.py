@@ -397,9 +397,32 @@ def test_simple_template_builds():
     c = power_circuit.template('simple')
     schematic.validate_edit(c)
     power_bridge.validate(c)
-    assert len(c['switches']) == 4 and len(c['components']) == 4 and not c['terminals']
+    assert len(c['switches']) == 4 and len(c['components']) == 5 and not c['terminals']
     f = c['frequencies_Hz'][0]
     m = power_bridge.matching(c, f)
     deck = power_bridge.build(c, f, power_bridge.predicted_phase(c, f, c['powers_W'][0], m), m)
     assert {'NET:VIN', 'NET:VBUS', 'NET:VHB', 'NET:SW_A', 'NET:SW_B', 'NET:TANK'} <= set(deck.nodes)
     assert power_circuit.template()['name'] == power_circuit.template('wpthb')['name'] != c['name']
+
+
+def test_precharge_goes_by_what_a_part_joins():
+    """A model without wpthb's references starts as charged as wpthb does: its rail capacitors at the rail, its
+    series inductor carrying the input current, its tank capacitor at the tank's voltage; wpthb's own starting
+    values are the ones it always had."""
+    from pcbqs import power_bridge, power_circuit
+    c = power_circuit.template('simple')
+    c['transient']['initialization'] = 'precharged'
+    f = c['frequencies_Hz'][0]
+    m = power_bridge.matching(c, f)
+    deck = power_bridge.build(c, f, power_bridge.predicted_phase(c, f, c['powers_W'][0], m), m)
+    line = lambda name: next(l for l in deck.lines if l.startswith(name + ' '))
+    assert all(' IC=' in line(n) for n in ('C_C1', 'C_C3', 'C_C2', 'L_L1'))
+    assert 23.5 < float(line('C_C1').split('IC=')[1]) < 24 and 23.5 < float(line('C_C3').split('IC=')[1]) < 24
+    assert power_bridge.supply_drops(c) == pytest.approx((0.06, 0.07))
+    assert any(l.startswith('R_IC_VHB ') for l in deck.lines) and not any(l.startswith('R_IC_VBUS ') for l in deck.lines)
+    w = power_circuit.template('wpthb')
+    assert power_bridge.supply_drops(w) == (0.055, 0.085)
+    w['transient']['initialization'] = 'precharged'
+    m = power_bridge.matching(w, 90000)
+    wd = power_bridge.build(w, 90000, power_bridge.predicted_phase(w, 90000, 5, m), m)
+    assert not any(l.startswith('R_IC_') for l in wd.lines)          # a deck that ran is left as it was

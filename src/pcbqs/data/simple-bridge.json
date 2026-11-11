@@ -3,10 +3,10 @@
  "name": "simple full bridge",
  "voltage_V": 24,
  "frequencies_Hz": [
-  100000
+  90000
  ],
  "powers_W": [
-  10
+  5
  ],
  "coupling": 0.4,
  "primary_C_F": 1e-07,
@@ -50,13 +50,22 @@
   "initialization": "precharged"
  },
  "switch_model": {
-  "type": "switch",
-  "Ron_ohm": 0.01,
+  "type": "vdmos",
+  "Ron_ohm": 0.008,
   "Roff_ohm": 10000000000.0,
   "rise_s": 2e-08,
   "fall_s": 2e-08,
   "dead_time_s": 1e-07,
-  "gate_V": 10
+  "gate_V": 10,
+  "gate_R_ohm": 2,
+  "package_L_H": 1e-09,
+  "source_L_H": 5e-10,
+  "Cds_F": 5e-10,
+  "Cgd_F": 5e-11,
+  "Cgs_F": 1e-09,
+  "body_diode": true,
+  "diode_TT_s": 2e-08,
+  "diode_R_ohm": 0.02
  },
  "components": [
   {
@@ -67,11 +76,20 @@
    "value": 0.01
   },
   {
+   "ref": "C3",
+   "a": "NET:VBUS",
+   "b": "NET:GND",
+   "type": "capacitor",
+   "value": 4.7e-05,
+   "ESR_ohm": 0.02,
+   "ESL_H": 1e-09
+  },
+  {
    "ref": "L1",
    "a": "NET:VBUS",
    "b": "NET:VHB",
    "type": "inductor",
-   "value": 1e-06,
+   "value": 5.6e-06,
    "DCR_ohm": 0.01
   },
   {
@@ -79,9 +97,9 @@
    "a": "NET:VHB",
    "b": "NET:GND",
    "type": "capacitor",
-   "value": 1e-05,
-   "ESR_ohm": 0.005,
-   "ESL_H": 8e-10
+   "value": 4.7e-05,
+   "ESR_ohm": 0.001,
+   "ESL_H": 1.5e-10
   },
   {
    "ref": "C2",
@@ -135,7 +153,7 @@
   "circuit_fit_tolerance": 0.03
  },
  "assumptions": [
-  "A starting point: a full bridge from a 24 V supply through R1 and L1, one bus capacitor, a series tank (C2) and the primary coupled (k 0.4) to a tuned receiver. No board: Include extracted PCB R/L needs a model whose terminals are PCB pads (Import KiCad, or the wpthb template).",
+  "A starting point: a full bridge from a 24 V supply through an input filter (R1, C3, L1), one bus capacitor (C1), a series tank (C2) and the primary coupled (k 0.4) to a tuned receiver. No board: Include extracted PCB R/L needs a model whose terminals are PCB pads (Import KiCad, or the wpthb template).",
   "Secondary is assumed identical to the primary."
  ]
 }

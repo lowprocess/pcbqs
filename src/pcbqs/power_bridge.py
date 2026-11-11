@@ -112,6 +112,30 @@ def end_state(result, config, ports=None):
     return dict(parts=parts, coils=coils, ports=port_currents, switches=switches, modes=modes)
 
 
+def net_of(config, terminal):
+    """The net a component terminal is on: NET:name's name, else the model's terminals' ('' when unknown)."""
+    return terminal[4:] if terminal.startswith('NET:') else config.get('terminals', {}).get(terminal, '')
+
+
+def supply_drops(config):
+    """The DC resistance from the supply to the input rail (VBUS) and on to the bridge rail (VHB), ohm: the
+    source's, then the series resistors' and inductors' between the rails. They set the rails' starting voltages
+    under the input current. wpthb's (R9, L3 behind a 50 mΩ source) are 0.055 and 0.085, kept to the digit."""
+    def series(x, y):
+        total = 0.0
+        for p in config['components']:
+            if p.get('enabled', True) and {net_of(config, p['a']), net_of(config, p['b'])} == {x, y}:
+                if p['type'] == 'resistor':
+                    total += p['value']
+                elif p['type'] == 'inductor':
+                    total += p.get('DCR_ohm', 0)
+        return total
+
+    bus = max(config.get('supply', {}).get('R_ohm', 0.05), 1e-9) + series('VIN', 'VBUS')
+    hb = bus + series('VBUS', 'VHB')
+    return (0.055 if abs(bus - 0.055) < 1e-9 else bus), (0.085 if abs(hb - 0.085) < 1e-9 else hb)
+
+
 def build(config, f, phase, match, copper=None, ports=None, state=None):
     """The ngspice circuit at `phase`. state (end_state of a previous run) warm-starts it: every capacitor,
     inductor, winding and copper mode begins where that run ended, instead of the precharge estimate.
@@ -151,7 +175,12 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
         initial_input = config.get('transient', {}).get('initial_input_A', initial_input)
         config['primary'].update(initial_A=primary_initial, initial_V=primary_v)
         config['secondary'].update(initial_A=secondary_initial, initial_V=secondary_v)
+        drop_bus, drop_hb = supply_drops(config)
+        tank = {net_of(config, config['bridge_terminals'][0]), net_of(config, config['primary_terminals'][0])}
         for p in config['components']:
+            if not p.get('enabled', True):
+                continue
+            a, b = net_of(config, p['a']), net_of(config, p['b'])
             if p['ref'] in ('C25', 'C27', 'C30') and p['type'] == 'capacitor':
                 p['initial_V'] = cap1_v
             elif p['ref'] in ('C19', 'C20', 'C21', 'C22', 'C23', 'C24') and p['type'] == 'capacitor':
@@ -160,6 +189,17 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
                 p['initial_V'] = config['voltage_V'] - 0.055 * initial_input
             elif p['ref'] == 'L3' and p['type'] == 'inductor':
                 p['initial_A'] = initial_input
+            # Any other model: the same starting state by what a part joins, not by wpthb's references (above,
+            # kept so its decks stay as they were): the tank's capacitors, the capacitors from each supply rail
+            # to ground charged to the rail, the series inductors carrying the input current.
+            elif p['type'] == 'capacitor' and {a, b} == tank and len(tank) == 2:
+                p['initial_V'] = cap1_v if a == net_of(config, config['primary_terminals'][0]) else -cap1_v
+            elif p['type'] == 'capacitor' and {a, b} in ({'VHB', 'GND'}, {'VBUS', 'GND'}):
+                rail = 'VHB' if 'VHB' in (a, b) else 'VBUS'
+                v = config['voltage_V'] - (drop_hb if rail == 'VHB' else drop_bus) * initial_input
+                p['initial_V'] = v if a == rail else -v
+            elif p['type'] == 'inductor' and {a, b} in ({'VIN', 'VBUS'}, {'VBUS', 'VHB'}):
+                p['initial_A'] = initial_input if b in ('VBUS', 'VHB') and a != 'VHB' else -initial_input
         if state is not None:  # a warm start overrides the estimates
             for p in config['components']:
                 p.update(state['parts'].get(p['ref'], {}))
@@ -244,8 +284,15 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
     c.voltage('input.V', 'NET:VBUS')
     c.voltage('bridge.V', node(config['bridge_terminals'][0]), node(config['bridge_terminals'][1]))
     if precharged and state is None:  # a warm start's capacitors already set these nodes
-        for net, drop in [('VBUS', 0.055), ('VHB', 0.085)]:
-            c.lines.append(f'.ic V({c.node("NET:" + net)})={config["voltage_V"] - drop * initial_input:.17g}')
+        for net, drop in zip(('VBUS', 'VHB'), supply_drops(config)):
+            node = c.node('NET:' + net)
+            # A bus that only inductors and the parts' current senses touch has no conductance of its own, and the
+            # solver (KLU) cannot then hold a starting voltage on it: 1 GΩ to ground gives it one (24 nA at 24 V).
+            # Only then: a deck that runs is left exactly as it was (wpthb's strict run is sensitive to less).
+            anchored = any(line[:1] in 'RCDBMQrcdbmq' and node in line.split()[1:3] for line in c.lines)
+            if not anchored:
+                c.lines.append(f'R_IC_{net} {node} 0 1e9')
+            c.lines.append(f'.ic V({node})={config["voltage_V"] - drop * initial_input:.17g}')
     c.measures = dict(
         input_power_W=('AVG', '-@supply.V@*@supply.I@'),
         load_power_W=('AVG', f'@load.V@^2/{match["load_ohm"]:.17g}'),
