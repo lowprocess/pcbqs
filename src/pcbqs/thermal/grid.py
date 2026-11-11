@@ -110,6 +110,34 @@ def cover(geom, x0, y0, pitch, sub, nx, ny):
     return r + r0, c + c0, a[r, c] / a.sum()
 
 
+def edge_lengths(problem, x0, y0, pitch, live, piece):
+    """m of the board's edges in each cell (ny, nx): the outline cut into pieces of at most `piece` mm, each
+    given to the cell its middle is in (moved a hair into the board, so a piece on a cell's side goes to the cell
+    of the board), or, if that cell has no board, to the nearest one that does."""
+    ny, nx = live.shape
+    out = np.zeros((ny, nx))
+    a, b = problem.edges()
+    if not len(a) or not live.any():
+        return out
+    d = b - a
+    seg = np.hypot(d[:, 0], d[:, 1])
+    keep = seg > 0
+    a, d, seg = a[keep], d[keep], seg[keep]
+    n = np.maximum(np.ceil(seg / piece).astype(np.int64), 1)
+    e = np.repeat(np.arange(len(n)), n)
+    t = (np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n) + 0.5) / n[e]
+    left = np.c_[-d[:, 1], d[:, 0]] / seg[:, None]                 # towards the board
+    m = a[e] + t[:, None] * d[e] + left[e] * (1e-3 * piece)
+    c = np.clip(np.floor((m[:, 0] - x0) / pitch).astype(np.int64), 0, nx - 1)
+    r = np.clip(np.floor((m[:, 1] - y0) / pitch).astype(np.int64), 0, ny - 1)
+    if not live[r, c].all():
+        from scipy.ndimage import distance_transform_edt
+        _, (rr, cc) = distance_transform_edt(~live, return_indices=True)
+        r, c = rr[r, c], cc[r, c]
+    np.add.at(out, (r, c), (seg / n)[e] * 1e-3)
+    return out
+
+
 def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
     """pitch: the cells, mm. sub: fine raster cells across one cell (default: enough for `detail` mm, the narrowest
     gap or trace the conductances still see; fewer on a board too large for that)."""
@@ -160,6 +188,12 @@ def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
     film = np.zeros(n)
     film[idx[0][live]] += p.film[0] * area[live]
     film[idx[-1][live]] += p.film[1] * area[live]
+    edge = np.zeros(n)
+    if p.edge_film > 0:
+        run = edge_lengths(p, x0, y0, pitch, live, h)[live]
+        for l in range(L):
+            edge[idx[l][live]] += p.edge_conductance(l) * run
+    film += edge
     diag += film
     q = np.zeros(n)
     covers = []
@@ -183,7 +217,8 @@ def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
     by = {id(s): cv for s, cv in zip(p.sources, covers)}
     parts = part_temperatures(p, lambda s: p.ambient + (float(rise[by[id(s)][0]] @ by[id(s)][1])
                                                         if by[id(s)] is not None else 0.0))
-    res = Result('grid', p, T, parts, n, dict(build=t1 - t0, solve=t2 - t1), float(film @ rise), pitch, x0=x0, y0=y0)
+    res = Result('grid', p, T, parts, n, dict(build=t1 - t0, solve=t2 - t1), float(film @ rise), pitch, x0=x0, y0=y0,
+                 edge_W=float(edge @ rise))
     log(f"thermal grid: {nx} x {ny} cells of {pitch:g} mm on {L} layer(s), {n:,} unknowns, "
         f"{t2 - t0:.2f} s; hottest {res.hottest:.1f} C")
     return res

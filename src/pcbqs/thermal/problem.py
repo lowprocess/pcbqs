@@ -5,7 +5,8 @@ The board is a stack of sheets, one per copper layer. A sheet conducts along the
 where there is copper) and its share of the laminate (half of the dielectric on each side of it). Sheets next to
 each other exchange heat through the dielectric between them (k_z / its thickness, per area) and through the vias
 (the plated barrel). The two outer sheets lose heat to the air through a film coefficient (convection and
-radiation together, W/m2/K). Heat comes in over the pads of the parts that dissipate: each part's loss, shared
+radiation together, W/m2/K), and every sheet through the board's edges (the outline and its cut-outs) over the
+height of the board it stands for, with the edge's own coefficient. Heat comes in over the pads of the parts that dissipate: each part's loss, shared
 over its pads by their area.
 
     p = Problem.of(board, {'Q1': 0.35, 'D1': 0.5})      # board.json's dict (mm), watts per footprint
@@ -38,6 +39,7 @@ class Layer:
     t: float                # mm of copper
     copper: object          # shapely, mm (every net), or None
     laminate: float         # W/K per square: this sheet's share of the laminate's conduction along the board
+    edge: float = 0.0       # mm: the height of the board's edge this sheet stands for (its share of the thickness)
 
 
 @dataclass
@@ -58,6 +60,7 @@ class Problem:
     powers: dict = field(default_factory=dict)      # {part: W}
     theta: dict = field(default_factory=dict)       # {part: K/W, its pads to the part}
     film: tuple = (FILM, FILM)              # W/m2/K: bottom face, top face
+    edge_film: float = FILM                 # W/m2/K: the board's edges (0: insulated)
     ambient: float = AMBIENT
     k_cu: float = K_CU
     plating: float = PLATING
@@ -65,9 +68,9 @@ class Problem:
 
     @classmethod
     def of(cls, board, losses=None, film=FILM, ambient=AMBIENT, k_cu=K_CU, k_xy=K_XY, k_z=K_Z, plating=PLATING,
-           theta=None):
+           theta=None, edge_film=None):
         """The problem of a board (board.json's dict) with `losses` {footprint reference: W}. film: one value for
-        both faces or (bottom, top)."""
+        both faces or (bottom, top). edge_film: the edges' coefficient (default: the mean of the faces'; 0: none)."""
         cu = sorted(board['stack']['copper'], key=lambda c: c['z'])
         if not cu:
             raise ValueError('the board has no copper layer')
@@ -86,7 +89,7 @@ class Problem:
             gs = [shape(q['polygon']) for q in board['copper'].get(c['name'], [])]
             g = unary_union(gs).buffer(0) if gs else None
             layers.append(Layer(c['name'], c['z'], c['t'], None if g is None or g.is_empty else g,
-                                k_xy * l * 1e-3))
+                                k_xy * l * 1e-3, float(l)))
         out = board.get('outline')
         outline = shape(out).buffer(0) if out else None
         if outline is None or outline.is_empty:
@@ -99,11 +102,34 @@ class Problem:
             if len(on) > 1 and outline.contains(shape({'type': 'Point', 'coordinates': (v['x'], v['y'])})):
                 vias.append(dict(x=v['x'], y=v['y'], r=v['r'], lo=on[0], hi=on[-1]))
         film = (film, film) if np.isscalar(film) else tuple(film)
-        p = cls(outline, layers, gaps, vias, film=film, ambient=ambient, k_cu=k_cu, plating=plating,
-                theta=dict(theta or {}))
+        edge_film = 0.5 * (film[0] + film[1]) if edge_film is None else float(edge_film)
+        if edge_film < 0 or min(film) < 0:
+            raise ValueError('a film coefficient cannot be negative')
+        p = cls(outline, layers, gaps, vias, film=film, edge_film=edge_film, ambient=ambient, k_cu=k_cu,
+                plating=plating, theta=dict(theta or {}))
         if losses:
             p.dissipate(board, losses)
         return p
+
+    def edges(self):
+        """The board's edges as segments: (a, b) arrays (n, 2) mm, the board on the left going from a to b (the
+        outline anticlockwise, its cut-outs clockwise)."""
+        from shapely.geometry.polygon import orient
+        A, B = [], []
+        for q in getattr(self.outline, 'geoms', [self.outline]):
+            if q.geom_type != 'Polygon' or q.is_empty:
+                continue
+            q = orient(q, 1.0)
+            for ring in [q.exterior, *q.interiors]:
+                c = np.asarray(ring.coords)[:, :2]
+                A.append(c[:-1]); B.append(c[1:])
+        if not A:
+            return np.zeros((0, 2)), np.zeros((0, 2))
+        return np.concatenate(A), np.concatenate(B)
+
+    def edge_conductance(self, layer):
+        """W/K per metre of edge from sheet `layer` to the air."""
+        return self.edge_film * self.layers[layer].edge * 1e-3
 
     def index(self, name):
         return [l.name for l in self.layers].index(name)
@@ -183,13 +209,14 @@ class Result:
     parts: dict                     # {part: dict(power_W, board_C, part_C)}
     unknowns: int
     seconds: dict                   # build, solve
-    out_W: float                    # the heat leaving through the films
+    out_W: float                    # the heat leaving through the films (faces and edges)
     size: float                     # mm: the grid's pitch or the mesh's longest edge
     x0: float = 0.0
     y0: float = 0.0
     nodes: np.ndarray = None
     tris: np.ndarray = None
     notes: list = field(default_factory=list)
+    edge_W: float = 0.0             # of out_W, the heat leaving through the edges
 
     @property
     def hottest(self):
@@ -227,7 +254,8 @@ class Result:
         p = self.problem
         return dict(method=self.method, size_mm=self.size, unknowns=self.unknowns,
                     seconds={k: round(v, 4) for k, v in self.seconds.items()},
-                    ambient_C=p.ambient, film_W_m2K=list(p.film), heat_in_W=p.watts, heat_out_W=self.out_W,
+                    ambient_C=p.ambient, film_W_m2K=list(p.film), edge_film_W_m2K=p.edge_film,
+                    heat_in_W=p.watts, heat_out_W=self.out_W, heat_out_edges_W=self.edge_W,
                     hottest_C=self.hottest,
                     layers={l.name: dict(hottest_C=float(np.nanmax(t)), mean_C=float(np.nanmean(t)))
                             for l, t in zip(p.layers, self.T)},

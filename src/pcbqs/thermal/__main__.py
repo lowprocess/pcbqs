@@ -38,6 +38,8 @@ def main(argv=None):
                     'mesh (default 1)')
     ap.add_argument('--film', type=float, default=FILM, help=f'W/m2/K to the air on both faces (default {FILM:g})')
     ap.add_argument('--film-bottom', type=float, help='W/m2/K on the bottom face, when it differs')
+    ap.add_argument('--film-edge', type=float, help="W/m2/K at the board's edges and cut-outs (default: the mean "
+                    "of the faces'; 0: insulated)")
     ap.add_argument('--ambient', type=float, default=AMBIENT, help=f'C (default {AMBIENT:g})')
     ap.add_argument('--theta', action='append', default=[], metavar='REF=K/W',
                     help="from a part's pads to the part itself, K/W (repeatable)")
@@ -73,7 +75,7 @@ def main(argv=None):
     except (OSError, RuntimeError, ValueError) as e:
         ap.error(str(e))
     p = Problem.of(board, losses, film=(a.film if a.film_bottom is None else a.film_bottom, a.film),
-                   ambient=a.ambient, theta=_pairs(a.theta, '--theta', ap))
+                   ambient=a.ambient, theta=_pairs(a.theta, '--theta', ap), edge_film=a.film_edge)
     p.notes += left
     if not p.sources:
         for n in p.notes:
@@ -94,7 +96,8 @@ def main(argv=None):
             arrays.update(grid_origin=np.array([r.x0, r.y0]), grid_pitch=np.array(r.size))
         picture(r, out / (f'thermal-{m}.png' if len(res) > 1 else 'thermal.png'))
     first = res[methods[0]]
-    print(f"{p.watts:.3f} W into the board, {first.out_W:.3f} W out through the films; ambient {p.ambient:g} C")
+    print(f"{p.watts:.3f} W into the board, {first.out_W:.3f} W out through the films ({first.edge_W:.3f} W of it "
+          f"through the edges); ambient {p.ambient:g} C")
     print(f"{'part':8s} {'W':>7s} " + ' '.join(f"{m + ' C':>9s}" for m in methods))
     for ref in sorted(first.parts, key=lambda k: -first.parts[k]['part_C']):
         print(f"{ref:8s} {first.parts[ref]['power_W']:7.3f} " +

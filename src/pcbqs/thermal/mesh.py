@@ -86,6 +86,16 @@ def solve(problem, dmax=1.0, simplify=None, coarsen=None, quality=25, log=print)
     film = np.zeros(L * N)
     film[:N] += p.film[0] * M
     film[(L - 1) * N:] += p.film[1] * M
+    edge = np.zeros(L * N)
+    if p.edge_film > 0:                                 # the mesh's boundary edges, half of each to either end
+        e = np.sort(np.vstack([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]]), axis=1)
+        u, k = np.unique(e, axis=0, return_counts=True)
+        u = u[k == 1]
+        half = 0.5e-3 * np.hypot(*(nodes[u[:, 1]] - nodes[u[:, 0]]).T)
+        run = np.bincount(u.ravel(), np.repeat(half, 2), minlength=N)      # m of edge at each vertex
+        for l in range(L):
+            edge[l * N:(l + 1) * N] += p.edge_conductance(l) * run
+    film += edge
     q = np.zeros(L * N)
     weights = []
     for s in p.sources:
@@ -110,7 +120,7 @@ def solve(problem, dmax=1.0, simplify=None, coarsen=None, quality=25, log=print)
     by = {id(s): w for s, w in zip(p.sources, weights)}
     parts = part_temperatures(p, lambda s: float(T[s.layer] @ by[id(s)]))
     res = Result('mesh', p, T, parts, L * N, dict(build=t1 - t0, solve=t2 - t1), float(film @ rise), dmax,
-                 nodes=nodes, tris=tris)
+                 nodes=nodes, tris=tris, edge_W=float(edge @ rise))
     log(f"thermal mesh: {N:,} vertices, {len(tris):,} triangles of up to {dmax:g} mm on {L} layer(s), "
         f"{L * N:,} unknowns, {t2 - t0:.2f} s; hottest {res.hottest:.1f} C")
     return res

@@ -2,12 +2,13 @@
 
 A trial of a lightweight thermal solver inside pcbqs: the steady temperature of a board from what its parts
 dissipate, in a fraction of a second, with two discretisations of one model to compare. The 3D reference remains
-Elmer through kicad2ems-fem.
+Elmer through kicad2ems-fem, and the two agree within 2 K on eleven boards (below).
 
     python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --loss D1=0.5
     python -m pcbqs.thermal --circuit circuit-results               # the board and losses of a circuit run
     python -m pcbqs.thermal --circuit circuit-results --method both # grid and mesh, with their difference
     python -m pcbqs.thermal board.kicad_pcb --loss U1=1.2 --theta U1=8 --film 12 --ambient 40
+    python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --film-edge 0  # the edges insulated
 
 It writes `thermal.json` (each part's temperature, each layer's hottest and mean, heat in and out),
 `thermal.npz` (the maps) and `thermal.png`; with `--method both` a picture per solver and
@@ -25,6 +26,10 @@ The board is a stack of sheets, one per copper layer (`problem.py`):
   plated barrel, 25 um).
 - **To the air** the two outer sheets lose heat through a film coefficient, convection and radiation together
   (10 W/m2/K a face unless told otherwise; `--film`, `--film-bottom`), to the ambient (25 C; `--ambient`).
+- **At the edges** (the outline and its cut-outs) every sheet loses heat over the height of the board it stands
+  for, its share of the laminate, so the edges are the board's whole thickness high. Their coefficient is the
+  mean of the faces' unless told otherwise (`--film-edge`; 0 insulates them). On a small board they matter: on
+  the demo boards (17 to 62 mm across) they carry 6 to 15 % of the heat and lower every rise by 4 to 13 %.
 - **Heat comes in** over the pads of the parts that dissipate: each part's loss, shared over its pads by area.
 - **A part's temperature** is the mean temperature of the copper under its pads, plus its loss times its
   `--theta` (K/W from its pads to the part itself), when one is given.
@@ -41,9 +46,11 @@ In code:
 ```python
 from pcbqs.thermal import Problem, solve
 p = Problem.of(board, {'Q1': 0.35, 'D1': 0.5}, film=10.0, theta={'Q1': 2.0})
+p.edge_film                                         # W/m2/K at the edges: the faces' mean (edge_film=0: none)
 p.heat('shunt', [('F.Cu', polygon)], 0.2)           # heat over any area of a layer
 r = solve(p, 'grid', 0.5)                           # or 'mesh', 1.0
 r.parts['Q1']                                       # dict(power_W, board_C, part_C)
+r.out_W, r.edge_W                                   # the heat given off, and of it through the edges
 r.T                                                 # grid: (layers, ny, nx) C; mesh: (layers, vertices), r.nodes, r.tris
 r.sample('F.Cu', x, y)                              # either, at points (mm)
 ```
@@ -113,6 +120,35 @@ Two things the trial turned up in the grid, both fixed and tested: a board that 
 cell's conduction to its neighbour (the whole board read 1 K hot), and a drawn raster made thin traces a
 quarter wider than they are (the raster is now exact in area).
 
+The grid-mesh tables above were taken before the edges lost heat; both solvers take the edges the same way.
+
+## Against Elmer
+
+`validation/thermal_elmer.py` runs each demo circuit and gives its lossiest case's part losses to the grid
+(0.5 mm), the mesh (0.5 mm) and Elmer through kicad2ems-fem (`elmer/thermal.py`: 3D conduction in the copper,
+the barrels and an anisotropic laminate, wedge elements, the same film on every exposed face), with the same
+film, ambient and conductivities. Each part's temperature is the mean under its pads in all three.
+
+| | parts | worst part | within 1 K | grid time | Elmer time |
+|---|---|---|---|---|---|
+| ten demo boards, 2 layers, 0.006-1.26 W | 48 | 2.0 K, 4.5 % of its rise (05 C1); 5.5 % at most (09 C1) | 43 of 48 | 0.02-0.09 s | 0.5-1.5 s |
+| wpthb, 4 layers, Q1 Q2 L3 1 W | 3 | 0.9 K, 3.1 % (L3) | 3 of 3 | 0.4 s | 12 s |
+
+Both are converged: from 1 to 0.125 mm the grid moves under 0.2 K, and from 30,000 to 330,000 wedges Elmer
+moves under 0.2 K. The grid and the mesh agree within 0.2 K on the demo boards (0.9 K on wpthb's L3).
+
+Two things the comparison found:
+
+- **The edges.** Before they lost heat here, every part read 4.5 K hot of Elmer on the 04 buck, a tenth of the
+  rise on every board alike: Elmer's film covers the board's edges, and on a board 20 by 37 mm they give off a
+  tenth of the heat. With the edges in, that offset is gone.
+- **What is left is the laminate, not the mesh.** The hottest parts read up to 2 K (5 %) low and the coolest up
+  to 2 K high: the sheets spread heat a little more than the 3D board does. Its in-plane conduction is put on
+  the copper sheets at their temperatures, which near a hot pad overstates it (in the 3D board the laminate
+  between the layers is cooler than the copper on top). With the laminate's in-plane conductivity set to zero
+  in both, the difference turns into a near-uniform +0.5 to +1 K. Copper at 385 against 390 W/m/K accounts
+  for 0.05 K.
+
 ## What it does not do yet
 
 - **The parts' own cooling.** A part's body gives heat to the air itself; here all of it goes into the board.
@@ -125,6 +161,7 @@ quarter wider than they are (the raster is now exact in area).
 - **Resistance against temperature**: copper's resistivity rises 0.39 % per K, which feeds back into the DC
   drop and the circuit's losses.
 - **Fixed-temperature points** (a chassis screw, a heatsink) and time (a thermal step) are not in.
-- **Against Elmer**: not compared here (Elmer was not installed where this was written). The comparison to make
-  is one board in both, with the same film and the same losses.
+- **The laminate between the sheets.** Its in-plane conduction sits on the sheets (above); one more sheet per
+  dielectric, at mid-thickness, would follow the 3D board more closely near hot parts, for 2L-1 unknowns per
+  cell instead of L.
 - Large grids want a multigrid solve; a direct one is used (about 3 s at 128,000 unknowns on four layers).

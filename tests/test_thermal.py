@@ -46,7 +46,7 @@ def disc_exact(p, a, watts, film):
 
 @pytest.mark.parametrize('method,size', [('grid', 1.0), ('mesh', 2.0)])
 def test_a_face_heated_all_over_is_uniform_and_exact(method, size):
-    p = Problem.of(plate(40), film=10.0)
+    p = Problem.of(plate(40), film=10.0, edge_film=0.0)              # the infinite plate's answer: no edges
     p.heat('all', [('F.Cu', box(0, 0, 40, 40))], 2.0)
     q, h, c = 2.0 / 0.04 ** 2, 10.0, p.gaps[0]
     top = q / (h + c - c * c / (h + c))
@@ -54,6 +54,39 @@ def test_a_face_heated_all_over_is_uniform_and_exact(method, size):
     assert np.nanmax(np.abs(r.T[1] - (25 + top))) < 1e-6
     assert np.nanmax(np.abs(r.T[0] - (25 + c * top / (h + c)))) < 1e-6
     assert r.out_W == pytest.approx(2.0, rel=1e-9)
+
+
+@pytest.mark.parametrize('method,size', [('grid', 1.0), ('grid', 0.7), ('mesh', 2.0)])
+@pytest.mark.parametrize('hole', [False, True])
+def test_the_edges_give_heat_over_the_board_s_thickness(method, size, hole):
+    """A plate that conducts so well it is one temperature: the rise is the loss over the faces' and the edges'
+    conductances, the edges being the outline and its cut-out, the board's whole thickness high."""
+    out = box(0, 0, 40, 30)
+    if hole:
+        out = out.difference(box(10.3, 10.3, 22.7, 18.1))
+    p = Problem.of(plate(40, 30, outline=out), film=(8.0, 12.0), edge_film=15.0, k_cu=1e7, k_z=1e7)
+    assert sum(l.edge for l in p.layers) == pytest.approx(1.5)
+    p.heat('u', [('F.Cu', box(30, 3, 34, 7))], 1.0)
+    r = solve(p, method, size, log=quiet)
+    faces = (8.0 + 12.0) * out.area * 1e-6
+    edges = 15.0 * out.length * 1.5e-6
+    rise = 1.0 / (faces + edges)
+    assert np.nanmax(np.abs(r.T - (25 + rise))) < 1e-3 * rise
+    assert r.out_W == pytest.approx(1.0, rel=1e-6)
+    assert r.edge_W == pytest.approx(edges / (faces + edges), rel=1e-3)
+
+
+def test_the_edges_default_to_the_faces_and_can_be_insulated():
+    p = Problem.of(plate(40), film=(6.0, 10.0))
+    assert p.edge_film == 8.0
+    p.heat('u', [('F.Cu', box(18, 18, 22, 22))], 0.5)
+    on = solve(p, 'grid', 1.0, log=quiet)
+    p.edge_film = 0.0
+    off = solve(p, 'grid', 1.0, log=quiet)
+    assert off.edge_W == 0.0 and 0 < on.edge_W < 0.1 * 0.5
+    assert off.parts['u']['board_C'] > on.parts['u']['board_C']
+    with pytest.raises(ValueError):
+        Problem.of(plate(40), edge_film=-1.0)
 
 
 @pytest.mark.parametrize('method,size,tol', [('grid', 1.0, 0.1), ('grid', 0.5, 0.06), ('mesh', 2.0, 0.15),

@@ -9,6 +9,7 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 | DC drop (`pdn` DC) | 2D copper sheets + via barrels (`pdn.dc.Network`) | Elmer 26.2 `StatCurrentSolver`: 3D copper slabs and barrels, direct solve | `dc_elmer.py` |
 | Loop inductance, near field (`mqs`) | PEEC on the copper sheets (`MQS`) | Palace 0.18 driven FEM: PEC copper sheets, PEC via rods, air box, lumped port | `mqs_palace.py` |
 | Copper R(f), L(f) (`mqs`) | the same, slab loss model | FastHenry 3.0: volume filaments across width and thickness (skin and proximity effect) | `mqs_fasthenry.py` |
+| Board temperature (`thermal`) | layered sheets: copper + laminate per layer, dielectric and barrels between, films on faces and edges (grid and mesh) | Elmer 26.2 heat equation through kicad2ems-fem: 3D copper, barrels, anisotropic laminate (wedges) | `thermal_elmer.py` |
 | Plane-pair impedance (`pdn` PDN) | 2D cavity (`pdn.cavity.PlanePair`) | Palace driven FEM: dielectric between PEC planes, open sides, lumped ports; analytic modal sum | `pdn_palace.py` |
 
 ## Results (finest meshes)
@@ -28,6 +29,8 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 | Plane pair 40 × 30 mm, 10 MHz–3 GHz | \|Z21\| | Palace; modal sum | ≤ 0.4% |
 | L-shaped plane pair | \|Z21\| | Palace | ≤ 0.8% |
 | Jetson +1V15, In4.Cu over In3.Cu | \|Z21\| | Palace | ≤ 0.25% |
+| Temperature: ten demo boards, 48 parts (2026-11-11) | each part, grid 0.5 mm | Elmer (h 0.3 mm) | ≤ 2.0 K (≤ 5.5% of rise); 43 within 1 K |
+| Temperature: wpthb, Q1 / Q2 / L3 at 1 W | 53.74 / 52.28 / 54.04 C | Elmer 53.71 / 52.20 / 53.17 C | +0.03 / +0.08 / +0.87 K |
 
 ![DC, Jetson +1V15](images/dc_jetson_1v15.png) ![DC, wpthb VHB](images/dc_wpthb_vhb.png)
 ![Strip loop](images/mqs_loop.png)
@@ -174,6 +177,7 @@ python validation/pdn_palace.py [rect lshape jetson_1v15]                       
 python validation/mqs_palace.py [loop plane_return]
 python validation/mqs_fasthenry.py [loop plane_return]                             # after mqs_palace.py
 python validation/mqs_cm5.py geometry|pcbqs DMAX [SHEETS] [hier] [overlap]|palace H...|fasthenry P...|figure|report
+python validation/thermal_elmer.py [05_buck_synchronous ...] | --wpthb          # + ../kicad2ems-fem/src
 python validation/dc_elmer.py --plot        # redraw from saved results (also mqs_palace.py --plot)
 ```
 
