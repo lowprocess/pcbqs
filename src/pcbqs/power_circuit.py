@@ -1,6 +1,6 @@
 """Switching circuit simulation, coupled receiver sweeps and MQS time-domain inference.
 
-python -m pcbqs.power_circuit --template > model.json
+python -m pcbqs.power_circuit --template > model.json          # wpthb; --template simple: a bare full bridge
 python -m pcbqs.power_circuit model.json --board board.kicad_pcb --out result --copper --fields
 """
 
@@ -16,10 +16,17 @@ from .mqs_ports import CopperPorts, PortResponse, rl_error, foster_equivalent
 FIT_TOLERANCE = 0.03  # default mesh.circuit_fit_tolerance: copper-model reduction error
 
 
-def template():
+TEMPLATES = {'wpthb': 'wpthb-power.json', 'simple': 'simple-bridge.json'}
+
+
+def template(name='wpthb'):
+    """A model to start from: 'wpthb' (the wpthb board's, its input filter and terminals on its pads) or 'simple'
+    (a full bridge, one bus capacitor, a series tank and the coupled receiver, no board)."""
     from importlib.resources import files
 
-    return json.loads(files('pcbqs').joinpath('data/wpthb-power.json').read_text())
+    if name not in TEMPLATES:
+        raise ValueError(f"unknown template {name!r}: {', '.join(TEMPLATES)}")
+    return json.loads(files('pcbqs').joinpath('data', TEMPLATES[name]).read_text())
 
 
 def fingerprint(board, cfg):
@@ -568,7 +575,8 @@ def prefetch_fields(q, cfg, out, key, harmonics, log=print):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('config', nargs='?')
-    parser.add_argument('--template', action='store_true')
+    parser.add_argument('--template', nargs='?', const='wpthb', choices=sorted(TEMPLATES),
+                        help='print a model to start from: wpthb (default) or simple')
     parser.add_argument('--board')
     parser.add_argument('--out', default='power-circuit')
     parser.add_argument('--copper', action='store_true')
@@ -593,7 +601,7 @@ def main(argv=None):
 
     signal.signal(signal.SIGTERM, stop)
     if args.template:
-        print(json.dumps(template(), indent=2))
+        print(json.dumps(template(args.template), indent=2))
         return
     if not args.config:
         parser.error('a circuit configuration JSON is required')

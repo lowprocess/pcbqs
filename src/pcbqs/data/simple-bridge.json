@@ -1,0 +1,141 @@
+{
+ "format": 1,
+ "name": "simple full bridge",
+ "voltage_V": 24,
+ "frequencies_Hz": [
+  100000
+ ],
+ "powers_W": [
+  10
+ ],
+ "coupling": 0.4,
+ "primary_C_F": 1e-07,
+ "primary": {
+  "L_H": 2.4e-05,
+  "R_ohm": 0.11,
+  "SRF_Hz": 7700000.0,
+  "Rac_ref_ohm": 0.12161003820347586,
+  "loss_model": "parallel_core",
+  "loss_reference_Hz": 125000
+ },
+ "secondary": {
+  "L_H": 2.4e-05,
+  "R_ohm": 0.11,
+  "SRF_Hz": 7700000.0,
+  "Rac_ref_ohm": 0.12161003820347586,
+  "loss_model": "parallel_core",
+  "loss_reference_Hz": 125000
+ },
+ "primary_terminals": [
+  "NET:TANK",
+  "NET:SW_B"
+ ],
+ "bridge_terminals": [
+  "NET:SW_A",
+  "NET:SW_B"
+ ],
+ "primary_cap_ESR_ohm": 0.005,
+ "secondary_cap_ESR_ohm": 0.015,
+ "secondary_cap_ESL_H": 8e-10,
+ "supply": {
+  "R_ohm": 0.05,
+  "L_H": 1e-07,
+  "ramp_s": 0.0001
+ },
+ "transient": {
+  "cycles": 32,
+  "samples_per_cycle": 256,
+  "periodic_tolerance": 0.005,
+  "power_tolerance": 0.005,
+  "initialization": "precharged"
+ },
+ "switch_model": {
+  "type": "switch",
+  "Ron_ohm": 0.01,
+  "Roff_ohm": 10000000000.0,
+  "rise_s": 2e-08,
+  "fall_s": 2e-08,
+  "dead_time_s": 1e-07,
+  "gate_V": 10
+ },
+ "components": [
+  {
+   "ref": "R1",
+   "a": "NET:VIN",
+   "b": "NET:VBUS",
+   "type": "resistor",
+   "value": 0.01
+  },
+  {
+   "ref": "L1",
+   "a": "NET:VBUS",
+   "b": "NET:VHB",
+   "type": "inductor",
+   "value": 1e-06,
+   "DCR_ohm": 0.01
+  },
+  {
+   "ref": "C1",
+   "a": "NET:VHB",
+   "b": "NET:GND",
+   "type": "capacitor",
+   "value": 1e-05,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10
+  },
+  {
+   "ref": "C2",
+   "a": "NET:TANK",
+   "b": "NET:SW_A",
+   "type": "capacitor",
+   "value": 1e-07,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10
+  }
+ ],
+ "switches": [
+  {
+   "ref": "Q1",
+   "a": "NET:VHB",
+   "b": "NET:SW_A",
+   "leg": "A",
+   "high": true
+  },
+  {
+   "ref": "Q2",
+   "a": "NET:SW_A",
+   "b": "NET:GND",
+   "leg": "A",
+   "high": false
+  },
+  {
+   "ref": "Q3",
+   "a": "NET:VHB",
+   "b": "NET:SW_B",
+   "leg": "B",
+   "high": true
+  },
+  {
+   "ref": "Q4",
+   "a": "NET:SW_B",
+   "b": "NET:GND",
+   "leg": "B",
+   "high": false
+  }
+ ],
+ "terminals": {},
+ "net_references": {},
+ "mesh": {
+  "nets": [],
+  "coarse_mm": 3,
+  "fine_mm": 1.6,
+  "margin_mm": 2,
+  "workers": 8,
+  "backend": "openmp",
+  "circuit_fit_tolerance": 0.03
+ },
+ "assumptions": [
+  "A starting point: a full bridge from a 24 V supply through R1 and L1, one bus capacitor, a series tank (C2) and the primary coupled (k 0.4) to a tuned receiver. No board: Include extracted PCB R/L needs a model whose terminals are PCB pads (Import KiCad, or the wpthb template).",
+  "Secondary is assumed identical to the primary."
+ ]
+}

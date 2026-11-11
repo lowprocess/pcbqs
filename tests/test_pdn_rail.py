@@ -250,3 +250,23 @@ def test_cli_load_returns_and_targets(tmp_path):
     main(common + ['--no-target', '--out', str(tmp_path / 'b')])
     r = json.loads((tmp_path / 'b' / 'pdn.json').read_text())
     assert r['pdn']['target'] is None and all(z['target'] is None and z['over'] == [] for z in r['pdn']['z'].values())
+
+
+def test_cli_writes_the_viewer_maps(tmp_path):
+    """The DC solve where kicad2ems's viewer reads it (pdn/viewer.py): the board, the mesh, per layer the drop (mV,
+    as the solve's loads see it) and the sheet current, as 0 Hz plane dumps."""
+    import json
+    from pcbqs.pdn.cli import main, describe
+    assert 'viewer' in describe()['features']
+    path = tmp_path / 'b_board.json'
+    path.write_text(json.dumps(_with_high_side(board())))
+    main([str(path), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--dmax', '1', '--no-pdn', '--out', str(tmp_path / 'o')])
+    r = json.loads((tmp_path / 'o' / 'pdn.json').read_text())
+    v = r['viewer']
+    assert (tmp_path / 'o' / v['board']).is_file() and (tmp_path / 'o' / v['mesh']).is_file()
+    assert {(d['side'], d['field']) for d in v['dumps']} == {('power', 'V'), ('power', 'J'), ('ground', 'V'), ('ground', 'J')}
+    info = json.loads((tmp_path / 'o' / 'pdn' / 'exc_power' / 'dump_info.json').read_text())
+    assert {d['unit'] for d in info['dumps']} == {'mV', 'A/mm'} and info['outline'] and info['cu_z']
+    drop = max(float(np.abs(np.load(tmp_path / 'o' / d['file'])['data']).max()) for d in v['dumps']
+               if d['side'] == 'power' and d['field'] == 'V')
+    assert drop == pytest.approx(r['loads']['U1']['power_drop'] * 1e3, rel=0.15)    # the map's worst: the load's

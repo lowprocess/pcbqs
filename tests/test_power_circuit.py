@@ -389,3 +389,17 @@ def test_face_preconditioner_takes_fewer_iterations_and_port_method_chooses():
         assert mqs_iterative.port_method(q, 1000)[0] == 'iterative'
     finally:
         mqs_iterative.DIRECT_LOOPS, mqs_iterative.PRODUCTS_PER_SOLVE = old
+
+
+def test_simple_template_builds():
+    """--template simple: a full bridge with no board, valid and turned into a deck (ngspice not needed)."""
+    from pcbqs import power_bridge, power_circuit, schematic
+    c = power_circuit.template('simple')
+    schematic.validate_edit(c)
+    power_bridge.validate(c)
+    assert len(c['switches']) == 4 and len(c['components']) == 4 and not c['terminals']
+    f = c['frequencies_Hz'][0]
+    m = power_bridge.matching(c, f)
+    deck = power_bridge.build(c, f, power_bridge.predicted_phase(c, f, c['powers_W'][0], m), m)
+    assert {'NET:VIN', 'NET:VBUS', 'NET:VHB', 'NET:SW_A', 'NET:SW_B', 'NET:TANK'} <= set(deck.nodes)
+    assert power_circuit.template()['name'] == power_circuit.template('wpthb')['name'] != c['name']

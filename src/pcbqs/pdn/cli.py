@@ -8,7 +8,9 @@ python -m pcbqs.pdn: a power rail's DC drop and PDN impedance from a KiCad board
 It writes <out>/pdn.json (the rail tree, each load's voltage and drop, the series parts, the hottest vias, the plane
 pairs, each part's connection and mount inductance, the impedance each load sees and where it is over the target,
 the notes), <out>/z.csv, and the figures <out>/dc_power_<layer>.png, dc_ground_<layer>.png (drop or rise, current
-per mm, vias by current) and pdn_z.png. Its progress goes to stdout, one line per step ('pdn: ...').
+per mm, vias by current) and pdn_z.png. The DC solve is also written where kicad2ems's viewer reads results
+(pdn/viewer.py: the board, the mesh, each layer's drop and current on a grid), named under 'viewer' in pdn.json.
+Its progress goes to stdout, one line per step ('pdn: ...').
 """
 import argparse
 import json
@@ -61,7 +63,7 @@ OPTIONS = [
 
 
 def describe():
-    return describe_options(OPTIONS)
+    return describe_options(OPTIONS, features=['viewer'])
 
 
 def parser():
@@ -167,6 +169,12 @@ def run(a):
     say(f"DC done in {t_dc:.1f} s: worst drop {max(v['drop'] for v in out['loads'].values()) * 1e3:.2f} mV")
     figs = dc_figures(board, dc, a.volts, a.out)
     out['figures'] = figs
+    try:                                                # the same maps for the viewer; a failure costs only them
+        from .viewer import write_viewer
+        refs = {p.ref for p in rail.source_parts} | set(loads) | {s.part.ref for s in rail.series}
+        out['viewer'] = write_viewer(a.out, board, dc, a.volts, rail.nets, ground, refs)
+    except Exception as e:                              # noqa: BLE001
+        out['notes'].append(f"the viewer's maps were not written: {type(e).__name__}: {e}")
     if not a.no_pdn:
         from .stack import RailPDN
         from .cavity import capacitance
