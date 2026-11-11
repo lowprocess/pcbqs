@@ -9,6 +9,8 @@ python -m pcbqs.pdn --describe --json
 python -m pcbqs.mqs --describe --json
 python -m pcbqs.power_circuit --template > model.json
 python -m pcbqs.power_circuit model.json --out result --jobs 4
+python -m pcbqs.circuit --template boost > boost.json
+python -m pcbqs.circuit boost.json --out result
 ```
 
 JSON-based solving, layout/mesh export and field reconstruction work without
@@ -28,7 +30,8 @@ Execution controls use `PCBQS_FILL_BACKEND`, `PCBQS_FILL_THREADS`,
 remain supported. Static-fill plugins use the `pcbqs.static_backends` entry group.
 
 - [Quasistatic guide](docs/quasistatic.md)
-- [Operational circuits](docs/power-circuit.md)
+- [Circuits](docs/circuit.md): any circuit of parts, nodes and drives, with ten examples
+- [Operational circuits](docs/power-circuit.md): the full bridge with the board's copper
 - [Validation and limits](docs/quasistatic-validation.md)
 - [Migration](docs/migration.md)
 - [Copied-code provenance](PROVENANCE.json)

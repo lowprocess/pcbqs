@@ -1,0 +1,89 @@
+{
+ "format": 2,
+ "name": "Half-wave rectifier",
+ "description": "A 50 Hz sine through one diode into a reservoir capacitor and a resistive load",
+ "parameters": {
+  "f": 50,
+  "vpk": 17
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "ac",
+    "0"
+   ],
+   "wave": {
+    "type": "sine",
+    "amplitude_V": "vpk",
+    "frequency_Hz": "f"
+   },
+   "R_ohm": 0.5
+  },
+  {
+   "ref": "D1",
+   "type": "diode",
+   "nodes": [
+    "ac",
+    "out"
+   ],
+   "model": {
+    "Vf_V": 0.8,
+    "If_A": 1,
+    "R_ohm": 0.05,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "1000u",
+   "ESR_ohm": 0.05
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "resistance_ohm": 100
+  }
+ ],
+ "probes": {
+  "vac": {
+   "voltage": [
+    "ac",
+    "0"
+   ]
+  },
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "id": {
+   "current": "D1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "vout_ripple": {
+   "pp": "vout"
+  },
+  "id_peak": {
+   "max": "id"
+  }
+ },
+ "analysis": {
+  "cycles": 40
+ }
+}

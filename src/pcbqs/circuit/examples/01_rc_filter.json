@@ -1,0 +1,68 @@
+{
+ "format": 2,
+ "name": "RC low-pass on a square wave",
+ "description": "A 5 V square wave through an RC low-pass: the simplest periodic circuit, no switches",
+ "parameters": {
+  "f": 10000.0
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "wave": {
+    "type": "pulse",
+    "low_V": 0,
+    "high_V": 5,
+    "frequency_Hz": "f",
+    "duty": 0.5
+   }
+  },
+  {
+   "ref": "R1",
+   "type": "resistor",
+   "nodes": [
+    "in",
+    "out"
+   ],
+   "value": "1k"
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "100n"
+  }
+ ],
+ "probes": {
+  "vin": {
+   "voltage": [
+    "in",
+    "0"
+   ]
+  },
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "i": {
+   "current": "R1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "vout_ripple": {
+   "pp": "vout"
+  }
+ }
+}

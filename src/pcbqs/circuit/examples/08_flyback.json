@@ -1,0 +1,190 @@
+{
+ "format": 2,
+ "name": "Flyback converter, 24 V to 5 V",
+ "description": "Two coupled inductors as the transformer, an RCD clamp for the leakage, a diode on the secondary",
+ "parameters": {
+  "fsw": 100000.0,
+  "vin": 24,
+  "vout": 5,
+  "iout": 1,
+  "lp": "200u",
+  "ratio": 0.5
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.05
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "22u",
+   "ESR_ohm": 0.01
+  },
+  {
+   "ref": "LP",
+   "type": "inductor",
+   "nodes": [
+    "in",
+    "sw"
+   ],
+   "value": "lp",
+   "DCR_ohm": 0.1
+  },
+  {
+   "ref": "LS",
+   "type": "inductor",
+   "nodes": [
+    "0",
+    "sec"
+   ],
+   "value": "lp*ratio*ratio",
+   "DCR_ohm": 0.03
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "sw",
+    "0"
+   ],
+   "drive": "pwm",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.1
+   }
+  },
+  {
+   "ref": "D2",
+   "type": "diode",
+   "nodes": [
+    "sw",
+    "clamp"
+   ],
+   "model": {
+    "Vf_V": 0.7,
+    "R_ohm": 0.1,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "C3",
+   "type": "capacitor",
+   "nodes": [
+    "clamp",
+    "in"
+   ],
+   "value": "10n"
+  },
+  {
+   "ref": "R2",
+   "type": "resistor",
+   "nodes": [
+    "clamp",
+    "in"
+   ],
+   "value": "2k"
+  },
+  {
+   "ref": "D1",
+   "type": "diode",
+   "nodes": [
+    "sec",
+    "out"
+   ],
+   "model": {
+    "Vf_V": 0.45,
+    "If_A": 1,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "C2",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "100u",
+   "ESR_ohm": 0.01
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "resistance_ohm": "vout/iout"
+  }
+ ],
+ "couplings": [
+  {
+   "inductors": [
+    "LP",
+    "LS"
+   ],
+   "k": 0.98
+  }
+ ],
+ "drives": {
+  "pwm": {
+   "frequency_Hz": "fsw",
+   "duty": 0.3
+  }
+ },
+ "probes": {
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "vsw": {
+   "voltage": [
+    "sw",
+    "0"
+   ]
+  },
+  "ip": {
+   "current": "LP"
+  },
+  "is": {
+   "current": "D1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "vsw_peak": {
+   "max": "vsw"
+  },
+  "ip_peak": {
+   "max": "ip"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.pwm.duty",
+   "range": [
+    0.05,
+    0.7
+   ],
+   "initial": 0.3,
+   "measure": "vout_avg",
+   "value": "vout"
+  }
+ ]
+}

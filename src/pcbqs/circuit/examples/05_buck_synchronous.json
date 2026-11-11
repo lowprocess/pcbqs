@@ -1,0 +1,142 @@
+{
+ "format": 2,
+ "name": "Synchronous buck with a load sweep",
+ "description": "Two switches on one drive, the lower its complement with dead time; swept over a constant-current load",
+ "parameters": {
+  "fsw": 250000.0,
+  "vin": 12,
+  "vout": 3.3
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.02
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "22u",
+   "ESR_ohm": 0.005
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "in",
+    "sw"
+   ],
+   "drive": "pwm",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.02,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "Q2",
+   "type": "switch",
+   "nodes": [
+    "sw",
+    "0"
+   ],
+   "drive": "pwm",
+   "invert": true,
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.012,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "L1",
+   "type": "inductor",
+   "nodes": [
+    "sw",
+    "out"
+   ],
+   "value": "22u",
+   "DCR_ohm": 0.03
+  },
+  {
+   "ref": "C2",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "47u",
+   "ESR_ohm": 0.008
+  },
+  {
+   "ref": "I1",
+   "type": "load",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "current_A": 2,
+   "min_V": 0.5
+  }
+ ],
+ "drives": {
+  "pwm": {
+   "frequency_Hz": "fsw",
+   "duty": 0.3,
+   "dead_time_s": "40n"
+  }
+ },
+ "probes": {
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "vsw": {
+   "voltage": [
+    "sw",
+    "0"
+   ]
+  },
+  "il": {
+   "current": "L1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "il_ripple": {
+   "pp": "il"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.pwm.duty",
+   "range": [
+    0.05,
+    0.95
+   ],
+   "initial": "vout/vin",
+   "measure": "vout_avg",
+   "value": "vout"
+  }
+ ],
+ "sweep": {
+  "I1.current_A": [
+   0.5,
+   2,
+   4
+  ]
+ }
+}

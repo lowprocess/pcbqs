@@ -77,6 +77,8 @@ def _positive(value, name, zero=False):
 
 class Circuit:
     def __init__(self):
+        self.step_labels = STEP_LABELS      # the signals also kept at the solver's own steps
+        self.measure_lead = 0.0             # s the measuring window is opened beyond the last period at each end
         self.lines = []
         self.nodes = {'0': '0', 'NET:GND': '0'}
         self.signals = {}
@@ -173,7 +175,9 @@ class Circuit:
         self.signals[ref + '.winding_I'] = f'i(L_{ref})'
         self.voltage(ref + '.V', a, b)
 
-    def switch(self, ref, a, b, model, f, phase, high):
+    def switch(self, ref, a, b, model, f, phase, high, timing=None):
+        """timing: (delay_s, width_s) of the gate pulse within the period 1/f, from a drive of any duty and phase
+        (circuit/deck.py); None: half a period less the dead time, placed by `phase` and `high`."""
         kind = model.get('type', 'switch')
         if kind not in ('ideal', 'switch', 'mosfet', 'vdmos', 'subcircuit'):
             raise ValueError('unknown switch type: ' + kind)
@@ -183,16 +187,17 @@ class Circuit:
         tf = model.get('fall_s', 20e-9)
         for k, v in [('dead_time_s', dead), ('rise_s', tr), ('fall_s', tf)]:
             _positive(v, ref + '.' + k, k == 'dead_time_s')
-        width = T / 2 - dead - (tr + tf) / 2
+        width = T / 2 - dead - (tr + tf) / 2 if timing is None else timing[1]
         if width <= 0:
-            raise ValueError('dead time/edges exceed half a switching period')
+            raise ValueError('dead time/edges exceed half a switching period' if timing is None else
+                             ref + ': the dead time and edges leave no on-time')
         vgate = model.get('gate_V', 10.0)
         _positive(vgate, ref + '.gate_V')
         d = self.sense(ref, a)
         s = self.node(b)
         g = self.node('G:' + ref)
         drv = self.node('DRIVE:' + ref)
-        delay = ((phase / 360 + (0 if high else 0.5)) * T + dead / 2) % T
+        delay = ((phase / 360 + (0 if high else 0.5)) * T + dead / 2) % T if timing is None else timing[0]
         if delay + tr + width + tf > T:
             delay -= T  # an on-interval across t=0: on from the start, as in steady state
         self.lines.append(
@@ -390,7 +395,8 @@ class Circuit:
             for key, name in zip(labels, output_names):
                 expr = expr.replace('@' + key + '@', f'({self.signal_signs.get(key, 1)}*{name})')
             measures.extend(
-                [f'let measure{i}={expr}', f'meas tran m{i} {kind} measure{i} from={stop - 1 / f:.17g} to={stop:.17g}']
+                [f'let measure{i}={expr}',
+                 f'meas tran m{i} {kind} measure{i} from={stop - 1 / f - self.measure_lead:.17g} to={stop + self.measure_lead:.17g}']
             )
         port_vectors = [name for name, label in zip(output_names, labels) if re.fullmatch(r'PCB\d+\.I', label)]
         adaptive_export = (
@@ -400,7 +406,7 @@ class Circuit:
         )
         # the plotted signals at the solver's own steps (before linearize resamples them), for the window's
         # waveforms: switching-edge spikes that the uniform samples miss (I1). Final two periods kept.
-        step_vectors = [(name, label) for name, label in zip(output_names, labels) if label in STEP_LABELS]
+        step_vectors = [(name, label) for name, label in zip(output_names, labels) if label in self.step_labels]
         step_export = (
             ['set filetype=binary', 'write transient-steps.raw ' + ' '.join(n for n, _ in step_vectors),
              'set filetype=ascii']

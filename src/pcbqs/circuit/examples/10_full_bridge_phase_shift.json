@@ -1,0 +1,207 @@
+{
+ "format": 2,
+ "name": "Phase-shifted full bridge into a coupled resonant link",
+ "description": "Two legs on two drives; the second leg's phase is adjusted until the receiver's load takes 10 W",
+ "parameters": {
+  "fsw": 90000.0,
+  "vin": 24,
+  "pout": 10,
+  "l": "24u",
+  "k": 0.4
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.05,
+   "L_H": "100n"
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "47u",
+   "ESR_ohm": 0.005
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "in",
+    "a"
+   ],
+   "drive": "lega",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.01,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "Q2",
+   "type": "switch",
+   "nodes": [
+    "a",
+    "0"
+   ],
+   "drive": "lega",
+   "invert": true,
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.01,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "Q3",
+   "type": "switch",
+   "nodes": [
+    "in",
+    "b"
+   ],
+   "drive": "legb",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.01,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "Q4",
+   "type": "switch",
+   "nodes": [
+    "b",
+    "0"
+   ],
+   "drive": "legb",
+   "invert": true,
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.01,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "C2",
+   "type": "capacitor",
+   "nodes": [
+    "a",
+    "t"
+   ],
+   "value": "100n",
+   "ESR_ohm": 0.005
+  },
+  {
+   "ref": "L1",
+   "type": "inductor",
+   "nodes": [
+    "t",
+    "b"
+   ],
+   "value": "l",
+   "DCR_ohm": 0.11
+  },
+  {
+   "ref": "L2",
+   "type": "inductor",
+   "nodes": [
+    "s",
+    "0"
+   ],
+   "value": "l",
+   "DCR_ohm": 0.11
+  },
+  {
+   "ref": "C3",
+   "type": "capacitor",
+   "nodes": [
+    "s",
+    "r"
+   ],
+   "value": "1/((2*pi*fsw)**2*l)",
+   "ESR_ohm": 0.015
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "r",
+    "0"
+   ],
+   "resistance_ohm": 6.3
+  }
+ ],
+ "couplings": [
+  {
+   "inductors": [
+    "L1",
+    "L2"
+   ],
+   "k": "k"
+  }
+ ],
+ "drives": {
+  "lega": {
+   "frequency_Hz": "fsw",
+   "duty": 0.5,
+   "dead_time_s": "100n"
+  },
+  "legb": {
+   "frequency_Hz": "fsw",
+   "duty": 0.5,
+   "dead_time_s": "100n",
+   "phase_deg": 60
+  }
+ },
+ "probes": {
+  "vbridge": {
+   "voltage": [
+    "a",
+    "b"
+   ]
+  },
+  "i1": {
+   "current": "L1"
+  },
+  "i2": {
+   "current": "L2"
+  },
+  "vbus": {
+   "voltage": [
+    "in",
+    "0"
+   ]
+  }
+ },
+ "measures": {
+  "i1_rms": {
+   "rms": "i1"
+  },
+  "i2_rms": {
+   "rms": "i2"
+  },
+  "bus_ripple": {
+   "pp": "vbus"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.legb.phase_deg",
+   "range": [
+    5,
+    180
+   ],
+   "initial": 60,
+   "measure": "load_power_W",
+   "value": "pout"
+  }
+ ]
+}

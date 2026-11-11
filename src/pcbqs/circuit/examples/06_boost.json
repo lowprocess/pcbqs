@@ -1,0 +1,135 @@
+{
+ "format": 2,
+ "name": "Boost converter, 12 V to 24 V",
+ "description": "Non-synchronous boost: the duty is adjusted until the output is 24 V",
+ "parameters": {
+  "fsw": 200000.0,
+  "vin": 12,
+  "vout": 24,
+  "pout": 12
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.05
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "10u",
+   "ESR_ohm": 0.01
+  },
+  {
+   "ref": "L1",
+   "type": "inductor",
+   "nodes": [
+    "in",
+    "sw"
+   ],
+   "value": "47u",
+   "DCR_ohm": 0.05
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "sw",
+    "0"
+   ],
+   "drive": "pwm",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.03
+   }
+  },
+  {
+   "ref": "D1",
+   "type": "diode",
+   "nodes": [
+    "sw",
+    "out"
+   ],
+   "model": {
+    "Vf_V": 0.45,
+    "If_A": 1,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "C2",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "22u",
+   "ESR_ohm": 0.01
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "resistance_ohm": "vout*vout/pout"
+  }
+ ],
+ "drives": {
+  "pwm": {
+   "frequency_Hz": "fsw",
+   "duty": 0.5
+  }
+ },
+ "probes": {
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "vsw": {
+   "voltage": [
+    "sw",
+    "0"
+   ]
+  },
+  "il": {
+   "current": "L1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "vout_ripple": {
+   "pp": "vout"
+  },
+  "il_ripple": {
+   "pp": "il"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.pwm.duty",
+   "range": [
+    0.05,
+    0.9
+   ],
+   "initial": "1 - vin/vout",
+   "measure": "vout_avg",
+   "value": "vout"
+  }
+ ]
+}

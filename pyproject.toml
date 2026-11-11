@@ -30,7 +30,7 @@ version = {attr = "pcbqs.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "PROVENANCE.json"]
+pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "circuit/examples/*.json", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

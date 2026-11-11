@@ -1,0 +1,135 @@
+{
+ "format": 2,
+ "name": "Buck converter, 12 V to 5 V",
+ "description": "Non-synchronous buck: the duty is adjusted until the output is 5 V into a resistive load",
+ "parameters": {
+  "fsw": 250000.0,
+  "vin": 12,
+  "vout": 5,
+  "iout": 2
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.02
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "22u",
+   "ESR_ohm": 0.005
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "in",
+    "sw"
+   ],
+   "drive": "pwm",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.03
+   }
+  },
+  {
+   "ref": "D1",
+   "type": "diode",
+   "nodes": [
+    "0",
+    "sw"
+   ],
+   "model": {
+    "Vf_V": 0.45,
+    "If_A": 2,
+    "R_ohm": 0.02,
+    "Cj_F": "150p"
+   }
+  },
+  {
+   "ref": "L1",
+   "type": "inductor",
+   "nodes": [
+    "sw",
+    "out"
+   ],
+   "value": "22u",
+   "DCR_ohm": 0.03
+  },
+  {
+   "ref": "C2",
+   "type": "capacitor",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "value": "47u",
+   "ESR_ohm": 0.008
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "out",
+    "0"
+   ],
+   "resistance_ohm": "vout/iout"
+  }
+ ],
+ "drives": {
+  "pwm": {
+   "frequency_Hz": "fsw",
+   "duty": 0.45
+  }
+ },
+ "probes": {
+  "vout": {
+   "voltage": [
+    "out",
+    "0"
+   ]
+  },
+  "vsw": {
+   "voltage": [
+    "sw",
+    "0"
+   ]
+  },
+  "il": {
+   "current": "L1"
+  }
+ },
+ "measures": {
+  "vout_avg": {
+   "avg": "vout"
+  },
+  "vout_ripple": {
+   "pp": "vout"
+  },
+  "il_ripple": {
+   "pp": "il"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.pwm.duty",
+   "range": [
+    0.05,
+    0.95
+   ],
+   "initial": "vout/vin",
+   "measure": "vout_avg",
+   "value": "vout"
+  }
+ ]
+}

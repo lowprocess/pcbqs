@@ -1,0 +1,129 @@
+{
+ "format": 2,
+ "name": "Bridge rectifier with a constant-power load",
+ "description": "A 50 Hz sine through four diodes into a capacitor and a load drawing constant power",
+ "parameters": {
+  "f": 50,
+  "vpk": 34,
+  "pout": 20
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "l",
+    "n"
+   ],
+   "wave": {
+    "type": "sine",
+    "amplitude_V": "vpk",
+    "frequency_Hz": "f"
+   },
+   "R_ohm": 0.3
+  },
+  {
+   "ref": "D1",
+   "type": "diode",
+   "nodes": [
+    "l",
+    "p"
+   ],
+   "model": {
+    "Vf_V": 0.8,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "D2",
+   "type": "diode",
+   "nodes": [
+    "n",
+    "p"
+   ],
+   "model": {
+    "Vf_V": 0.8,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "D3",
+   "type": "diode",
+   "nodes": [
+    "0",
+    "l"
+   ],
+   "model": {
+    "Vf_V": 0.8,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "D4",
+   "type": "diode",
+   "nodes": [
+    "0",
+    "n"
+   ],
+   "model": {
+    "Vf_V": 0.8,
+    "R_ohm": 0.03,
+    "Cj_F": "100p"
+   }
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "p",
+    "0"
+   ],
+   "value": "2200u",
+   "ESR_ohm": 0.03
+  },
+  {
+   "ref": "P1",
+   "type": "load",
+   "nodes": [
+    "p",
+    "0"
+   ],
+   "power_W": "pout",
+   "min_V": 5
+  }
+ ],
+ "probes": {
+  "vac": {
+   "voltage": [
+    "l",
+    "n"
+   ]
+  },
+  "vdc": {
+   "voltage": [
+    "p",
+    "0"
+   ]
+  },
+  "iac": {
+   "current": "V1"
+  }
+ },
+ "measures": {
+  "vdc_avg": {
+   "avg": "vdc"
+  },
+  "vdc_ripple": {
+   "pp": "vdc"
+  },
+  "iac_rms": {
+   "rms": "iac"
+  }
+ },
+ "analysis": {
+  "cycles": 40
+ }
+}

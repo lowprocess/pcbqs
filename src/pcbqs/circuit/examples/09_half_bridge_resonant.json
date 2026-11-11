@@ -1,0 +1,128 @@
+{
+ "format": 2,
+ "name": "Half bridge into a series-resonant load, frequency sweep",
+ "description": "Two complementary switches drive a series LC and a resistor above resonance; no target, a sweep of the frequency",
+ "parameters": {
+  "fsw": 130000.0,
+  "vin": 24
+ },
+ "parts": [
+  {
+   "ref": "V1",
+   "type": "source",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.02
+  },
+  {
+   "ref": "C1",
+   "type": "capacitor",
+   "nodes": [
+    "in",
+    "0"
+   ],
+   "value": "47u",
+   "ESR_ohm": 0.005
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "in",
+    "sw"
+   ],
+   "drive": "hb",
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.02,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "Q2",
+   "type": "switch",
+   "nodes": [
+    "sw",
+    "0"
+   ],
+   "drive": "hb",
+   "invert": true,
+   "model": {
+    "type": "switch",
+    "Ron_ohm": 0.02,
+    "Cds_F": "300p"
+   }
+  },
+  {
+   "ref": "CR",
+   "type": "capacitor",
+   "nodes": [
+    "sw",
+    "a"
+   ],
+   "value": "100n",
+   "ESR_ohm": 0.01
+  },
+  {
+   "ref": "LR",
+   "type": "inductor",
+   "nodes": [
+    "a",
+    "b"
+   ],
+   "value": "22u",
+   "DCR_ohm": 0.05
+  },
+  {
+   "ref": "R1",
+   "type": "load",
+   "nodes": [
+    "b",
+    "0"
+   ],
+   "resistance_ohm": 5
+  }
+ ],
+ "drives": {
+  "hb": {
+   "frequency_Hz": "fsw",
+   "duty": 0.5,
+   "dead_time_s": "100n"
+  }
+ },
+ "probes": {
+  "vsw": {
+   "voltage": [
+    "sw",
+    "0"
+   ]
+  },
+  "vload": {
+   "voltage": [
+    "b",
+    "0"
+   ]
+  },
+  "ir": {
+   "current": "LR"
+  }
+ },
+ "measures": {
+  "ir_rms": {
+   "rms": "ir"
+  },
+  "vload_rms": {
+   "rms": "vload"
+  }
+ },
+ "sweep": {
+  "parameters.fsw": [
+   115000.0,
+   130000.0,
+   160000.0
+  ]
+ }
+}
