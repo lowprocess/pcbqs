@@ -10,6 +10,17 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The full bridge's run is a circuit result.** A `power-circuit.json` is the circuit analysis's as
+  `circuit.json` is: its operating points, notes and assumptions as a report and table, each point's waveforms
+  as curve sets (the windings, the bridge and coils, the series parts between the supply's rails found by what
+  they join, the bus; again at the solver's own timesteps where the run saved them). The window shows them on
+  its Results page, as it does earlier runs.
+- **`--describe` for the two circuit tools**, `pcbqs.circuit` and `pcbqs.power_circuit`: their options as tables
+  (`_cli`; an option may list its choices), which the circuit plugin gives a front end by the kind of model
+  (`only`: general, bridge or either) and passes to the tool that runs it. The bridge tool gains `--coupling`,
+  `--receiver-c`, `--load` and `--override GROUP.KEY=VALUE`: a value for every part of a group (U2), the groups
+  by what the parts join (`power_bridge.groups`: tank, bridge-rail, input-rail, filter; and switch), so an ESR
+  for the resonant bank leaves the rails' capacitors alone (docs/power-circuit.md).
 - **Low-frequency S-parameters** (`pcbqs.sparams`, docs/sparams.md). A board's ports from the quasi-static
   currents of its copper, DC to about a tenth of a wavelength: each port a 1 A source and its reference impedance
   between the trace's end and the copper under it, one solve per driven port, S from the currents in the
@@ -49,6 +60,11 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Changed
+- **No part of wpthb is named in the bridge's code (C7, U1).** A precharged start went by wpthb's references
+  (C25/C27/C30, C19 to C24, CA*, L3) and its two supply resistances, with a second branch by connectivity for
+  other models. It goes by what a part joins for every model, and wpthb's nine decks are the same line for line
+  (its starting values are pinned in the tests). The waveforms' "input filter currents" were L3's and R9's by
+  name: they are the series parts between the supply's rails.
 - **The tools are engines of kicad2ems's questions (API 2.6).** The rail tool answers a rail's drop and its
   impedance from one run (the drop alone, `--no-pdn`, when only it is asked); near field, circuit and thermal
   one question each. Lists show them as "pcbqs". The circuit says its `fields` option adds field dumps; a

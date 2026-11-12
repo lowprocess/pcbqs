@@ -156,12 +156,42 @@ predictions remain outside this workflow.
 
 ## GUI
 
-The Circuit page loads/saves the same component JSON, selects the switch family,
-frequencies, receiver powers and k, runs the CLI, plots selectable winding/bridge/filter waveforms, and opens a selected case's
-fields in the existing Viewer. Top controls override the corresponding JSON
-settings. Per-part parameters and library paths remain explicit in the editor.
+The window's Circuit page edits the same component JSON (a schematic, or the
+text). The run's settings are a panel made from this tool's own options
+(`python -m pcbqs.power_circuit --describe`): the frequencies, the receiver's
+powers, k, a held receiver capacitor and load, the switch model, the board's
+copper and fields. Those the model holds show its values, and what is typed
+goes into the model. Per-part parameters and library paths remain explicit in
+the editor. A run is a result of the circuit analysis like `pcbqs.circuit`'s:
+its operating points, notes and assumptions are the Results page's report and
+table, and each point's waveforms its plots (the windings' currents, the
+bridge's and coils' voltages, the currents of the series parts between the
+supply's rails, the bus voltages; again at the solver's own timesteps where
+the run saved them). A point's fields open in the Viewer from its folder.
 Results include every netlist, model, adaptive-grid power measures, compact
 waveforms, matching conditions, convergence history and field assumptions.
+
+## A value for a group of parts
+
+`--override GROUP.KEY=VALUE` (repeatable) sets a value for every part of a
+group without editing the model, which keeps each part's own. The groups go by
+what the parts join, not by their references:
+
+| Group | Parts | wpthb's | Keys |
+|---|---|---|---|
+| `tank` | capacitors between the bridge's output and the primary coil | C25, C27, C30 | `ESR_ohm`, `ESL_H` |
+| `bridge-rail` | capacitors from VHB to ground | C19 to C24 | `ESR_ohm`, `ESL_H` |
+| `input-rail` | capacitors from VBUS to ground | CA1 to CA4 | `ESR_ohm`, `ESL_H` |
+| `filter` | inductors and resistors in series between VIN, VBUS and VHB | L3, R9 | `DCR_ohm` (inductors) |
+| `switch` | the switch model | | `rise_s`, `fall_s`, `dead_time_s`, `Cds_F`, ... |
+
+So `--override tank.ESR_ohm=0.004` changes the resonant bank and leaves the
+rails' ceramics and polymers as they are. The starting state of a precharged
+run goes by the same groups; no part's reference is in the code.
+`--coupling`, `--receiver-c` (nF) and `--load` (ohm) set what the model holds,
+as `--frequencies`, `--powers` and `--switch-type` do. ngspice may not settle
+the behavioural `switch` model on a hard-switched bridge: the templates use
+`vdmos`.
 
 ## Fixed compensation and frequency tuning
 

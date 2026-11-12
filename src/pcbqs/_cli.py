@@ -1,8 +1,8 @@
 """Shared command-line plumbing of pcbqs's tools (pdn, mqs): options tables, --describe, board import.
 
-An options table is [(key, kind, default, help, group)]; the flag is '--' + key with '-' for '_', kind one of
-'str', 'int', 'float', 'bool' (a switch) or 'list' (repeatable). --describe --json gives the table to the window,
-which builds its form from it.
+An options table is [(key, kind, default, help, group)], or with a sixth item, the values to choose from; the
+flag is '--' + key with '-' for '_', kind one of 'str', 'int', 'float', 'bool' (a switch) or 'list' (repeatable).
+--describe --json gives the table to the window, which builds its form from it.
 """
 import json
 from pathlib import Path
@@ -17,18 +17,20 @@ def flag(key):
 def describe(options, **extra):
     from . import __version__
     return dict(format=DESCRIBE_FORMAT, version=__version__, **extra,
-                options=[dict(key=k, flag=flag(k), kind=t, default=d, help=h, group=g, choices=None)
-                         for k, t, d, h, g in options])
+                options=[dict(key=k, flag=flag(k), kind=t, default=d, help=h, group=g,
+                              choices=list(rest[0]) if rest and rest[0] else None)
+                         for k, t, d, h, g, *rest in options])
 
 
 def add_options(ap, options):
-    for k, t, d, h, _ in options:
+    for k, t, d, h, _, *rest in options:
         if t == 'bool':
             ap.add_argument(flag(k), dest=k, action='store_true', help=h)
         elif t == 'list':
             ap.add_argument(flag(k), dest=k, action='append', default=[], help=h)
         else:
-            ap.add_argument(flag(k), dest=k, type={'float': float, 'int': int, 'str': str}[t], default=d, help=h)
+            ap.add_argument(flag(k), dest=k, type={'float': float, 'int': int, 'str': str}[t], default=d, help=h,
+                            **(dict(choices=list(rest[0])) if rest and rest[0] else {}))
 
 
 def print_describe(d, as_json):

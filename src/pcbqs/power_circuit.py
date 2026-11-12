@@ -8,7 +8,8 @@ import argparse, hashlib, json, shutil, copy, time
 from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
-from .power_bridge import load_config, validate, matching, predicted_phase, build, metrics, make_board_ports, end_state
+from .power_bridge import (load_config, validate, matching, predicted_phase, build, metrics, make_board_ports,
+                           end_state, apply_overrides, GROUPS)
 from .power_spice import periodic_samples, cancel_active_runs, reset_runs
 from .wpt import link
 from .mqs_ports import CopperPorts, PortResponse, rl_error, foster_equivalent
@@ -17,6 +18,31 @@ FIT_TOLERANCE = 0.03  # default mesh.circuit_fit_tolerance: copper-model reducti
 
 
 TEMPLATES = {'wpthb': 'wpthb-power.json', 'simple': 'simple-bridge.json'}
+SWITCHES = ('vdmos', 'mosfet', 'subcircuit', 'switch', 'ideal')
+OPTIONS = [            # (key, kind, default, help, group[, choices]): _cli's table, which --describe gives a front end
+    ('frequencies', 'str', None, "the operating frequencies, Hz, comma separated (default: the model's)", 'Operating points'),
+    ('powers', 'str', None, "the receiver's powers, W, comma separated (default: the model's)", 'Operating points'),
+    ('coupling', 'float', None, "the coils' coupling k (default: the model's)", 'Operating points'),
+    ('receiver_c', 'float', None, "the receiver's capacitor, nF, held at this (default: the model's; a model "
+     "without one tunes it at each frequency)", 'Operating points'),
+    ('load', 'float', None, "the receiver's load, ohm, held at this (default: the model's; a model without one "
+     "matches it for efficiency at each frequency)", 'Operating points'),
+    ('switch_type', 'str', None, "the switches' model (default: the model's). ngspice may not settle the "
+     "behavioural 'switch' on a hard-switched bridge: vdmos is the one the templates use", 'Switches', SWITCHES),
+    ('override', 'list', [], "GROUP.KEY=VALUE: a value for every part of a group (repeatable). The groups, by what "
+     f"the parts join: {', '.join(GROUPS)} (capacitors: ESR_ohm, ESL_H; the filter's inductors: DCR_ohm), and "
+     "switch (rise_s, fall_s, dead_time_s, Cds_F ...)", 'Overrides'),
+    ('copper', 'bool', False, "with the board's copper between the parts' pads (needs --board)", 'Board'),
+    ('fields', 'bool', False, "with the copper, and the periodic fields inferred from the terminals' currents", 'Board'),
+    ('field_harmonics', 'int', 16, 'harmonics of the field inference, 1 to 31', 'Board'),
+    ('board', 'str', None, 'the board (.kicad_pcb, or a kicad2ems board.json): for --copper and --fields', 'Board'),
+    ('jobs', 'int', 1, 'independent ngspice cases in parallel (the extraction and the field export are shared)', 'Run'),
+]
+
+
+def describe():
+    from ._cli import describe as d
+    return d(OPTIONS, features=['viewer'])
 
 
 def template(name='wpthb'):
@@ -577,22 +603,16 @@ def main(argv=None):
     parser.add_argument('config', nargs='?')
     parser.add_argument('--template', nargs='?', const='wpthb', choices=sorted(TEMPLATES),
                         help='print a model to start from: wpthb (default) or simple')
-    parser.add_argument('--board')
+    from ._cli import add_options, print_describe
     parser.add_argument('--out', default='power-circuit')
-    parser.add_argument('--copper', action='store_true')
-    parser.add_argument('--fields', action='store_true')
-    parser.add_argument('--prepare', action='store_true')
-    parser.add_argument('--field-harmonics', type=int, default=16)
-    parser.add_argument('--switch-type', choices=['ideal', 'switch', 'mosfet', 'vdmos', 'subcircuit'])
-    parser.add_argument('--frequencies')
-    parser.add_argument('--powers')
-    parser.add_argument(
-        '--jobs',
-        type=int,
-        default=1,
-        help='independent ngspice cases in parallel (PCB extraction/field export remain shared)',
-    )
+    parser.add_argument('--prepare', action='store_true', help="extract the board's copper model and stop")
+    add_options(parser, OPTIONS)
+    parser.add_argument('--describe', action='store_true', help='the options (with --json: for a front end)')
+    parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
+    if args.describe:
+        print_describe(describe(), args.json)
+        return
     import signal
 
     def stop(*_):
@@ -612,9 +632,20 @@ def main(argv=None):
     cfg = load_config(args.config)
     if args.switch_type:
         cfg['switch_model']['type'] = args.switch_type
-    for opt, key in [(args.frequencies, 'frequencies_Hz'), (args.powers, 'powers_W')]:
-        if opt:
-            cfg[key] = [float(v) for v in opt.split(',')]
+    try:
+        for opt, key in [(args.frequencies, 'frequencies_Hz'), (args.powers, 'powers_W')]:
+            if opt:
+                cfg[key] = [float(v) for v in opt.split(',') if v.strip()]
+        if args.coupling is not None:
+            cfg['coupling'] = args.coupling
+        if args.receiver_c is not None:
+            cfg['secondary_C_F'] = args.receiver_c * 1e-9
+        if args.load is not None:
+            cfg['load_ohm'] = args.load
+        for item, refs in apply_overrides(cfg, args.override).items():
+            print(f"override {item}: {', '.join(refs)}", flush=True)
+    except ValueError as exc:
+        parser.error(str(exc))
     validate(cfg)
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)  # the overrides, before any extraction

@@ -421,8 +421,63 @@ def test_precharge_goes_by_what_a_part_joins():
     assert power_bridge.supply_drops(c) == pytest.approx((0.06, 0.07))
     assert any(l.startswith('R_IC_VHB ') for l in deck.lines) and not any(l.startswith('R_IC_VBUS ') for l in deck.lines)
     w = power_circuit.template('wpthb')
-    assert power_bridge.supply_drops(w) == (0.055, 0.085)
+    assert power_bridge.supply_drops(w) == pytest.approx((0.055, 0.085), rel=1e-12)
     w['transient']['initialization'] = 'precharged'
     m = power_bridge.matching(w, 90000)
     wd = power_bridge.build(w, 90000, power_bridge.predicted_phase(w, 90000, 5, m), m)
     assert not any(l.startswith('R_IC_') for l in wd.lines)          # a deck that ran is left as it was
+    # wpthb's own start, as it was when the code named its parts: the tank, the two rails' capacitors, the filter
+    wl = lambda name: float(next(l for l in wd.lines if l.startswith(name + ' ')).split('IC=')[1])
+    for name, value in (('C_C25', -8.1127310802899117), ('C_C27', -8.1127310802899117), ('C_C19', -23.981202263136698),
+                        ('C_C24', -23.981202263136698), ('C_CA1', 23.987836758500215), ('C_CA4', 23.987836758500215),
+                        ('L_L3', 0.22114984545062752)):
+        assert wl(name) == pytest.approx(value, rel=1e-13), name
+
+
+def test_the_parts_by_what_they_join_and_a_value_for_a_group():
+    """groups: a model's parts by what they join (wpthb's by its references no longer). apply_overrides: a value
+    for every part of a group, where its type has one; what does not fit is said."""
+    from pcbqs import power_bridge, power_circuit
+    w, sm = power_circuit.template('wpthb'), power_circuit.template('simple')
+    assert power_bridge.groups(w) == {'tank': ['C25', 'C27', 'C30'], 'bridge-rail': ['C19', 'C20', 'C21', 'C22', 'C23', 'C24'],
+                                      'input-rail': ['CA1', 'CA2', 'CA3', 'CA4'], 'filter': ['R9', 'L3']}
+    assert power_bridge.groups(sm) == {'tank': ['C2'], 'bridge-rail': ['C1'], 'input-rail': ['C3'], 'filter': ['R1', 'L1']}
+    done = power_bridge.apply_overrides(w, ['tank.ESR_ohm=0.004', 'filter.DCR_ohm=0.01', 'switch.rise_s=3e-8', 'input-rail.ESL_H=2e-9'])
+    assert done == {'tank.ESR_ohm=0.004': ['C25', 'C27', 'C30'], 'filter.DCR_ohm=0.01': ['L3'],
+                    'switch.rise_s=3e-8': ['switch model'], 'input-rail.ESL_H=2e-9': ['CA1', 'CA2', 'CA3', 'CA4']}
+    part = {p['ref']: p for p in w['components']}
+    assert part['C25']['ESR_ohm'] == 0.004 and part['C19']['ESR_ohm'] != 0.004       # the bank, not the rail's
+    assert part['L3']['DCR_ohm'] == 0.01 and 'DCR_ohm' not in part['R9'] and part['CA1']['ESL_H'] == 2e-9
+    assert w['switch_model']['rise_s'] == 3e-8 and power_bridge.apply_overrides(w, None) == {}
+    for item, why in (('tank.ESR=1', 'no part of tank takes ESR'), ('nobody.ESR_ohm=1', "no group 'nobody': one of tank"),
+                      ('tank.DCR_ohm=1', 'no part of tank takes DCR_ohm'), ('tankESR', 'GROUP.KEY=VALUE'),
+                      ('tank.ESR_ohm=x', 'GROUP.KEY=VALUE')):
+        with pytest.raises(ValueError, match=why):
+            power_bridge.apply_overrides(power_circuit.template('wpthb'), [item])
+    bare = dict(sm, components=[p for p in sm['components'] if p['ref'] != 'C3'])
+    with pytest.raises(ValueError, match='the model has no part in input-rail'):
+        power_bridge.apply_overrides(bare, ['input-rail.ESR_ohm=0.01'])
+
+
+def test_the_bridge_tool_describes_its_options(tmp_path, capsys):
+    """--describe: the table a front end builds the form from; the operating points and the overrides are options
+    of the command, so a run needs no edited model."""
+    import json
+    from pcbqs import power_circuit
+    assert power_circuit.main(['--describe', '--json']) is None
+    d = json.loads(capsys.readouterr().out)
+    opts = {o['key']: o for o in d['options']}
+    assert list(opts) == ['frequencies', 'powers', 'coupling', 'receiver_c', 'load', 'switch_type', 'override',
+                          'copper', 'fields', 'field_harmonics', 'board', 'jobs']
+    assert opts['switch_type']['choices'] == ['vdmos', 'mosfet', 'subcircuit', 'switch', 'ideal'] and opts['override']['kind'] == 'list'
+    assert opts['switch_type']['group'] == 'Switches' and 'may not settle' in opts['switch_type']['help']
+    model = tmp_path / 'm.json'
+    model.write_text(json.dumps(power_circuit.template('simple')))
+    with pytest.raises(SystemExit):
+        power_circuit.main([str(model), '--out', str(tmp_path / 'o'), '--override', 'tank.ohms=1'])
+    assert "no part of tank takes ohms" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        power_circuit.main([str(model), '--switch-type', 'relay'])
+    from pcbqs.circuit import __main__ as general
+    assert general.main(['--describe', '--json']) == 0
+    assert [o['key'] for o in json.loads(capsys.readouterr().out)['options']] == ['copper', 'fields', 'board', 'set', 'jobs']

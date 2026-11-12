@@ -215,11 +215,36 @@ class Circuit(_Tool):
     page = True                                         # the GUI's schematic editor
     env = dict(OPENBLAS_NUM_THREADS='8')
 
-    def table(self):
-        return [('model', 'str', '', 'The circuit model (JSON); a path beside the config', 'Circuit'),
-                ('copper', 'bool', False, "With the board's copper between the parts' pads", 'Circuit'),
-                ('fields', 'bool', False, 'With the copper, and the H and E fields over the board', 'Circuit'),
-                ('jobs', 'int', 4, 'Sweep points run at once', 'Circuit')]
+    def owns(self, folder, preview=False):
+        """A run of either tool: pcbqs.circuit's circuit.json, the full bridge's power-circuit.json."""
+        from .reports import ALSO
+        return not preview and any(os.path.isfile(os.path.join(folder or '', f))
+                                   for f in (self.result, *ALSO['circuit']))
+
+    JOBS = 4                                            # cases run at once, unless set
+
+    def options(self):
+        """The model, then the options of the two tools that run one (their own tables: python -m pcbqs.circuit
+        --describe, python -m pcbqs.power_circuit --describe). `only` says which kind of model an option is for:
+        'general' (pcbqs.circuit's, format 2), 'bridge' (the full bridge's, format 1), '' for either. The board is
+        a front end's to give."""
+        from ._cli import describe
+        from .circuit.__main__ import OPTIONS as general
+        from .power_circuit import OPTIONS as bridge
+        out = [dict(o, only='') for o in describe(
+            [('model', 'str', '', 'The circuit model (JSON); a path beside the config', 'Circuit')])['options']]
+        at = {'model': out[0]}
+        for table, only in ((general, 'general'), (bridge, 'bridge')):
+            for o in describe(table)['options']:
+                if o['key'] == 'board':
+                    continue
+                if o['key'] in at:                              # both tools have it: for either kind
+                    at[o['key']]['only'] = ''
+                    continue
+                at[o['key']] = dict(o, only=only, default=self.JOBS if o['key'] == 'jobs' else o['default'])
+                out.append(at[o['key']])
+        order = ['Circuit', 'Board', 'Operating points', 'Switches', 'Overrides', 'Model', 'Run']
+        return sorted(out, key=lambda o: order.index(o['group']) if o['group'] in order else len(order))
 
     def tag(self, values):
         return os.path.splitext(os.path.basename(str(values.get('model') or 'circuit')))[0]
@@ -229,14 +254,16 @@ class Circuit(_Tool):
         if not model or not os.path.isfile(model):
             raise ValueError('name the circuit model (a JSON file)' if not model else f'{model}: no such model')
         with open(model, encoding='utf-8') as fh:
-            general = json.load(fh).get('format') == 2
-        cmd = [sys.executable, '-u', '-m', 'pcbqs.circuit' if general else 'pcbqs.power_circuit', model, '--out', out,
-               '--jobs', str(values.get('jobs') or 4)]
+            kind = 'general' if json.load(fh).get('format') == 2 else 'bridge'
         on = lambda k: values.get(k) is True or str(values.get(k)).strip().lower() in ('1', 'true', 'yes', 'on')
-        if on('copper') or on('fields'):
-            cmd += ['--copper', '--board', self._board(board)]
-        if on('fields'):
-            cmd += ['--fields']
+        values = dict(values, copper=on('copper') or on('fields'), jobs=values.get('jobs') or self.JOBS)
+        opts = [dict(o, default=None) if o['key'] == 'jobs' else o for o in self.options()
+                if o['key'] != 'model' and o['only'] in ('', kind)]
+        cmd = argv('pcbqs.circuit' if kind == 'general' else 'pcbqs.power_circuit', opts,
+                   {k: v for k, v in values.items() if k != 'model'}, model, out)
+        cmd.insert(1, '-u')
+        if values['copper']:
+            cmd += ['--board', self._board(board)]
         return cmd
 
     def examples(self):

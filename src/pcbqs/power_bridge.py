@@ -117,10 +117,67 @@ def net_of(config, terminal):
     return terminal[4:] if terminal.startswith('NET:') else config.get('terminals', {}).get(terminal, '')
 
 
+GROUPS = ('tank', 'bridge-rail', 'input-rail', 'filter')     # the parts a setting can be given for together
+
+
+def groups(config):
+    """{group: [refs]}: the model's parts by what they join, not by their references. tank: the capacitors
+    between the bridge's output and the primary coil; bridge-rail and input-rail: the capacitors from VHB and
+    from VBUS to ground; filter: the inductors and resistors in series between the supply's rails (VIN, VBUS,
+    VHB). On wpthb: C25/C27/C30, C19 to C24, CA1 to CA4, and L3 with R9."""
+    tank = {net_of(config, config['bridge_terminals'][0]), net_of(config, config['primary_terminals'][0])}
+    out = {g: [] for g in GROUPS}
+    for p in config.get('components', []):
+        ends = {net_of(config, p['a']), net_of(config, p['b'])}
+        if p['type'] == 'capacitor' and ends == tank and len(tank) == 2:
+            out['tank'].append(p['ref'])
+        elif p['type'] == 'capacitor' and ends == {'VHB', 'GND'}:
+            out['bridge-rail'].append(p['ref'])
+        elif p['type'] == 'capacitor' and ends == {'VBUS', 'GND'}:
+            out['input-rail'].append(p['ref'])
+        elif p['type'] in ('inductor', 'resistor') and ends in ({'VIN', 'VBUS'}, {'VBUS', 'VHB'}):
+            out['filter'].append(p['ref'])
+    return out
+
+
+def apply_overrides(config, overrides):
+    """GROUP.KEY=VALUE items onto a model: the value for KEY of every part of the group (groups()), where the
+    part's type has it (a capacitor's ESR_ohm and ESL_H, an inductor's DCR_ohm, any key the part already has);
+    'switch.KEY': the switch model's (rise_s, fall_s, dead_time_s, Cds_F ...). Returns {item: the parts it set}.
+    ValueError for an item of another form, a group nobody is in, or a key no part of the group takes."""
+    takes = dict(capacitor=('ESR_ohm', 'ESL_H', 'value'), inductor=('DCR_ohm', 'value'), resistor=('value',))
+    by, done = groups(config), {}
+    for item in overrides or []:
+        head, sep, value = str(item).partition('=')
+        group, dot, key = head.strip().partition('.')
+        try:
+            number = float(value)
+        except ValueError:
+            number = None
+        if not sep or not dot or not key or number is None:
+            raise ValueError(f"override {item!r}: GROUP.KEY=VALUE, e.g. tank.ESR_ohm=0.005")
+        if group == 'switch':
+            config.setdefault('switch_model', {})[key] = number
+            done[item] = ['switch model']
+            continue
+        if group not in by:
+            raise ValueError(f"override {item!r}: no group {group!r}: one of {', '.join(GROUPS)}, switch")
+        refs = [p['ref'] for p in config['components'] if p['ref'] in by[group]
+                and (key in takes.get(p['type'], ()) or key in p)]
+        if not refs:
+            raise ValueError(f"override {item!r}: " + (f"no part of {group} takes {key}" if by[group] else
+                                                       f"the model has no part in {group}"))
+        for p in config['components']:
+            if p['ref'] in refs:
+                p[key] = number
+        done[item] = refs
+    return done
+
+
 def supply_drops(config):
     """The DC resistance from the supply to the input rail (VBUS) and on to the bridge rail (VHB), ohm: the
     source's, then the series resistors' and inductors' between the rails. They set the rails' starting voltages
-    under the input current. wpthb's (R9, L3 behind a 50 mΩ source) are 0.055 and 0.085, kept to the digit."""
+    under the input current. wpthb's (R9 and L3 behind a 50 mΩ source) are 0.055 and 0.085."""
     def series(x, y):
         total = 0.0
         for p in config['components']:
@@ -133,7 +190,7 @@ def supply_drops(config):
 
     bus = max(config.get('supply', {}).get('R_ohm', 0.05), 1e-9) + series('VIN', 'VBUS')
     hb = bus + series('VBUS', 'VHB')
-    return (0.055 if abs(bus - 0.055) < 1e-9 else bus), (0.085 if abs(hb - 0.085) < 1e-9 else hb)
+    return bus, hb
 
 
 def build(config, f, phase, match, copper=None, ports=None, state=None):
@@ -181,18 +238,10 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
             if not p.get('enabled', True):
                 continue
             a, b = net_of(config, p['a']), net_of(config, p['b'])
-            if p['ref'] in ('C25', 'C27', 'C30') and p['type'] == 'capacitor':
-                p['initial_V'] = cap1_v
-            elif p['ref'] in ('C19', 'C20', 'C21', 'C22', 'C23', 'C24') and p['type'] == 'capacitor':
-                p['initial_V'] = -(config['voltage_V'] - 0.085 * initial_input)
-            elif p['ref'].startswith('CA') and p['type'] == 'capacitor':
-                p['initial_V'] = config['voltage_V'] - 0.055 * initial_input
-            elif p['ref'] == 'L3' and p['type'] == 'inductor':
-                p['initial_A'] = initial_input
-            # Any other model: the same starting state by what a part joins, not by wpthb's references (above,
-            # kept so its decks stay as they were): the tank's capacitors, the capacitors from each supply rail
-            # to ground charged to the rail, the series inductors carrying the input current.
-            elif p['type'] == 'capacitor' and {a, b} == tank and len(tank) == 2:
+            # The starting state by what a part joins, not by its reference: the tank's capacitors, the
+            # capacitors from each supply rail to ground charged to the rail, the series inductors carrying the
+            # input current (groups(): wpthb's C25/C27/C30, C19 to C24 and CA1 to CA4, L3).
+            if p['type'] == 'capacitor' and {a, b} == tank and len(tank) == 2:
                 p['initial_V'] = cap1_v if a == net_of(config, config['primary_terminals'][0]) else -cap1_v
             elif p['type'] == 'capacitor' and {a, b} in ({'VHB', 'GND'}, {'VBUS', 'GND'}):
                 rail = 'VHB' if 'VHB' in (a, b) else 'VBUS'

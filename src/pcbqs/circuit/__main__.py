@@ -8,22 +8,37 @@ from . import model as M
 from .engine import run
 from .copper import BoardError
 
+OPTIONS = [            # (key, kind, default, help, group): _cli's table, which --describe gives a front end
+    ('copper', 'bool', False, "with the copper of the model's board between its parts' pads", 'Board'),
+    ('fields', 'bool', False, 'with the copper, and the H and E fields over the board', 'Board'),
+    ('board', 'str', None, 'the board (.kicad_pcb), when the model names none or another', 'Board'),
+    ('set', 'list', [], "PATH=VALUE: a value of the model set before running, e.g. drives.pwm.duty=0.4 "
+     "(repeatable)", 'Model'),
+    ('jobs', 'int', 1, 'sweep points run at once', 'Run'),
+]
+
+
+def describe():
+    from .._cli import describe as d
+    return d(OPTIONS, features=['viewer'])
+
 
 def main(argv=None):
+    from .._cli import add_options, print_describe
     ap = argparse.ArgumentParser(prog='python -m pcbqs.circuit', description=__doc__)
     ap.add_argument('model', nargs='?', help='a circuit model (JSON, format 2)')
     ap.add_argument('--out', default='circuit-results', help='the results folder (default: circuit-results)')
-    ap.add_argument('--jobs', type=int, default=1, help='sweep points run at once')
-    ap.add_argument('--set', action='append', default=[], metavar='PATH=VALUE',
-                    help="set a value of the model before running, e.g. --set drives.pwm.duty=0.4 (repeatable)")
-    ap.add_argument('--copper', action='store_true', help="with the copper of the model's board between its parts' pads")
-    ap.add_argument('--fields', action='store_true', help='with the copper, and the H and E fields over the board')
-    ap.add_argument('--board', metavar='FILE', help='the board (.kicad_pcb), when the model names none or another')
+    add_options(ap, OPTIONS)
     ap.add_argument('--from-kicad', metavar='FILE', help='print a model of the parts of a KiCad board, schematic or '
                     'XML netlist, to complete with a source, a load and drives')
     ap.add_argument('--templates', action='store_true', help='list the example circuits')
     ap.add_argument('--template', metavar='NAME', help='print an example circuit to start from')
+    ap.add_argument('--describe', action='store_true', help='the options (with --json: for a front end)')
+    ap.add_argument('--json', action='store_true')
     a = ap.parse_args(argv)
+    if a.describe:
+        print_describe(describe(), a.json)
+        return 0
     if a.templates:
         for name, text in M.templates().items():
             print(f"{name:22s} {text}")
