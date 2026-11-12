@@ -390,33 +390,45 @@ def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):
     assert not thermal.owns(str(tmp_path))
 
 
-def test_a_load_with_no_pad_on_ground_is_still_needed(monkeypatch, tmp_path):
-    """Analysis.missing (kicad2ems 2.9) of the rail tool: besides what its command raises, a load typed without a
-    return that has no pad on ground (a bridge's high-side switch: wpthb's Q1), which the run would only note,
-    its return left out of the drop. It names the part to return through where the board has one such: of the
-    load's kind, on one of its nets that is no rail, and on ground."""
+def test_a_load_with_no_pad_on_ground(monkeypatch, tmp_path):
+    """A load on the rail and not on ground (a bridge's high-side switch: wpthb's Q1) returns through another
+    part. The rail finds it where the board has just one such (pdn.rail.return_part: of the load's kind, on one
+    of its nets that is no rail, and on ground) and says so; where it has none or several, the plugin says it as
+    something the run still needs (Analysis.missing, kicad2ems 2.9) instead of running with the return left
+    out, and a run that is started all the same says it in its report's first line."""
     from pcbqs import analyses as A
+    from pcbqs.pdn.rail import return_part
+    from pcbqs import reports as R
     board = tmp_path / 'b.kicad_pcb'
     board.write_text('')
     nets = dict(Q1={'', '/GH', '/SW', 'VHB'}, Q3={'/SW', '/GL', 'GND'}, U6={'/SW', 'GND', 'VCC'}, C32={'/SW', '/BOOT'},
-                Q2={'/SW2', 'VHB'}, Q4={'/SW2', 'GND'}, Q5={'/SW2', 'GND'}, U1={'VIN', 'GND'},
+                Q2={'/SW2', 'VHB'}, Q4={'/SW2', 'GND'}, Q5={'/SW2', 'GND'}, U1={'VIN', 'GND'}, Q7={'VHB', '/X'},
                 **{f'C{k}': {'VHB', 'GND'} for k in range(1, 10)})
+    g = {'GND'}
+    assert return_part(nets, 'Q1', g) == 'Q3'                                    # not U6, the driver on that node
+    assert return_part(nets, 'Q2', g) is None and return_part(nets, 'Q7', g) is None     # two such; none
+    assert return_part(nets, 'Q1', g, rail={'/SW'}) is None                      # not through the rail's own tree
     monkeypatch.setattr(A, '_pad_nets', lambda path: nets)
     pi = A.PowerIntegrity()
     need = lambda **v: [(m['key'], m['text']) for m in pi.missing(v, str(board))]
     assert need(rail='', load='U1=0.1') == [(None, 'name the rail (its net)')]
-    assert need(rail='VIN', load='U1=0.1') == []                                 # on ground: its return is there
+    assert need(rail='VIN', load='U1=0.1') == [] and need(rail='VIN', load='Q1=0.67') == []      # found: Q3
     got = need(rail='VIN', load='Q1=0.67\nQ2=0.67\nU1=0.1')                     # a form's list: one a line
-    assert [k for k, _ in got] == ['load', 'load']
-    assert got[0][1] == ('Q1 has no pad on ground: name the part its current returns through, Q1=AMPS@Q3 '
-                         '(Q3 is on its other net and on ground)')               # not U6, the driver on that node
-    assert got[1][1] == 'Q2 has no pad on ground: name the part its current returns through, Q2=AMPS@PART'   # Q4 or Q5
-    assert need(rail='VIN', load=['Q1=0.67@Q3', 'Q2=0.67@Q4']) == []             # named: nothing more
-    assert need(rail='VIN', load='Q9=1') == [] and need(rail='VIN', load='Q1=1', ground='GND,/SW') == []
+    assert got == [('load', 'Q2 has no pad on ground, and the board has no one part of its kind to return '
+                            'through: name it, Q2=AMPS@PART')]
+    assert need(rail='VIN', load=['Q1=0.67', 'Q2=0.67@Q4']) == []                # named: nothing more
+    assert need(rail='VIN', load='Q9=1') == [] and need(rail='VIN', load='Q2=1', ground='GND,/SW2') == []
     assert A.QuasiStatic.basic == ('qs_dmax',) and A.Thermal.uses == ('circuit',)
+    res = dict(rail='VIN', volts=24.0, nets=['VIN'], source=['TP2'], loss_W=0.01, notes=[],
+               vertices=dict(power=10, ground=10),
+               loads=dict(Q2=dict(I=0.67, V=23.95, drop=0.05, power_drop=0.05, ground_rise=0.0)))
+    assert 'without the return' not in R.pdn_report(dict(res, returns=dict(Q1='Q3')))['summary']
+    rep = R.pdn_report(dict(res, no_return=['Q2'], returns=dict(Q1='Q3')))
+    assert rep['summary'].endswith('without the return of Q2 (no pad on ground: REF=AMPS@PART names the part it '
+                                   'returns through)')
+    assert 'Q1 through Q3' in rep['sections'][0]['text']
     wpthb = os.path.expanduser('~/Desktop/wpthb/wpthb.kicad_pcb')
     if os.path.isfile(wpthb):                                                    # the board it was met on
         monkeypatch.undo()
-        text = [m['text'] for m in A.PowerIntegrity().missing(dict(rail='VIN', load='Q1=0.67'), wpthb)]
-        assert text == ['Q1 has no pad on ground: name the part its current returns through, Q1=AMPS@Q3 '
-                        '(Q3 is on its other net and on ground)']
+        assert A.PowerIntegrity().missing(dict(rail='VIN', load='Q1=0.67\nQ2=0.67'), wpthb) == []
+        assert [A._return_of(q, {}, wpthb) for q in ('Q1', 'Q2')] == ['Q3', 'Q4']

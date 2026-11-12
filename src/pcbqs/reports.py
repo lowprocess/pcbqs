@@ -47,12 +47,18 @@ def pdn_report(res, folder=''):
                show=dict(field='V', run='power'))               # a viewer starts on the layer that drops most
     out['summary'] = f"Power integrity, rail {res['rail']}" + (
         f": worst DC drop {worst[1]['drop'] * 1e3:.2f} mV (at {worst[0]})" if worst else '')
+    if res.get('no_return'):                                    # a drop without its ground's share: said first
+        out['summary'] += (f"; without the return of {', '.join(res['no_return'])} (no pad on ground: "
+                           f"REF=AMPS@PART names the part it returns through)")
     text = (f"Rail tree: {', '.join(res['nets'])}; source {', '.join(res['source'])}; "
             f"{res['loss_W'] * 1e3:.1f} mW in the copper.")
     if res.get('assumed_loads'):
         text += " The loads' currents are assumed (shared by pad count), not known."
     if res.get('field_loads'):
         text += f" From the parts' pdn.load fields: {', '.join(res['field_loads'])}."
+    if res.get('returns'):
+        text += " Returning through another part's ground pads: " + ', '.join(
+            f"{r} through {b}" for r, b in sorted(res['returns'].items())) + '.'
     out['sections'].append(dict(title='', text=text))
     if res.get('tree'):
         rows = []

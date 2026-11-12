@@ -229,10 +229,33 @@ def test_a_load_returns_through_another_part():
     b = _with_high_side(board())
     alone = solve_rail(Rail(b, 'P', loads={'Q1': 1.0}), 3.3, dmax=0.8, log=lambda *a: None)
     assert alone['loads']['Q1']['ground_rise'] == 0 and any('Q1: no ground pad' in n for n in alone['notes'])
+    assert alone['no_return'] == ['Q1']
     back = solve_rail(Rail(b, 'P', loads={'Q1': 1.0}, returns={'Q1': 'U1'}), 3.3, dmax=0.8, log=lambda *a: None)
     assert back['loads']['Q1']['ground_rise'] > 0 and not any('Q1: no ground pad' in n for n in back['notes'])
     with pytest.raises(ValueError):
         Rail(b, 'P', loads={'Q1': 1.0}, returns={'Q1': 'R2'})            # R2 has no ground pad
+
+
+def test_a_half_bridge_returns_through_its_low_side():
+    """A load with no pad on ground returns, unasked, through the one part of its kind on its other net and on
+    ground (a half bridge's low-side switch), and the result says so; a return that is named is the one taken."""
+    b = board()
+    b['prims']['footprints'] += [
+        fp('Q1', 'FET', [pad('1', 'P', 15.0, 16.0, 0.8, 0.8), pad('2', 'HB', 15.0, 19.0, 0.8, 0.8)], lib='SON-8'),
+        fp('Q2', 'FET', [pad('1', 'HB', 31.0, 19.0, 0.8, 0.8), pad('2', 'GND', 31.0, 11.0, 0.8, 0.8)], lib='SON-8'),
+        fp('U9', 'DRV', [pad('1', 'HB', 16.0, 19.0, 0.5, 0.5), pad('2', 'GND', 33.0, 11.0, 0.5, 0.5)])]
+    rail = Rail(b, 'P', loads={'Q1': 1.0})
+    assert rail.returns == {'Q1': 'Q2'}                 # not U9, the driver: on the node and on ground, not a switch
+    assert any('Q1 has no pad on ground: its return is taken through Q2' in n for n in rail.notes)
+    res = solve_rail(rail, 3.3, dmax=0.8, log=lambda *a: None)
+    assert res['no_return'] == [] and res['loads']['Q1']['ground_rise'] > 0
+    named = Rail(b, 'P', loads={'Q1': 1.0}, returns={'Q1': 'U1'})
+    assert named.returns == {'Q1': 'U1'} and not any('no pad on ground' in n for n in named.notes)
+    b['prims']['footprints'].append(fp('Q3', 'FET', [pad('1', 'HB', 32.0, 19.0, 0.8, 0.8),
+                                                    pad('2', 'GND', 32.0, 9.0, 0.8, 0.8)], lib='SON-8'))
+    two = Rail(b, 'P', loads={'Q1': 1.0})               # two to choose from: none taken
+    assert two.returns == {}
+    assert solve_rail(two, 3.3, dmax=0.8, log=lambda *a: None)['no_return'] == ['Q1']
 
 
 def test_cli_load_returns_and_targets(tmp_path):

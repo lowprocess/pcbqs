@@ -175,7 +175,8 @@ def run(a):
                vias={side: sorted([dict(x=v['x'], y=v['y'], I=v['I']) for v in dc[side].vias], key=lambda v: -v['I'])[:20]
                      for side in ('power', 'ground')},
                vertices=dict(power=dc['power'].nodes, ground=dc['ground'].nodes), seconds=dict(dc=round(t_dc, 1)),
-               field_loads=sorted(fielded), notes=list(rail.notes) + field_notes + dc['notes'])
+               field_loads=sorted(fielded), notes=list(rail.notes) + field_notes + dc['notes'],
+               returns=dict(rail.returns), no_return=list(dc.get('no_return') or []))
     say(f"DC done in {t_dc:.1f} s: worst drop {max(v['drop'] for v in out['loads'].values()) * 1e3:.2f} mV")
     figs = dc_figures(board, dc, a.volts, a.out)
     out['figures'] = figs
@@ -217,7 +218,7 @@ def run(a):
                                          defaulted=bool((i['el'] or {}).get('defaulted')))
                                  for n, i in pdn.parts.items()},
                           vertices=pdn.nv)
-        out['notes'] += pdn.notes
+        out['notes'] = list(dict.fromkeys(out['notes'] + pdn.notes))    # (the PDN model has the rail's too)
         out['seconds'].update(pdn_build=round(t_b, 1), pdn_sweep=round(t_z, 1))
         with open(os.path.join(a.out, 'z.csv'), 'w') as fh:
             fh.write('f_Hz,' + ','.join(f'{r}_mag,{r}_deg' for r in obs) + '\n')

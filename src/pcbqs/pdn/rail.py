@@ -140,6 +140,23 @@ class Part:
         return [p for p in self.pads if p.net in nets]
 
 
+RETURN_NET = 8          # a net with more parts than this is a rail, not the node a load returns through
+
+
+def return_part(pad_nets, ref, ground, rail=()):
+    """The one part a load with no pad on ground returns through, or None (none such, or several): of the load's
+    kind (its reference's letters: a half bridge's low-side switch for its high-side one), on one of the load's
+    nets that is no rail (not of the rail's tree `rail`, at most RETURN_NET parts) and on ground. pad_nets:
+    {reference: the nets of its pads}."""
+    kind = re.match(r'[A-Za-z]*', ref).group(0)
+    ground, found = set(ground), set()
+    for net in pad_nets[ref] - {'', None} - set(rail) - ground:
+        on = [r for r, ns in pad_nets.items() if net in ns and r != ref]
+        if len(on) <= RETURN_NET:
+            found |= {r for r in on if pad_nets[r] & ground and re.match(r'[A-Za-z]*', r).group(0) == kind}
+    return found.pop() if len(found) == 1 else None
+
+
 @dataclass
 class Series:
     part: Part
@@ -287,6 +304,18 @@ class Rail:
                 raise ValueError(f"load {r}'s return {back} is not on the board")
             if not self.parts[back].on(g):
                 raise ValueError(f"load {r}'s return {back} has no pad on the ground ({', '.join(sorted(g))})")
+        # a load with no pad on ground (a bridge's high-side switch): its current returns through another part.
+        # Not named (REF=AMPS@RETURN), the board says which where it has just one such (return_part); none or
+        # several: its return is left out, and the result says so (dc.solve_rail)
+        pad_nets = {r: p.nets() for r, p in self.parts.items()}
+        for r in self.loads:
+            if r in self.returns or self.parts[r].on(g):
+                continue
+            back = return_part(pad_nets, r, g, self.nets)
+            if back:
+                self.returns[r] = back
+                self.notes.append(f"{r} has no pad on ground: its return is taken through {back}, on its other net "
+                                  f"and on ground ({r}=AMPS@PART names another)")
 
     def pads_of(self, part, role=None):
         """(rail pads, ground pads) of a part: the source's are source_pads and ground_source_pads."""

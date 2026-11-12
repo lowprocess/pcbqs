@@ -10,15 +10,20 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
-- **A load with no pad on ground is asked about before the run (kicad2ems API 2.9).** A rail's load that is on
-  the rail and not on ground (a bridge's high-side switch: wpthb's Q1 and Q2) has its return left out of the
-  drop, with a note in the result that is easy to miss. The rail tool's plugin now says it as something the run
-  still needs (`PowerIntegrity.missing`): "Q1 has no pad on ground: name the part its current returns through,
-  Q1=AMPS@Q3 (Q3 is on its other net and on ground)", the part named where the board has one of the load's
-  kind on one of its nets that is no rail and on ground. kicad2ems's window lists it under the Rail drop
-  question's settings and does not start the run. The command line is as it was: it runs, and notes it. Also
-  for that API: the temperature says it can start from a circuit's result (`uses`), and the low-frequency
-  solver names its cell size as the setting a run is set up with (`basic`).
+- **A load with no pad on ground returns through the part the board shows (kicad2ems API 2.9).** A rail's load
+  that is on the rail and not on ground (a bridge's high-side switch: wpthb's Q1 and Q2) had its return left out
+  of the drop, with a note in the result that is easy to miss. The rail now takes the return itself where the
+  board leaves no choice (`pdn.rail.return_part`): the one part of the load's kind (Q for Q) that is on one of
+  its nets that is no rail and on ground, a half bridge's low-side switch, and not the driver that is on that
+  node as well. The result names it (`returns`, a note, the report's first section: "Returning through another
+  part's ground pads: Q1 through Q3"), and `REF=AMPS@PART` still names another. On wpthb the drop at Q1 goes
+  from 49.66 to 50.17 mV, the 0.51 mV its return raises the ground by, and the loss from 66.4 to 67.1 mW.
+  Where the board has no such part, or several, the return is still left out, and the result now says so where
+  it is read: `no_return` lists the loads, and the report's headline ends "without the return of Q1 (no pad on
+  ground: REF=AMPS@PART names the part it returns through)". In kicad2ems's window that case is something the
+  run still needs (`PowerIntegrity.missing`), listed under the Rail drop question's settings, and Run goes to
+  it instead of starting. Also for that API: the temperature says it can start from a circuit's result
+  (`uses`), and the low-frequency solver names its cell size as the setting a run is set up with (`basic`).
 - **The full bridge's run is a circuit result.** A `power-circuit.json` is the circuit analysis's as
   `circuit.json` is: its operating points, notes and assumptions as a report and table, each point's waveforms
   as curve sets (the windings, the bridge and coils, the series parts between the supply's rails found by what

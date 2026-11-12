@@ -119,21 +119,10 @@ def _floating_loads(values, board):
 
 
 def _return_of(ref, values, board):
-    """The one part a load with no pad on ground can return through, or None: of the load's own kind (its
-    reference's letters: a half bridge's low-side switch for its high-side one), on one of the load's nets that
-    is no rail (at most RETURN_NET parts) and on ground."""
+    """The part a load with no pad on ground can return through (pdn.rail.return_part), or None."""
+    from .pdn.rail import return_part
     ground = {x.strip() for x in str(values.get('ground') or 'GND').split(',') if x.strip()}
-    nets = _pad_nets(board)
-    kind = re.match(r'[A-Za-z]*', ref).group(0)
-    found = set()
-    for net in nets[ref] - {'', None}:
-        on = [r for r, ns in nets.items() if net in ns and r != ref]
-        if len(on) <= RETURN_NET:
-            found |= {r for r in on if nets[r] & ground and re.match(r'[A-Za-z]*', r).group(0) == kind}
-    return found.pop() if len(found) == 1 else None
-
-
-RETURN_NET = 8          # a net with more parts than this is a rail, not the node a load returns through
+    return return_part(_pad_nets(board), ref, ground)
 
 
 class PowerIntegrity(_Tool):
@@ -172,16 +161,15 @@ class PowerIntegrity(_Tool):
         return argv(self.module, self.options(), values, board, out)
 
     def missing(self, values, board, results=None):
-        """What command() raises, and a load with no pad on ground whose return is not named (a bridge's
-        high-side switch): its return would be left out of the drop."""
+        """What command() raises, and a load with no pad on ground whose return is not named and that the rail
+        cannot find by itself (pdn.rail.return_part: a bridge's high-side switch returns through its low-side
+        one): its return would be left out of the drop."""
         out = super().missing(values, board, results) if hasattr(super(), 'missing') else []
         try:
             path = self._board(board)
-            for ref in _floating_loads(values, path):
-                back = _return_of(ref, values, path)
-                out.append(dict(key='load', text=f"{ref} has no pad on ground: name the part its current returns "
-                                f"through, {ref}=AMPS@{back or 'PART'}" + (f" ({back} is on its other net and on "
-                                                                              f"ground)" if back else '')))
+            out += [dict(key='load', text=f"{ref} has no pad on ground, and the board has no one part of its kind "
+                         f"to return through: name it, {ref}=AMPS@PART")
+                    for ref in _floating_loads(values, path) if not _return_of(ref, values, path)]
         except Exception:                                    # noqa: BLE001 (the run says what is wrong with a board)
             pass
         return out

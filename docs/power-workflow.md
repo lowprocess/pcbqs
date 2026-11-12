@@ -46,6 +46,10 @@ impedance seen by each load.
   the board carries) is the current it draws, so a rail runs with no `--load` typed:
   `0.5`, `500m` or `2 A` from the rail the part is on; `+3V3=0.4, +1V8=100m` for a part on
   several rails; `1.5@Q2` for a load that returns through another part's ground pads.
+- **A load with no pad on ground** (a bridge's high-side switch) returns through the one
+  part of its kind on its other net and on ground, the low-side switch of its half bridge:
+  the log and the report name it, and `--load Q1=1.5@Q4` names another. Where the board
+  has no such part, or several, the return is left out and the report's first line says so.
   `--load REF=A` overrides that part's field, `--no-part-loads` ignores the fields, and the
   report names the loads that came from them.
 

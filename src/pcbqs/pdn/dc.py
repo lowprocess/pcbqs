@@ -251,4 +251,4 @@ def solve_rail(rail, volts, dmax=1.0, sigma=SIGMA_CU, plating=0.025, log=print, 
     if loads:
         log(f"dc rail {rail.net}: {(rp.loss + rg.loss) * 1e3:.1f} mW in the copper; worst drop "
             f"{max(l['drop'] for l in loads.values()) * 1e3:.2f} mV")
-    return dict(loads=loads, series=rp.series, power=rp, ground=rg, notes=notes)
+    return dict(loads=loads, series=rp.series, power=rp, ground=rg, notes=notes, no_return=no_gnd)
