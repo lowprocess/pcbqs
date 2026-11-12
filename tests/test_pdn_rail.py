@@ -270,3 +270,40 @@ def test_cli_writes_the_viewer_maps(tmp_path):
     drop = max(float(np.abs(np.load(tmp_path / 'o' / d['file'])['data']).max()) for d in v['dumps']
                if d['side'] == 'power' and d['field'] == 'V')
     assert drop == pytest.approx(r['loads']['U1']['power_drop'] * 1e3, rel=0.15)    # the map's worst: the load's
+
+
+def test_loads_from_the_parts_fields(tmp_path):
+    """A part's pdn.load field is its load: amps for the rail it is on, NET=AMPS for a part on several rails,
+    AMPS@RETURN; --load overrides one, --no-part-loads ignores them, a field that cannot be read is noted."""
+    import json
+    from pcbqs.pdn.cli import main, describe
+    from pcbqs.pdn.rail import field_loads
+    b = _with_high_side(board())
+    fps = {f['ref']: f for f in b['prims']['footprints']}
+    fps['U1']['props']['pdn.load'] = '2 A'
+    fps['U2']['props']['PDN.Load'] = 'PF=500m, +1V8=3'                  # only its share on this rail's nets
+    fps['Q1']['props']['pdn.load'] = '1@U1'
+    fps['R2']['props']['pdn.load'] = 'lots'
+    fps['U3']['props']['pdn.load'] = '+12V=4'                           # on VOUT, but its field names another rail
+    assert field_loads(b, {'P', 'PF'}) == ({'U1': 2.0, 'U2': 0.5, 'Q1': 1.0}, {'Q1': 'U1'}, [])
+    assert field_loads(b, {'P'})[0] == {'U1': 2.0, 'Q1': 1.0}             # U2 is on PF: not this net's
+    loads, _, notes = field_loads(b, {'VOUT', 'P', 'PF'})               # R2 hangs on VOUT: its field is read, and bad
+    assert 'R2' not in loads and notes == ["R2: its pdn.load field 'lots' is not AMPS, NET=AMPS or AMPS@RETURN (ignored)"]
+    assert any(o['key'] == 'no_part_loads' and o['group'] == 'Rail' for o in describe()['options'])
+
+    path = tmp_path / 'b_board.json'
+    path.write_text(json.dumps(b))
+    common = [str(path), '--rail', 'VOUT', '--volts', '3.3', '--dmax', '1', '--no-pdn']
+    main(common + ['--out', str(tmp_path / 'a')])                       # no --load at all
+    r = json.loads((tmp_path / 'a' / 'pdn.json').read_text())
+    assert {k: v['I'] for k, v in r['loads'].items()} == {'U1': 2.0, 'U2': 0.5, 'Q1': 1.0}
+    assert r['field_loads'] == ['Q1', 'U1', 'U2'] and r['loads']['Q1']['ground_rise'] > 0 and not r['assumed_loads']
+    assert any(n.startswith("R2: its pdn.load field 'lots'") for n in r['notes'])
+    main(common + ['--load', 'U1=3', '--out', str(tmp_path / 'b')])     # one typed: it overrides that part's field
+    r = json.loads((tmp_path / 'b' / 'pdn.json').read_text())
+    assert r['loads']['U1']['I'] == 3.0 and r['loads']['U2']['I'] == 0.5 and r['field_loads'] == ['Q1', 'U2']
+    main(common + ['--load', 'U1=3', '--no-part-loads', '--out', str(tmp_path / 'c')])
+    r = json.loads((tmp_path / 'c' / 'pdn.json').read_text())
+    assert list(r['loads']) == ['U1'] and r['field_loads'] == []
+    with pytest.raises(SystemExit, match='a pdn.load field on the parts'):
+        main(common + ['--no-part-loads', '--out', str(tmp_path / 'd')])

@@ -75,6 +75,44 @@ def field_value(fp, *keys):
     return None
 
 
+LOAD_FIELD = 'pdn.load'                 # a part's field with the current it draws (any case)
+
+
+def field_loads(board, nets):
+    """The loads the parts' own fields give for a rail of `nets`: ({ref: amps}, {ref: its return's ref}, notes).
+
+    A part's `pdn.load` field (KiCad: a field of the symbol, a property of the footprint) is the current it draws:
+        0.5        500m       2 A          amps, from this rail when the part has a pad on it
+        +3V3=0.4, +1V8=100m                a part on several rails: by net
+        1.5@Q2                             returning through another part's ground pads (--load REF=A@RETURN)
+    A part on none of the nets, or whose field names other nets, is not a load of this rail; a field that cannot
+    be read is named in the notes and gives none."""
+    loads, returns, notes = {}, {}, []
+    for p in parts_of(board):
+        text = next((str(v).strip() for k, v in p.props.items() if str(k).strip().lower() == LOAD_FIELD), '')
+        if not text or not p.on(nets):
+            continue
+        amps, back, bad = 0.0, None, False
+        for item in text.split(','):
+            net, eq, value = item.rpartition('=')
+            value, at, ret = value.partition('@')
+            a = parse_value(re.sub(r'\s*A(mps?)?$', '', value.strip(), flags=re.I))
+            if a is None or a < 0 or (at and not ret.strip()):
+                bad = True
+                break
+            if eq and net.strip() not in nets:
+                continue                                    # another rail's share
+            amps += a
+            back = ret.strip() or back
+        if bad:
+            notes.append(f"{p.ref}: its {LOAD_FIELD} field {text!r} is not AMPS, NET=AMPS or AMPS@RETURN (ignored)")
+        elif amps > 0:
+            loads[p.ref] = amps
+            if back:
+                returns[p.ref] = back
+    return loads, returns, notes
+
+
 @dataclass
 class Pad:
     part: str

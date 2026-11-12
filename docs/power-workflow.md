@@ -42,6 +42,12 @@ impedance seen by each load.
   which capacitors are poorly connected.
 - Small rails: lower `--plane-min` (mm²). Input filters: `--through L3 --dcr L3=0.03`
   keeps the inductor's L and DCR. Bulk polymers/electrolytics: `--cap CA1=47e-6,0.02,1e-9`.
+- **Loads kept with the design.** A part's `pdn.load` field (a symbol field in KiCad, which
+  the board carries) is the current it draws, so a rail runs with no `--load` typed:
+  `0.5`, `500m` or `2 A` from the rail the part is on; `+3V3=0.4, +1V8=100m` for a part on
+  several rails; `1.5@Q2` for a load that returns through another part's ground pads.
+  `--load REF=A` overrides that part's field, `--no-part-loads` ignores the fields, and the
+  report names the loads that came from them.
 
 ![wpthb DC-link variants](../examples/power-workflow/images/03-wpthb-dc-link-variants.png)
 
@@ -84,5 +90,5 @@ other; the reported run is strict. See
   Copper AC resistance above ~3 MHz reads 11–34% low; treat loss figures there as
   lower bounds.
 
-Known gaps and planned work: [power-tools-review.md](power-tools-review.md),
-[ROADMAP.md](../ROADMAP.md).
+Known gaps and planned work: [power-tools-review.md](power-tools-review.md) and the
+[roadmap](https://github.com/lowprocess/kicad2ems/blob/main/ROADMAP.md#power-tools-pcbqs); what was done is in [CHANGELOG.md](../CHANGELOG.md).

@@ -2,6 +2,7 @@
 python -m pcbqs.pdn: a power rail's DC drop and PDN impedance from a KiCad board (or a kicad2ems board.json).
 
     python -m pcbqs.pdn board.kicad_pcb --rail +3V3 --volts 3.3 --load U21=2 --load U14=1 --out pdn_3v3
+    python -m pcbqs.pdn board.kicad_pcb --rail +3V3 --volts 3.3 --out pdn_3v3     # the loads: the parts' pdn.load fields
     python -m pcbqs.pdn board.kicad_pcb --rail +3V3 --volts 3.3 --spread-load 5 --out pdn_3v3   # 5 A shared by pad count
     python -m pcbqs.pdn --describe --json          # the options, for the GUI's PDN page
 
@@ -33,6 +34,8 @@ OPTIONS = [
      "the parts on that inductor's switch node)", G_RAIL),
     ('load', 'list', [], "a load: REF=AMPS, or REF=AMPS@RETURN when its return is another part's ground pads "
      "(a bridge's high side through its low side) (repeat)", G_RAIL),
+    ('no_part_loads', 'bool', False, "ignore the parts' own pdn.load fields (a field gives a part's current: "
+     "AMPS, NET=AMPS for a part on several rails, AMPS@RETURN; --load overrides it for that part)", G_RAIL),
     ('spread_load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
      "(an assumption, for a first look when the loads are not known)", G_RAIL),
     ('max_ohms', 'float', 1.0, "the largest resistor the tree follows (sense and 0 ohm links)", G_RAIL),
@@ -111,7 +114,7 @@ def bands(f, z, target):
 
 
 def run(a):
-    from .rail import Rail
+    from .rail import Rail, field_loads, LOAD_FIELD
     from .dc import solve_rail
     t0 = time.time()
     os.makedirs(a.out, exist_ok=True)
@@ -135,19 +138,26 @@ def run(a):
     caps = {r: dict(zip(('C', 'ESR', 'ESL'), v)) for r, v in ref_values(a.cap, '--cap', 'REF=C[,ESR[,ESL]]', 3).items()}
     say(f'reading {os.path.basename(a.board)}')
     board = load_board(a.board, {a.rail, *ground})
-    assumed = False
+    kw = dict(ground=ground, source=a.source or None, ground_source=a.ground_source or None,
+              max_ohms=a.max_ohms, through=tuple(x for x in a.through.split(',') if x),
+              stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr)
+    tree = Rail(board, a.rail, **kw)                    # the rail's nets, before its loads are known
+    if not a.board.endswith('.json') and not tree.nets <= {a.rail}:      # the tree's other nets: read with it
+        say(f'rail tree: {len(tree.nets)} nets; reading their copper')
+        board = load_board(a.board, set(tree.nets) | set(ground))
+    assumed, fielded, field_notes = False, {}, []
+    if not a.no_part_loads:                             # the parts' own fields; --load overrides one
+        found, back, field_notes = field_loads(board, tree.nets)
+        fielded = {r: v for r, v in found.items() if r not in loads}
+        returns = {**{r: b for r, b in back.items() if r in fielded}, **returns}
+        loads = {**fielded, **loads}
+        if fielded:
+            say(f"loads from the parts' {LOAD_FIELD} fields: " + ', '.join(f"{r} {v:g} A" for r, v in sorted(fielded.items())))
     if not loads and a.spread_load > 0:
         loads, assumed = spread(board, a.rail, a.spread_load), True
     if not loads:
-        raise SystemExit('pdn: no loads: --load REF=AMPS, or --spread-load AMPS')
-    kw = dict(ground=ground, loads=loads, source=a.source or None, ground_source=a.ground_source or None,
-              max_ohms=a.max_ohms, through=tuple(x for x in a.through.split(',') if x),
-              stop=tuple(x for x in a.stop.split(',') if x), dcr=dcr, returns=returns)
-    rail = Rail(board, a.rail, **kw)
-    if not a.board.endswith('.json') and not rail.nets <= {a.rail}:      # the tree's other nets: read with it
-        say(f'rail tree: {len(rail.nets)} nets; reading their copper')
-        board = load_board(a.board, set(rail.nets) | set(ground))
-        rail = Rail(board, a.rail, **kw)
+        raise SystemExit(f"pdn: no loads: --load REF=AMPS, a {LOAD_FIELD} field on the parts, or --spread-load AMPS")
+    rail = Rail(board, a.rail, loads=loads, returns=returns, **kw)
     for line in rail.describe():
         say(line.strip())
     say('DC: meshing and solving')
@@ -165,7 +175,7 @@ def run(a):
                vias={side: sorted([dict(x=v['x'], y=v['y'], I=v['I']) for v in dc[side].vias], key=lambda v: -v['I'])[:20]
                      for side in ('power', 'ground')},
                vertices=dict(power=dc['power'].nodes, ground=dc['ground'].nodes), seconds=dict(dc=round(t_dc, 1)),
-               notes=list(rail.notes) + dc['notes'])
+               field_loads=sorted(fielded), notes=list(rail.notes) + field_notes + dc['notes'])
     say(f"DC done in {t_dc:.1f} s: worst drop {max(v['drop'] for v in out['loads'].values()) * 1e3:.2f} mV")
     figs = dc_figures(board, dc, a.volts, a.out)
     out['figures'] = figs
