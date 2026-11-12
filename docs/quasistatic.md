@@ -342,6 +342,13 @@ current), `--duty` its duty fraction, and `--edge-time` its smoothing time.
 Alternatively `--vin-volts` and `--vout` set ideal buck duty Vout/Vin.
 Harmonic amplitudes are peak A: `2 I D |sinc(n D) sinc(n fsw tr)|`.
 The model omits switch-node E and output-inductor core/winding leakage.
+`--spectrum FILE` takes the harmonics from a file in place of that pulse: lines of
+`f_Hz, A` (peak), as a circuit run writes for each part on its supply
+(`supply-<part>.csv`). Its lowest frequency is the switching frequency, `--harmonics`
+still says which are solved, and the report lists the assumed pulse beside them.
+`--circuit` prints the selected converter as a circuit model for `pcbqs.circuit`
+and stops; a run writes the same as `circuit-model.json`
+([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next)).
 
 Outputs are `mqs.json` (selection, settings, copper R/L, complex dipole moment,
 peak H per harmonic/height, fill metadata, FFT convergence and assumptions),

@@ -27,6 +27,9 @@ OPTIONS = [
     ('current', 'float', 1., 'Pulse amplitude, A; approximates buck load current', 'Operating point'),
     ('edge_time', 'float', 5e-9, 'Edge smoothing time, s', 'Operating point'),
     ('harmonics', 'str', '1,2,3,4,5,6', 'Positive harmonic numbers, comma-separated', 'Operating point'),
+    ('spectrum', 'str', '', "The input current's harmonics from a file in place of the assumed pulse: lines of "
+     "f_Hz, A (peak) (a circuit run's supply-<part>.csv); its lowest frequency is the switching frequency",
+     'Operating point'),
     ('heights', 'str', '1,3', 'Scan heights above top copper, mm; 2+ heights also give a volume', 'Scan'),
     ('scan_points', 'int', 25, 'Points along each lateral scan axis', 'Scan'),
     ('field_tol', 'float', .02, 'Successive FFT-grid peak-relative tolerance per height/frequency', 'Scan'),
@@ -56,6 +59,8 @@ def parser():
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--preview', action='store_true', help='mesh and export layout without matrix filling or solving')
     ap.add_argument('--list-converters', action='store_true', help='describe candidate converters without meshing')
+    ap.add_argument('--circuit', action='store_true', help='print the selected converter as a circuit model '
+                    '(for python -m pcbqs.circuit) and stop')
     add_options(ap, OPTIONS)
     return ap
 
@@ -142,6 +147,20 @@ def numbers(text, name):
     if not len(x) or not np.isfinite(x).all() or (x<=0).any() or len(np.unique(x))!=len(x):
         raise ValueError(f'{name} must contain unique positive finite values')
     return np.sort(x)
+
+
+def spectrum(path, n):
+    """(switching frequency, peak amps of the harmonics n) of a current spectrum file (circuit/supply.py's): its
+    lowest frequency is the fundamental, and each harmonic asked for must be in it."""
+    from .circuit.supply import read_spectrum
+    f,amp=read_spectrum(path)
+    k=np.round(f/f[0])
+    have={int(kk):abs(aa) for kk,aa,ff in zip(k,amp,f) if abs(ff/f[0]-kk)<1e-3}
+    missing=[int(x) for x in n if int(x) not in have]
+    if missing:
+        raise ValueError(f"{path}: no harmonic {', '.join(map(str,missing))} of its lowest frequency ({f[0]:g} Hz): "
+                         f"it has {len(have)}; shorten --harmonics")
+    return float(f[0]),np.array([have[int(x)] for x in n])
 
 
 def validate(a, preview=False):
@@ -252,6 +271,11 @@ def run(a):
     preview=getattr(a,'preview',False)
     if not preview:
         n,heights,duty=validate(a)
+        fsw,given=a.fsw,None
+        if a.spectrum:                                  # (read before the mesh is made: a wrong file says so at once)
+            fsw,given=spectrum(a.spectrum,n)
+            print(f'mqs: input current from {Path(a.spectrum).name}: {fsw:g} Hz, {given[0]:.3g} A at its first '
+                  f'harmonic kept',flush=True)
     else:
         validate(a,preview=True)
     print('mqs: reading board',flush=True)
@@ -277,9 +301,10 @@ def run(a):
     q.source(ref,f'{ref}:{vin}',f'{ref}:{a.ground}',part_h=a.part_height)
     for cap,value in selected['values'].items():
         q.element(cap,f'{cap}:{vin}',f'{cap}:{a.ground}',C=value,ESR=a.esr,ESL=a.esl,part_h=a.part_height)
-    r=q.solve(n*a.fsw)
+    r=q.solve(n*fsw)
     impedance=r.zc[ref].copy()
-    amps=2*a.current*duty*np.abs(np.sinc(n*duty))*np.abs(np.sinc(n*a.fsw*a.edge_time))
+    assumed=2*a.current*duty*np.abs(np.sinc(n*duty))*np.abs(np.sinc(n*fsw*a.edge_time))
+    amps=assumed if given is None else given
     r.i*=amps[:,None]
     moments=np.array([q.moment(r,i) for i in range(len(n))])
     solve_s=time.perf_counter()-start
@@ -293,10 +318,20 @@ def run(a):
         heights_above_top_mm=heights.tolist(),peak_H_Am=np.linalg.norm(H,axis=3).max(axis=(0,1)).T.tolist(),
         triangles=len(q.tris),fill=q.fill_info,field_convergence=info,
         notes=['Input-loop magnetic model; switch-node E and output-inductor leakage are excluded.',
-               'Pulse spectrum, ESR, ESL and part filament heights are explicit assumptions.',
+               ('Pulse spectrum, ESR, ESL and part filament heights are explicit assumptions.' if given is None else
+                f"The input current's harmonics are those of {Path(a.spectrum).name}; ESR, ESL and part filament "
+                f"heights are explicit assumptions."),
                'FFT convergence does not establish copper mesh or crop convergence.'],
         seconds=dict(solve=solve_s,total=time.perf_counter()-start))
+    if given is not None:                               # beside what the pulse of the settings would have given
+        summary['spectrum']=dict(file=str(Path(a.spectrum).resolve()),fsw_Hz=float(fsw),assumed_peak_A=assumed.tolist())
     out=Path(a.out);out.mkdir(parents=True,exist_ok=True)
+    try:                                                # the converter as a circuit, for pcbqs.circuit to run
+        from .circuit.converter import model_of
+        (out/'circuit-model.json').write_text(json.dumps(model_of(board,Path(a.board).resolve(),a),indent=1)+'\n')
+        summary['circuit_model']='circuit-model.json'
+    except ValueError as exc:
+        summary['notes'].append(f'No circuit model of the converter: {exc}')
     write_outputs(out,board,q,r,H,x,y,heights,summary)
     summary['seconds']['total']=time.perf_counter()-start
     (out/'mqs.json').write_text(json.dumps(summary,indent=2,allow_nan=False)+'\n')
@@ -312,6 +347,10 @@ def main(argv=None):
     try:
         if a.list_converters:
             print(json.dumps(discover(load_board(a.board),a.ground),indent=2))
+        elif a.circuit:
+            from .circuit.converter import model_of
+            validate(a)
+            print(json.dumps(model_of(load_board(a.board),Path(a.board).resolve(),a),indent=1))
         else:run(a)
     except (ValueError,KeyError,OSError,RuntimeError) as exc:
         print(f'mqs: error: {exc}',file=sys.stderr);return 2

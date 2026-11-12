@@ -531,6 +531,11 @@ def run_case(model, point, out, log=print, copper=None):
         periodic_error=max(periodic_error(result, deck, deck.period, a.get('ignore', ())).values(), default=0.0),
         energy_drift_relative=unsteadiness(result, resolved, deck, stats)[1],
         runs=len(history), periods=total, notes=notes, history=history, runtime_s=time.perf_counter() - started)
+    try:                                                            # what its parts draw from its supply: for a
+        from . import supply                                        # power-integrity or near-field run (supply.py)
+        row['supply'] = supply.write(out, supply.currents(resolved, result, deck.period))
+    except Exception as exc:                                        # noqa: BLE001  (an extra, not the result)
+        row['notes'].append(f"the supply currents were not written: {type(exc).__name__}: {exc}")
     try:
         from .report import waveforms
         waveforms(out, row, model, deck)

@@ -315,6 +315,20 @@ class Circuit(_Tool):
             cmd += ['--board', self._board(board)]
         return cmd
 
+    def suggest(self, folder):
+        """What the run draws from its supply, for the power-integrity and near-field analyses (reports.
+        circuit_suggest); only for parts that are on the model's board."""
+        from . import reports
+        try:
+            res = reports.result(self.name, folder)
+            if not res:
+                return []
+            board = circuit_run(folder)
+            pads = _pad_nets(board) if board and str(board).lower().endswith('.kicad_pcb') else None
+            return reports.circuit_suggest(res, folder, pads)
+        except Exception:                                    # noqa: BLE001 (a proposal, never a fault)
+            return []
+
     def examples(self):
         """The example circuits as configs: [dict(name, config, group, title, files)]; a config's model (and its
         board) are its files, copied beside it."""

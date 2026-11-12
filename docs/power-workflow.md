@@ -11,6 +11,10 @@ examples with their images are in
 | Planes poured | Does each rail hold its voltage, at DC and across frequency? | `python -m pcbqs.pdn` | Power Integrity |
 | Power stage routed | How do the switches, filter and load behave with this copper? | `python -m pcbqs.power_circuit` | Circuit |
 
+[From one tool to the next](#4-from-one-tool-to-the-next): a converter found by the first
+becomes a circuit, and what that circuit draws becomes the rail's load and the near
+field's current.
+
 ## 1. Converter input loop (`pcbqs.mqs`)
 
 Models the input loop only (input capacitors → switch → ground return), driven
@@ -79,6 +83,63 @@ multi-port model, sweeping frequency and target power. Start from
 Run time: phase-search trials use relaxed tolerances and continue from each
 other; the reported run is strict. See
 [power-circuit.md](power-circuit.md#run-time-and-solver-settings).
+
+## 4. From one tool to the next
+
+Each tool takes what the one before it found, so nothing is typed twice and nothing
+that was simulated is assumed again. On CM5 Minima's U702 (5 V to 3.3 V, 1 MHz, 2 A):
+
+```sh
+# 1. the converter the near field selects, as a circuit: its capacitors and inductor from the board
+python -m pcbqs.mqs CM5_MINIMA_3.kicad_pcb --converter U702 --vin-volts 5 --vout 3.3 --fsw 1e6 --current 2 --circuit > u702.json
+python -m pcbqs.circuit u702.json --copper --out u702          # 94 % at a duty of 0.72
+# 2. what it draws from +5V, as the rail's load and its current spectrum
+python -m pcbqs.pdn CM5_MINIMA_3.kicad_pcb --rail +5V --volts 5 --source J101 --ground-source J101 \
+    --load U702=1.398 --load-spectrum U702=u702/run/supply-U702.csv --out pdn_5v
+# 3. the near field of that current, in place of the assumed pulse
+python -m pcbqs.mqs CM5_MINIMA_3.kicad_pcb --converter U702 --spectrum u702/run/supply-U702.csv --out nearfield
+```
+
+In the window the same steps are buttons on a finished result: *Open U702 as a
+circuit* on a near field's, *Copy the rail +5V and what is drawn from it to Power
+integrity* and *Copy U702's input current to Near field* on a circuit's. The
+question it is copied to is ticked, so Run includes it.
+
+- **The converter as a circuit** (`--circuit`, and `circuit-model.json` in every
+  near-field result): a supply on the input net, the selected input capacitors, two
+  switches on the regulator's own footprint (a diode where the board has one from
+  ground to the switch node), the inductor, the output capacitors within
+  `--cap-radius` and a load of `vout / iout`. The duty is adjusted until the output
+  is `vout`. What a board cannot say is assumed and listed in the model's
+  description: 50 mΩ switches, the inductor's DCR, the voltages when the settings
+  give a duty alone.
+- **What a circuit draws** (`supply` in each point of `circuit.json`, and
+  `supply-<part>.csv` beside it): for each supply, every part on it but its
+  capacitors, with its average current and 40 harmonics (peak A and phase).
+- **Ripple on the rail** (`--load-spectrum REF=FILE`): each harmonic's current
+  times the impedance from that load to every other, put back together over the
+  period. U702's current makes 140 mV peak to peak on +5V where it meets the
+  planes (12.5 mV RMS, largest at 5 MHz) and 33 mV at U405, against 250 mV
+  allowed. It is the rail's voltage, not the regulator pin's: the pin adds the
+  L·di/dt of its own connection, and that loop is the near field's to solve.
+- **The near field of the simulated current** (`--spectrum FILE`): the report lists
+  the assumed pulse beside it. They agree where the pulse is strong (1.12 against
+  1.03 A at 1 MHz) and differ fivefold at its nulls (0.03 against 0.15 A at 3 MHz):
+  the settled duty is 0.72, not 0.66, and the current has the inductor's ripple.
+
+The two tools' fields of the same current, peak |H| at 1 MHz over U702:
+
+| above the copper | `pcbqs.mqs`, parts 0.5 mm up | `pcbqs.mqs`, `--part-height 0` | circuit `--fields` |
+|---|---|---|---|
+| 1 mm | 218 A/m | 76 A/m | 48 A/m |
+| 3 mm | 12.8 A/m | 9.4 A/m | 9.6 A/m |
+| 10 mm | 0.63 A/m | 0.59 A/m | 1.58 A/m |
+
+At 1 mm the answer is what a part's body is taken to be: the near field runs each
+part's current in a filament `--part-height` above its pads, the circuit's fields
+are of the copper alone. At 3 mm the two agree within 6 % over the first six
+harmonics. At 10 mm the circuit's field is 2.7 times larger, because it has the
+inductor's ripple current in the output loop, which the input-loop model leaves out.
 
 ## Trusting the numbers
 

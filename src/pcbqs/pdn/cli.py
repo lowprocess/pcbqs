@@ -34,6 +34,8 @@ OPTIONS = [
      "the parts on that inductor's switch node)", G_RAIL),
     ('load', 'list', [], "a load: REF=AMPS, or REF=AMPS@RETURN when its return is another part's ground pads "
      "(a bridge's high side through its low side) (repeat)", G_RAIL),
+    ('load_spectrum', 'list', [], "a load's AC current: REF=FILE, lines of f_Hz, A (peak)[, deg] (a circuit run's "
+     "supply-<part>.csv) (repeat); the ripple the spectra make at each load is reported against volts x ripple", G_PDN),
     ('no_part_loads', 'bool', False, "ignore the parts' own pdn.load fields (a field gives a part's current: "
      "AMPS, NET=AMPS for a part on several rails, AMPS@RETURN; --load overrides it for that part)", G_RAIL),
     ('spread_load', 'float', 0.0, "amps shared by +rail pad count over every part but R, C, L "
@@ -136,6 +138,16 @@ def run(a):
     dcr = {r: v[0] for r, v in ref_values(a.dcr, '--dcr', 'REF=OHMS').items()}
     load_targets = {r: v[0] for r, v in ref_values(a.load_target, '--load-target', 'REF=OHMS').items()}
     caps = {r: dict(zip(('C', 'ESR', 'ESL'), v)) for r, v in ref_values(a.cap, '--cap', 'REF=C[,ESR[,ESL]]', 3).items()}
+    spectra = {}
+    for item in a.load_spectrum:                        # REF=FILE
+        ref, _, file = item.partition('=')
+        if not ref.strip() or not file.strip():
+            raise SystemExit(f'pdn: error: --load-spectrum {item!r}: expected REF=FILE')
+        from ..circuit.supply import read_spectrum
+        try:
+            spectra[ref.strip()] = (file.strip(), *read_spectrum(file.strip()))
+        except (OSError, ValueError) as e:
+            raise SystemExit(f'pdn: error: --load-spectrum {ref.strip()}: {e}')
     say(f'reading {os.path.basename(a.board)}')
     board = load_board(a.board, {a.rail, *ground})
     kw = dict(ground=ground, source=a.source or None, ground_source=a.ground_source or None,
@@ -157,6 +169,10 @@ def run(a):
         loads, assumed = spread(board, a.rail, a.spread_load), True
     if not loads:
         raise SystemExit(f"pdn: no loads: --load REF=AMPS, a {LOAD_FIELD} field on the parts, or --spread-load AMPS")
+    unknown = sorted(set(spectra) - set(loads))
+    if unknown:
+        raise SystemExit(f"pdn: error: --load-spectrum for {', '.join(unknown)}: not a load (give its DC current too, "
+                         f"--load REF=AMPS)")
     rail = Rail(board, a.rail, loads=loads, returns=returns, **kw)
     for line in rail.describe():
         say(line.strip())
@@ -218,6 +234,13 @@ def run(a):
                                          defaulted=bool((i['el'] or {}).get('defaulted')))
                                  for n, i in pdn.parts.items()},
                           vertices=pdn.nv)
+        if spectra:
+            out['pdn']['ripple'] = ripple(pdn, spectra, obs, a.volts * a.ripple)
+            worst = max(out['pdn']['ripple']['loads'].items(), key=lambda kv: kv[1]['pp_V'], default=None)
+            if worst:
+                say(f"ripple on the rail from the current spectra of {', '.join(sorted(spectra))}: "
+                    f"{worst[1]['pp_V'] * 1e3:.3g} mV peak to peak at {worst[0]}, {worst[1]['rms_V'] * 1e3:.3g} mV RMS "
+                    f"({a.volts * a.ripple * 1e3:.3g} mV allowed)")
         out['notes'] = list(dict.fromkeys(out['notes'] + pdn.notes))    # (the PDN model has the rail's too)
         out['seconds'].update(pdn_build=round(t_b, 1), pdn_sweep=round(t_z, 1))
         with open(os.path.join(a.out, 'z.csv'), 'w') as fh:
@@ -236,6 +259,38 @@ def run(a):
         json.dump(out, fh, indent=1)
     say(f'wrote {os.path.join(a.out, "pdn.json")}')
     return out
+
+
+def ripple(pdn, spectra, observe, allowed):
+    """The ripple the loads' current spectra make on the rail where each load meets it: dict(allowed_V, highest_Hz,
+    sources {ref: dict(file, harmonics, fundamental_Hz, largest_A)}, loads {ref: dict(pp_V, rms_V, bound, f, V,
+    worst_f)}). spectra: {ref: (file, f Hz, complex peak amplitudes)}, the current a load draws on top of its DC.
+    Each frequency's voltage at a load is the sum over the spectra of the transfer impedance times the current
+    (V: its peak). It is the rail's voltage at the load's connection to the planes: a load's own pads add the
+    L di/dt of its own current through that connection, which is its pin's voltage and not the rail's (and, for
+    a converter whose input capacitors sit beside it, not the path its edges take: pcbqs.mqs has that loop).
+    pp_V is the waveform's peak to peak over the period when every frequency is a harmonic of the lowest (bound
+    False), else the bound 2 sum |V|; both are of the harmonics the files hold and no more."""
+    from ..circuit.supply import waveform
+    src = [r for r in spectra if pdn.dof(r) is not None]
+    fs = np.array(sorted({float(x) for r in src for x in spectra[r][1]}))
+    zt = pdn.transfer(fs, src, observe, pads=False) if len(fs) else {}
+    loads = {}
+    for m in observe:
+        v = np.zeros(len(fs), complex)
+        for k in src:
+            _, f, amp = spectra[k]
+            at = np.searchsorted(fs, f)
+            v[at] += zt[(m, k)][at] * amp
+        periodic, pp = waveform(fs, v)
+        top = int(np.argmax(np.abs(v))) if len(v) else 0
+        loads[m] = dict(pp_V=pp, rms_V=float(np.sqrt(np.sum(np.abs(v) ** 2) / 2)), bound=not periodic,
+                        f=fs.tolist(), V=np.abs(v).tolist(), worst_f=float(fs[top]) if len(fs) else None)
+    return dict(allowed_V=float(allowed), highest_Hz=float(fs[-1]) if len(fs) else None,
+                sources={r: dict(file=os.path.abspath(spectra[r][0]), harmonics=len(spectra[r][1]),
+                                 fundamental_Hz=float(spectra[r][1][0]), largest_A=float(np.abs(spectra[r][2]).max()))
+                         for r in src},
+                loads=loads)
 
 
 def _plt():

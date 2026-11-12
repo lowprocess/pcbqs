@@ -97,6 +97,10 @@ and `waveforms.png`:
   other, so its own `power_W` is not a loss)
 - `copper` (with `--copper`): `board`, `loss_W`, `fit_error`, `ports` (pad, its net's reference pad, `rms_A`)
 - `fields` (with `--fields`): the largest H and E on each plane, each net's swing and capacitance, the files
+- `supply`: what the parts draw from each supply (a node a DC source is on), for a power-integrity or near-field
+  run: `node`, `net`, `volts`, the node's `capacitors`, and for every other part on it (parts on one footprint
+  together) its `avg_A`, `rms_A` and `file`, `supply-<footprint>.csv` beside the case: 40 harmonics as `f_Hz`,
+  `A` (peak), `deg` ([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next))
 - `stored_energy_change_W`: what went into the capacitors and inductors over the reported period, counted out of
   the parts' powers, the loss and the efficiency
 - `periodic_error`, `energy_drift_relative`, `reltol`, `runs`, `periods`, `history` (every run of the search)
@@ -194,6 +198,15 @@ netlist and prints a model of what it can tell, each part between the two nets i
 A node is the net's name. A board that was read becomes the model's `board`. Left to add, since KiCad does not
 say: which connector is the source and which the load, the drives, and what to measure. `pcbqs.circuit.kicad`
 has the same for a model that exists (`apply`: add parts, or bring their values and nets up to date).
+
+## From a converter on a board
+
+`python -m pcbqs.mqs board.kicad_pcb --converter U702 --vin-volts 5 --vout 3.3 --fsw 1e6 --current 2 --circuit`
+prints the converter the near-field tool selects as a model: its input capacitors, two switches on the
+regulator's footprint (`board.parts`), its inductor, the output capacitors nearby and a load, on the nodes `in`,
+`sw` and `out` with their nets in `board.nets`. A near-field run writes the same as `circuit-model.json`, which
+the window opens from that result. What it assumes is in its description
+([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next)).
 
 ## Example boards
 

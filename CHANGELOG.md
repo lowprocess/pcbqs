@@ -10,6 +10,30 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **From one tool to the next: a converter as a circuit, a circuit's current as a rail's load and as the near
+  field's.** (Review U4, I3.) *A converter as a circuit*: `python -m pcbqs.mqs ... --circuit` prints what the
+  near-field tool selects as a model for `pcbqs.circuit` (`circuit/converter.py`): a supply on the input net,
+  the selected input capacitors, two switches on the regulator's own footprint (a diode where the board has one
+  from ground to the switch node), the inductor, the output capacitors within reach and a load, the duty
+  adjusted until the output is `vout`; what the board cannot say is assumed and listed in its description. A
+  near-field run writes it as `circuit-model.json`. *What a circuit draws* (`circuit/supply.py`): each point of
+  `circuit.json` has `supply`, for each supply every part on it but its capacitors with its average current and
+  40 harmonics, written as `supply-<part>.csv`. *A rail's ripple*: `python -m pcbqs.pdn --load-spectrum
+  REF=FILE` takes such a file as a load's AC current, and the result has the ripple the spectra make where each
+  load meets the planes (`pdn.ripple`: every harmonic's current times the transfer impedance,
+  `RailPDN.transfer`, put back together over the period; peak to peak, RMS, the largest harmonic, against volts
+  x ripple), in the report, the headline and a curve set. It is the rail's voltage: a load's own pads add the
+  L di/dt of its own connection, which is its pin's. *The near field of a simulated current*: `python -m
+  pcbqs.mqs --spectrum FILE` takes the harmonics from such a file in place of the assumed pulse, and the report
+  lists the pulse beside them. *What a result proposes* (`suggest`): a near field's, its converter as a circuit;
+  a circuit's, its supply rail with its loads and spectra for the power integrity, and a part's input current
+  for the near field. On CM5 Minima's U702 (5 V to 3.3 V, 1 MHz, 2 A): the circuit settles at a duty of 0.72
+  and 94 %; its 1.40 A from +5V makes 140 mV peak to peak on the rail at U702 and 33 mV at U405 (250 mV
+  allowed); the assumed pulse and the simulated current agree at 1 MHz (1.12 and 1.03 A) and differ fivefold at
+  the pulse's nulls. The two tools' fields of that current agree within 6 % at 3 mm; at 1 mm the answer is
+  what a part's body is taken to be (218 A/m with the parts' currents 0.5 mm up, 76 in the copper's plane, 48
+  for the copper alone), and at 10 mm the circuit's is 2.7 times larger, having the output loop too
+  (`docs/power-workflow.md`).
 - **A load with no pad on ground returns through the part the board shows (kicad2ems API 2.9).** A rail's load
   that is on the rail and not on ground (a bridge's high-side switch: wpthb's Q1 and Q2) had its return left out
   of the drop, with a note in the result that is easy to miss. The rail now takes the return itself where the

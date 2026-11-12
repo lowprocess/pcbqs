@@ -104,6 +104,23 @@ def pdn_report(res, folder=''):
             ['part', 'role', 'element', 'mount (nH)', 'connection'], rows, [None, None, None, '.2f', None])))
         top = max(p['z'].items(), key=lambda kv: max(kv[1]['mag']))
         out['summary'] += f"; {len(p['z'])} load{'s' if len(p['z']) != 1 else ''}, at most {_ohm(max(top[1]['mag']))} (at {top[0]})"
+        rp = p.get('ripple')
+        if rp and rp.get('loads'):
+            who = ', '.join(f"{r} ({os.path.basename(v['file'])}: {v['harmonics']} harmonics of {_hz(v['fundamental_Hz'])})"
+                            for r, v in sorted(rp['sources'].items()))
+            rows = [[r, l['pp_V'] * 1e3, 'at most' if l.get('bound') else '', l['rms_V'] * 1e3, rp['allowed_V'] * 1e3,
+                     f"{_hz(l['worst_f'])}: {max(l['V']) * 1e3:.3g} mV" if l.get('worst_f') else '']
+                    for r, l in sorted(rp['loads'].items(), key=lambda kv: -kv[1]['pp_V'])]
+            out['sections'].append(dict(
+                title='Ripple from the current spectra',
+                text=(f"The rail's voltage where each load meets the planes, for the currents of {who}: each "
+                      f"harmonic's current times the impedance from there to the load, to {_hz(rp['highest_Hz'])}. "
+                      f"A load's own pads add the L di/dt of its own current, which is its pin's and not the rail's."),
+                table=_table(['load', 'peak to peak (mV)', '', 'RMS (mV)', 'allowed (mV)', 'largest harmonic'], rows,
+                             [None, '.3g', None, '.3g', '.3g', None])))
+            r, l = max(rp['loads'].items(), key=lambda kv: kv[1]['pp_V'])
+            out['summary'] += (f"; ripple {l['pp_V'] * 1e3:.3g} mV peak to peak at {r} from the current spectra"
+                               + (f", over the {rp['allowed_V'] * 1e3:.3g} mV allowed" if l['pp_V'] > rp['allowed_V'] else ''))
     s = res.get('seconds', {})
     out['footer'] = (f"{res['vertices']['power']:,} + {res['vertices']['ground']:,} DC vertices; "
                      + ', '.join(f"{k} {v} s" for k, v in s.items()))
@@ -122,7 +139,14 @@ def pdn_curves(res, folder=''):
         cs['curves'].append(dict(name=f"{ref}, bare planes", x=f, y=z['bare'], role='reference', unit='Ω'))
     for t in sorted({t for t in [p.get('target'), *[z.get('target') for z in p['z'].values()]] if t}):
         cs['curves'].append(dict(name=f"target {_ohm(t)}", x=[f[0], f[-1]], y=[t, t], role='limit', unit='Ω'))
-    return [cs]
+    sets = [cs]
+    rp = p.get('ripple')
+    if rp and rp.get('loads'):                                  # what the loads' current spectra make of it
+        sets.append(dict(title='Ripple on the rail by harmonic', xlabel='frequency (Hz)', ylabel='peak (mV)',
+                         logx=True, logy=True, info=cs['info'],
+                         curves=[dict(name=r, x=l['f'], y=[v * 1e3 for v in l['V']], role='data', unit='mV')
+                                 for r, l in rp['loads'].items()]))
+    return sets
 
 
 # ---- near field ----------------------------------------------------------------------------------------
@@ -139,13 +163,22 @@ def mqs_report(res, folder=''):
     n = len(res['frequencies_Hz'])
     rows = [[f, a, r * 1e3, l * 1e9, max(hp)] for f, a, r, l, hp in zip(
         res['frequencies_Hz'], res['harmonic_peak_A'], res['copper_R_ohm'], res['copper_L_H'], res['peak_H_Am'])]
+    columns = ['frequency (Hz)', 'peak (A)', 'copper R (mΩ)', 'copper L (nH)', 'peak H (A/m)']
+    formats = ['g', '.4g', '.4g', '.4g', '.4g']
+    text = f"Input capacitors: {', '.join(s['capacitors'])}; {res['triangles']:,} triangles."
+    sp = res.get('spectrum')
+    if sp:                                                      # a circuit's current, beside the pulse of the settings
+        rows = [[*row[:2], a, *row[2:]] for row, a in zip(rows, sp['assumed_peak_A'])]
+        columns.insert(2, 'assumed pulse (A)')
+        formats.insert(2, '.4g')
+        text += (f" The input current's harmonics are those of {os.path.basename(sp['file'])} (a circuit's run), not "
+                 f"the rectangular pulse of the settings, which is beside them.")
     return dict(
         title=f"{s['converter']}: {s['vin']} / {s['ground']}",
-        summary=f"Near field, {s['converter']} on {s['vin']}: {n} harmonic{'s' if n != 1 else ''}",
-        sections=[dict(title='', text=f"Input capacitors: {', '.join(s['capacitors'])}; {res['triangles']:,} triangles."),
-                  dict(title='Harmonics', table=_table(
-                      ['frequency (Hz)', 'peak (A)', 'copper R (mΩ)', 'copper L (nH)', 'peak H (A/m)'], rows,
-                      ['g', '.4g', '.4g', '.4g', '.4g'])),
+        summary=(f"Near field, {s['converter']} on {s['vin']}: {n} harmonic{'s' if n != 1 else ''}"
+                 + (" of a circuit's input current" if sp else '')),
+        sections=[dict(title='', text=text),
+                  dict(title='Harmonics', table=_table(columns, rows, formats)),
                   dict(title='Model assumptions', notes=list(res.get('notes') or []))],
         notes=[], images=[], mesh='mqs',
         footer=', '.join(f"{k} {v:g} s" for k, v in (res.get('seconds') or {}).items()
@@ -163,14 +196,68 @@ def mqs_curves(res, folder=''):
 
 def mqs_suggest(res, folder=''):
     """The converter's input rail, for the power-integrity analysis: its net, its ground and its voltage; the
-    source and the loads are not the near field's to know."""
+    source and the loads are not the near field's to know. And the converter as a circuit (circuit/converter.py's
+    model, which the run wrote), for the circuit analysis: with the board's copper."""
     s = res['selection']
     volts = (res.get('settings') or {}).get('vin_volts') or ''
-    return [dict(to='pdn', label='Copy the input rail to Power integrity',
-                 values=dict(rail=s['vin'], ground=s['ground'], ground_source=s['converter'], volts=volts, load=''),
-                 need=[] if volts else ['volts'],
-                 note='The input rail is copied. Set its source' + ('' if volts else ', its voltage')
-                      + ' and its DC loads before Run.')]
+    out = [dict(to='pdn', label='Copy the input rail to Power integrity',
+                values=dict(rail=s['vin'], ground=s['ground'], ground_source=s['converter'], volts=volts, load=''),
+                need=[] if volts else ['volts'],
+                note='The input rail is copied. Set its source' + ('' if volts else ', its voltage')
+                     + ' and its DC loads before Run.')]
+    model = os.path.join(folder or '', res.get('circuit_model') or '')
+    if res.get('circuit_model') and os.path.isfile(model):
+        out.append(dict(to='circuit', label=f"Open {s['converter']} as a circuit",
+                        values=dict(model=os.path.abspath(model), copper=True), need=[],
+                        note=f"{s['converter']} as a circuit: its capacitors and inductor from the board, its "
+                             f"switches, supply and load assumed. Check its parameters (vin, vout, iout, fsw) "
+                             f"before Run."))
+    return out
+
+
+def circuit_suggest(res, folder='', pads=None):
+    """What a general circuit's run draws from its supply (a case's 'supply': circuit/supply.py), for the others:
+    the rail with its DC loads and their current spectra for the power-integrity analysis, and a part's input
+    current for the near field. Of the point that draws most. pads: {footprint: the nets of its pads} of the
+    model's board, when known: only parts on it are proposed."""
+    cases = [c for c in res.get('cases') or [] if c.get('supply')]
+    if res.get('format') != 2 or not cases:
+        return []
+    case = max(cases, key=lambda c: c.get('source_power_W') or 0.0)
+    here = case.get('folder') if os.path.isdir(str(case.get('folder') or '')) else os.path.join(folder or '', case['name'])
+    of = f" (point {case['name']})" if len(res['cases']) > 1 else ''
+    ground = next((g for g in ('GND', 'gnd', '0', 'GNDPWR', 'PGND') if any(g in ns for ns in (pads or {}).values())),
+                  'GND')                                        # (as circuit/copper.py finds the board's ground)
+    try:
+        with open(os.path.join(here, 'model.json'), encoding='utf-8') as fh:
+            ground = ((json.load(fh).get('board') or {}).get('nets') or {}).get('0', ground)
+    except (OSError, ValueError):
+        pass
+    out = []
+    for row in case['supply']:
+        loads = [l for l in row['loads'] if os.path.isfile(os.path.join(here, l['file']))
+                 and (pads is None or row['net'] in pads.get(l['footprint'], ()))]
+        if not loads:
+            continue
+        file = lambda l: os.path.abspath(os.path.join(here, l['file']))
+        out.append(dict(
+            to='pdn', label=f"Copy the rail {row['net']} and what is drawn from it to Power integrity",
+            values=dict(rail=row['net'], ground=ground, volts=row['volts'],
+                        load='\n'.join(f"{l['footprint']}={l['avg_A']:.4g}" for l in loads),
+                        load_spectrum='\n'.join(f"{l['footprint']}={file(l)}" for l in loads)),
+            need=[], note=f"The rail {row['net']} with what the circuit's parts draw from it{of}: their average as "
+                          f"DC loads, their harmonics as current spectra. Set its source before Run."))
+        for l in sorted(loads, key=lambda l: -l['rms_A'])[:2]:
+            if pads is not None and ground not in pads.get(l['footprint'], ()):
+                continue                                        # (the near field's source: a part on both)
+            caps = [c for c in row.get('capacitors') or [] if pads is None or {row['net'], ground} <= set(pads.get(c, ()))]
+            out.append(dict(
+                to='mqs', label=f"Copy {l['footprint']}'s input current to Near field",
+                values=dict(converter=l['footprint'], vin=row['net'], ground=ground, capacitors=','.join(caps),
+                            spectrum=file(l)),
+                need=[], note=f"{l['footprint']} on {row['net']} with the input current the circuit gave it{of}, in "
+                              f"place of the assumed pulse."))
+    return out
 
 
 # ---- temperature ---------------------------------------------------------------------------------------

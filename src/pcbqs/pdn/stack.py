@@ -352,6 +352,24 @@ class RailPDN:
                 out[n][i] = X[self.dof(n), k] + extra
         return out
 
+    def transfer(self, f, sources, observe, pads=True):
+        """{(observed, source): Z(f) complex}: the voltage between one part's pads for a current drawn at
+        another's, everything attached (a part's own: what z gives it). pads False: where each part meets the
+        planes, without its own pads' connection to them (the rail's voltage there, not the part's pin's)."""
+        f = np.atleast_1d(np.asarray(f, float))
+        out = {(m, k): np.zeros(len(f), complex) for m in observe for k in sources}
+        E = np.zeros((self.n, len(sources)))
+        for j, k in enumerate(sources):
+            E[self.dof(k), j] = 1.0
+        for i, fi in enumerate(f):
+            X = splu(self.matrix(fi)).solve(E.astype(complex))
+            for j, k in enumerate(sources):
+                for m in observe:
+                    info = self.parts[m]
+                    own = 1j * 2 * np.pi * fi * (info['mount'] if pads and m == k and info['rail'].vias else 0.0)
+                    out[(m, k)][i] = X[self.dof(m), j] + own
+        return out
+
     def describe(self):
         lines = [f"{c.rail_layer} over {c.ground_layer}: {c.d:.3g} mm, er {c.er:.3g}, {c.geom.area:.0f} mm2"
                  for c in self.cavities]
