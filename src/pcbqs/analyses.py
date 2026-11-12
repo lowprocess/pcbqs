@@ -1,8 +1,9 @@
 """
 pcbqs's tools as kicad2ems analysis plugins (the 'kicad2ems.analyses' entry points of pyproject.toml): power
-integrity, near field, circuit and thermal. kicad2ems lists them, a front end builds each one's settings from its
-options table, runs it as its command and shows what its result folder holds (reports.py); the circuit examples
-come as configs beside their models (circuit/examples/*.toml).
+integrity, near field, circuit and thermal. kicad2ems lists them as engines of the questions they answer (a
+rail's drop and its impedance, a converter's near field, a circuit, the temperature: kicad2ems.study), a front end
+builds each one's settings from its options table, runs it as its command and shows what its result folder holds
+(reports.py); the circuit examples come as configs beside their models (circuit/examples/*.toml).
 
 Only this module imports kicad2ems; the tools themselves run without it.
 
@@ -16,7 +17,7 @@ import sys
 
 from kicad2ems.api.analysis import Analysis
 
-API = (2, 5)
+API = (2, 6)
 
 
 def argv(module, options, values, board, out):
@@ -46,6 +47,7 @@ def argv(module, options, values, board, out):
 class _Tool(Analysis):
     """One of pcbqs's command-line tools: its options table (pcbqs._cli's form), its command, its results."""
     api = API
+    engine = 'pcbqs'
     module = ''
 
     def check(self):
@@ -83,6 +85,10 @@ class PowerIntegrity(_Tool):
     name, label, tool, module, order = 'pdn', 'Power integrity', 'pcbqs.pdn', 'pcbqs.pdn', 20
     about = "a rail's DC drop and the impedance its loads see"
     result = 'pdn.json'
+    provides = ('dc', 'pdn')                # one run: the drop alone when the impedance is not asked for
+
+    def for_questions(self, values, asked):
+        return values if 'pdn' in asked else dict(values, no_pdn=True)
 
     def table(self):
         from .pdn.cli import OPTIONS
@@ -107,6 +113,7 @@ class NearField(_Tool):
     previewed = True
     finds = 'converters'
     result, preview_result = 'mqs.json', 'mqs-preview.json'
+    provides = ('nearfield',)
 
     def table(self):
         from .mqs_cli import OPTIONS
@@ -180,6 +187,8 @@ class Circuit(_Tool):
     about = ("ngspice runs of a circuit model: any circuit of parts, nodes and drives, settled, with its targets "
              "met; with the board's copper between the parts' pads when asked")
     result = 'circuit.json'
+    provides = ('circuit',)
+    fields = 'fields'                                   # the option that adds the H and E fields over the board
     paths = ('model',)
     page = True                                         # the GUI's schematic editor
     env = dict(OPENBLAS_NUM_THREADS='8')
@@ -237,7 +246,18 @@ class Thermal(_Tool):
     about = ("the board's steady temperature from its parts' losses: typed (REF=W), or the latest circuit run's "
              "when none are; each part's temperature, and each layer's map in the viewer")
     result = 'thermal.json'
+    provides = ('thermal',)
     paths = ('circuit',)
+
+    def owns(self, folder, preview=False):
+        """A thermal.json of pcbqs's: another engine's (Elmer's, of the same name) says whose it is."""
+        if preview or not super().owns(folder):
+            return False
+        try:
+            with open(os.path.join(folder, self.result), encoding='utf-8') as fh:
+                return json.load(fh).get('tool', self.tool) == self.tool
+        except (OSError, ValueError, AttributeError):
+            return False
 
     def table(self):
         from .thermal.__main__ import OPTIONS

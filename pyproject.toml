@@ -20,7 +20,7 @@ core = ["pybind11>=2.10"]
 gpu-cuda12 = ["cupy-cuda12x>=14"]
 gpu-cuda13 = ["cupy-cuda13x>=14"]
 gpu-rocm7 = ["cupy-rocm-7-0>=14"]
-kicad2ems = ["kicad2ems>=261112"]      # the board importer, and the analysis plugins below (kicad2ems.api 2.5)
+kicad2ems = ["kicad2ems>=261112.post1"]    # the board importer, and the analysis plugins below (kicad2ems.api 2.6)
 test = ["pytest>=7"]
 
 # the tools as kicad2ems analyses: its --check, its configs' [analysis] tables and kicad2ems-gui's Study list them

@@ -28,6 +28,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Changed
+- **The tools are engines of kicad2ems's questions (API 2.6).** The rail tool answers a rail's drop and its
+  impedance from one run (the drop alone, `--no-pdn`, when only it is asked); near field, circuit and thermal
+  one question each. Lists show them as "pcbqs". The circuit says its `fields` option adds field dumps; a
+  `thermal.json` that names another tool (Elmer's) is not taken for pcbqs's. Needs kicad2ems 261112.post1.
 - kicad2ems may be imported in `_cli.py` and `analyses.py` only, and nothing in pcbqs imports `analyses.py`
   (`tests/test_standalone.py`): the tools still run without kicad2ems.
 

@@ -289,3 +289,27 @@ def test_circuit_report_and_waveforms(tmp_path):
     old = dict(format=1, complete=True, cases=[dict(frequency_Hz=9e4, load_power_W=10.0, input_power_W=10.6,
                                                     efficiency=0.94, phase_deg=120.0, primary_rms_A=1.2)])
     assert len(cells(R.circuit_report(old))['Operating points'][1]) == 1 and R.circuit_curves(old) == []
+
+
+def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):
+    """kicad2ems.study: the rail tool answers the drop and the impedance from one run (the drop alone when only it
+    is asked), the others one question each; the circuit can add fields; a thermal.json of another tool's is not
+    pcbqs's."""
+    import json
+    from kicad2ems import study
+    from pcbqs import analyses as A
+    pdn, mqs, circuit, thermal = A.PowerIntegrity(), A.NearField(), A.Circuit(), A.Thermal()
+    assert [a.provides for a in (pdn, mqs, circuit, thermal)] == [('dc', 'pdn'), ('nearfield',), ('circuit',), ('thermal',)]
+    assert all(q in study.QUESTIONS for a in (pdn, mqs, circuit, thermal) for q in a.provides)
+    assert {a.engine for a in (pdn, mqs, circuit, thermal)} == {'pcbqs'} and pdn.api == (2, 6)
+    assert circuit.fields == 'fields' and any(o['key'] == 'fields' and o['kind'] == 'bool' for o in circuit.options())
+    assert pdn.for_questions(dict(rail='P'), ('dc',)) == dict(rail='P', no_pdn=True)
+    assert pdn.for_questions(dict(rail='P'), ('dc', 'pdn')) == dict(rail='P')
+    argv = pdn.command(pdn.for_questions(dict(rail='P', load='U1=1'), ('dc',)), __file__, str(tmp_path / 'o'))
+    assert '--no-pdn' in argv
+    (tmp_path / 'thermal.json').write_text(json.dumps(dict(method='grid', hottest_C=40.0)))
+    assert thermal.owns(str(tmp_path)) and not thermal.owns(str(tmp_path), preview=True)
+    (tmp_path / 'thermal.json').write_text(json.dumps(dict(tool='kicad2ems_fem.elmer.thermal', T_max=40.0)))
+    assert not thermal.owns(str(tmp_path))
+    (tmp_path / 'thermal.json').write_text('{')
+    assert not thermal.owns(str(tmp_path))
