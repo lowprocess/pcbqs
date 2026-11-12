@@ -80,6 +80,15 @@ class _Tool(Analysis):
             raise ValueError('choose a board first' if not board else f'{board}: no such board')
         return board
 
+    def _read(self, folder):
+        """Its result file's JSON, or {} (not there, not readable)."""
+        try:
+            with open(os.path.join(folder or '', self.result), encoding='utf-8') as fh:
+                d = json.load(fh)
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
 
 class PowerIntegrity(_Tool):
     name, label, tool, module, order = 'pdn', 'Power integrity', 'pcbqs.pdn', 'pcbqs.pdn', 20
@@ -89,6 +98,19 @@ class PowerIntegrity(_Tool):
 
     def for_questions(self, values, asked):
         return values if 'pdn' in asked else dict(values, no_pdn=True)
+
+    def figures(self, folder):
+        """Each load's drop in the rail's own copper (what an engine of that copper alone gives too), then this
+        tool's own: the drop with the ground's rise, and the loss of both."""
+        r = self._read(folder)
+        loads = {ref: l for ref, l in (r.get('loads') or {}).items() if isinstance(l, dict)}
+        out = [dict(name=f"drop {ref}", value=l['power_drop'] * 1e3, unit='mV') for ref, l in loads.items()
+               if isinstance(l.get('power_drop'), (int, float))]
+        out += [dict(name=f"drop with return {ref}", value=l['drop'] * 1e3, unit='mV') for ref, l in loads.items()
+                if isinstance(l.get('drop'), (int, float))]
+        if isinstance(r.get('loss_W'), (int, float)):
+            out.append(dict(name='loss with return', value=r['loss_W'] * 1e3, unit='mW'))
+        return out
 
     def table(self):
         from .pdn.cli import OPTIONS
@@ -258,6 +280,17 @@ class Thermal(_Tool):
                 return json.load(fh).get('tool', self.tool) == self.tool
         except (OSError, ValueError, AttributeError):
             return False
+
+    def figures(self, folder):
+        """The copper's hottest point and the board under each part (the grid's, where both solvers ran)."""
+        from . import reports
+        try:
+            ms = reports._methods(self._read(folder))
+            m = ms.get('grid') or next(iter(ms.values()))
+            return [dict(name='hottest', value=float(m['hottest_C']), unit='C')] + \
+                   [dict(name=ref, value=float(p['board_C']), unit='C') for ref, p in m['parts'].items()]
+        except (KeyError, TypeError, ValueError, StopIteration):
+            return []
 
     def table(self):
         from .thermal.__main__ import OPTIONS

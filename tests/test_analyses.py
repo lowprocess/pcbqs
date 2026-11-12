@@ -309,6 +309,17 @@ def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):
     assert '--no-pdn' in argv
     (tmp_path / 'thermal.json').write_text(json.dumps(dict(method='grid', hottest_C=40.0)))
     assert thermal.owns(str(tmp_path)) and not thermal.owns(str(tmp_path), preview=True)
+    # the figures engines of one question name alike (kicad2ems.study.compare): the rail's own copper, the
+    # hottest point and the board under each part; this tool's own after them
+    assert thermal.figures(str(tmp_path)) == [] and pdn.figures(str(tmp_path)) == []
+    (tmp_path / 'thermal.json').write_text(json.dumps(dict(
+        grid=dict(hottest_C=77.4, parts=dict(D1=dict(power_W=0.5, board_C=76.2, part_C=80.0))),
+        mesh=dict(hottest_C=78.0, parts=dict(D1=dict(power_W=0.5, board_C=76.9, part_C=80.5))))))
+    assert thermal.figures(str(tmp_path)) == [dict(name='hottest', value=77.4, unit='C'), dict(name='D1', value=76.2, unit='C')]
+    (tmp_path / 'pdn.json').write_text(json.dumps(dict(loss_W=0.002159, loads=dict(
+        C2=dict(I=2.0, drop=0.0010807, power_drop=5.79e-05, ground_rise=0.0010228)))))
+    assert [(f['name'], round(f['value'], 4), f['unit']) for f in pdn.figures(str(tmp_path))] == \
+        [('drop C2', 0.0579, 'mV'), ('drop with return C2', 1.0807, 'mV'), ('loss with return', 2.159, 'mW')]
     (tmp_path / 'thermal.json').write_text(json.dumps(dict(tool='kicad2ems_fem.elmer.thermal', T_max=40.0)))
     assert not thermal.owns(str(tmp_path))
     (tmp_path / 'thermal.json').write_text('{')

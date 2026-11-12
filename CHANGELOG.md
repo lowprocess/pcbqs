@@ -25,6 +25,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   from 0.05 to 1 GHz it is within 0.008 rms |ΔS| up to 200 MHz and 0.03 up to 1 GHz (0.010 with `--thickness`
   and a cell at the trace's width); with `rf_diffvia`'s return vias taken out, the pair's common mode falls to
   −11.0 dB at 50 MHz, gfdtd's −11.1 dB, which the line model does not see.
+- **The figures of an answer, by name** (`figures(folder)` of the rail and thermal plugins, kicad2ems API 2.8):
+  each load's drop in the rail's own copper, and the hottest point and the board under each part, named as any
+  other engine of that question names them, so kicad2ems lays pcbqs's answer beside Elmer's; the drop with the
+  ground's rise and the loss of both are the rail tool's own figures.
 - **Several drives in one solve.** `MQS.solve(freqs, amps=[{...}, ...])` gives a Result per drive with each
   frequency's system factored once for them all (the dense solves, with and without the charge).
 - **kicad2ems analysis plugins.** `pcbqs/analyses.py` registers power integrity, near field, circuit and thermal

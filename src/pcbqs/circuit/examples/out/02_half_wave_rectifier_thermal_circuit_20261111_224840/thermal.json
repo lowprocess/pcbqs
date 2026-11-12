@@ -1,0 +1,49 @@
+{
+ "method": "grid",
+ "size_mm": 0.5,
+ "unknowns": 5762,
+ "seconds": {
+  "build": 0.0178,
+  "solve": 0.0328
+ },
+ "ambient_C": 25.0,
+ "film_W_m2K": [
+  10.0,
+  10.0
+ ],
+ "edge_film_W_m2K": 10.0,
+ "heat_in_W": 0.1299544434933917,
+ "heat_out_W": 0.1299544434932654,
+ "heat_out_edges_W": 0.012822668452327702,
+ "hottest_C": 36.398590775247484,
+ "layers": {
+  "B.Cu": {
+   "hottest_C": 33.71886804652911,
+   "mean_C": 32.99268911755248
+  },
+  "F.Cu": {
+   "hottest_C": 36.398590775247484,
+   "mean_C": 33.390497927335836
+  }
+ },
+ "parts": {
+  "D1": {
+   "power_W": 0.120907,
+   "board_C": 36.10807580761407,
+   "part_C": 36.10807580761407
+  },
+  "C1": {
+   "power_W": 0.009047443493391701,
+   "board_C": 33.667643533048185,
+   "part_C": 33.667643533048185
+  }
+ },
+ "notes": [
+  "V1: a source, not on the board",
+  "R1: a load, not on the board"
+ ],
+ "board": "/home/bt/projects/kicad2ems-project/pcbqs/src/pcbqs/circuit/examples/02_half_wave_rectifier.kicad_pcb",
+ "circuit": "/home/bt/projects/kicad2ems-project/circuit",
+ "case": "run",
+ "figure": "thermal.png"
+}

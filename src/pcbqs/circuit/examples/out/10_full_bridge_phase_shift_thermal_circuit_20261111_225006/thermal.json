@@ -1,0 +1,76 @@
+{
+ "method": "grid",
+ "size_mm": 0.5,
+ "unknowns": 17608,
+ "seconds": {
+  "build": 0.0442,
+  "solve": 0.0585
+ },
+ "ambient_C": 25.0,
+ "film_W_m2K": [
+  10.0,
+  10.0
+ ],
+ "edge_film_W_m2K": 10.0,
+ "heat_in_W": 0.15709475270028167,
+ "heat_out_W": 0.1570947527001126,
+ "heat_out_edges_W": 0.00933384118375032,
+ "hottest_C": 30.16982249187767,
+ "layers": {
+  "B.Cu": {
+   "hottest_C": 29.22635845156652,
+   "mean_C": 28.30724833285147
+  },
+  "F.Cu": {
+   "hottest_C": 30.16982249187767,
+   "mean_C": 28.45859735791249
+  }
+ },
+ "parts": {
+  "C1": {
+   "power_W": 0.0033918862629490104,
+   "board_C": 28.47827019159485,
+   "part_C": 28.47827019159485
+  },
+  "Q1": {
+   "power_W": 0.04037817,
+   "board_C": 29.76136805914212,
+   "part_C": 29.76136805914212
+  },
+  "Q2": {
+   "power_W": 0.04037819,
+   "board_C": 29.995748230379878,
+   "part_C": 29.995748230379878
+  },
+  "Q3": {
+   "power_W": 0.01892354,
+   "board_C": 28.73812592646408,
+   "part_C": 28.73812592646408
+  },
+  "Q4": {
+   "power_W": 0.01892355,
+   "board_C": 28.727665990557355,
+   "part_C": 28.727665990557355
+  },
+  "C2": {
+   "power_W": 0.011246773408543924,
+   "board_C": 29.462318624900707,
+   "part_C": 29.462318624900707
+  },
+  "C3": {
+   "power_W": 0.023852643028788742,
+   "board_C": 28.326174394907053,
+   "part_C": 28.326174394907053
+  }
+ },
+ "notes": [
+  "V1: a source, not on the board",
+  "L1: at connector J2, not on the board",
+  "L2: at connector J3, not on the board",
+  "R1: a load, not on the board"
+ ],
+ "board": "/home/bt/projects/kicad2ems-project/pcbqs/src/pcbqs/circuit/examples/10_full_bridge_phase_shift.kicad_pcb",
+ "circuit": "/home/bt/projects/kicad2ems-project/circuit",
+ "case": "run",
+ "figure": "thermal.png"
+}
