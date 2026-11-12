@@ -432,3 +432,29 @@ def test_a_load_with_no_pad_on_ground(monkeypatch, tmp_path):
         monkeypatch.undo()
         assert A.PowerIntegrity().missing(dict(rail='VIN', load='Q1=0.67\nQ2=0.67'), wpthb) == []
         assert [A._return_of(q, {}, wpthb) for q in ('Q1', 'Q2')] == ['Q3', 'Q4']
+
+
+def test_a_study_s_rails_are_a_run_each(tmp_path):
+    """kicad2ems 2.10: the rail tool says a study may hold several rails (`several`), and a config's
+    [[analysis.pdn]] tables are a run each of `kicad2ems study`, each rail's result in a folder named by it."""
+    import re
+    from kicad2ems.api import API_VERSION
+    if API_VERSION < (2, 10):
+        pytest.skip('kicad2ems before 2.10 reads one table of an analysis')
+    from kicad2ems import study
+    from test_pdn_rail import board
+    assert (A.PowerIntegrity.several, A.NearField.several, A.Circuit.several, A.Thermal.several) == ('rail', 'converter', '', '')
+    (tmp_path / 'b_board.json').write_text(json.dumps(board()))
+    cfg = tmp_path / 'c.toml'
+    cfg.write_text('board = "b_board.json"\nout = "out"\n\n[study]\nrun = ["dc"]\n\n'
+                   '[[analysis.pdn]]\nrail = "P"\nvolts = 3.3\nload = ["U1=2"]\ndmax = 1\n\n'
+                   '[[analysis.pdn]]\nrail = "PF"\nvolts = 3.3\nsource = "FB1"\nground_source = "U3"\nload = ["U2=0.1"]\ndmax = 1\n')
+    said = []
+    assert study.run(str(cfg), echo=said.append) == 0
+    assert '  Rail drop: pcbqs (pcbqs.pdn), 2 runs: P, PF' in said
+    made = sorted((tmp_path / 'out').iterdir(), key=lambda d: re.sub(r'_\d{8}_\d{6}$', '', d.name))
+    assert [re.sub(r'_\d{8}_\d{6}$', '', d.name) for d in made] == ['b_pdn_P', 'b_pdn_PF']
+    p, pf = (json.loads((d / 'pdn.json').read_text()) for d in made)
+    assert (p['rail'], list(p['loads']), 'pdn' in p) == ('P', ['U1'], False)          # the drop alone was asked
+    assert (pf['rail'], list(pf['loads']), pf['source']) == ('PF', ['U2'], ['FB1'])
+    assert 0 < pf['loads']['U2']['drop'] < p['loads']['U1']['drop']

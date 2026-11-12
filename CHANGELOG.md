@@ -10,6 +10,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **Several rails, or converters, in one study (kicad2ems API 2.10).** The power-integrity and near-field
+  plugins say that a study may hold several settings of them (`several`: `'rail'`, `'converter'`): a config's
+  `[[analysis.pdn]]` tables are a run each of `kicad2ems study`, into folders named by the rail.
 - **From one tool to the next: a converter as a circuit, a circuit's current as a rail's load and as the near
   field's.** (Review U4, I3.) *A converter as a circuit*: `python -m pcbqs.mqs ... --circuit` prints what the
   near-field tool selects as a model for `pcbqs.circuit` (`circuit/converter.py`): a supply on the input net,

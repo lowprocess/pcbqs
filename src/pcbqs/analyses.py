@@ -130,6 +130,7 @@ class PowerIntegrity(_Tool):
     about = "a rail's DC drop and the impedance its loads see"
     result = 'pdn.json'
     provides = ('dc', 'pdn')                # one run: the drop alone when the impedance is not asked for
+    several = 'rail'                        # a study may hold several rails, a run each (kicad2ems 2.10)
 
     def for_questions(self, values, asked):
         return values if 'pdn' in asked else dict(values, no_pdn=True)
@@ -185,6 +186,7 @@ class NearField(_Tool):
     finds = 'converters'
     result, preview_result = 'mqs.json', 'mqs-preview.json'
     provides = ('nearfield',)
+    several = 'converter'                   # and several converters
 
     def table(self):
         from .mqs_cli import OPTIONS
