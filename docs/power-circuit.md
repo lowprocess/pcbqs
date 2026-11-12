@@ -171,6 +171,50 @@ the run saved them). A point's fields open in the Viewer from its folder.
 Results include every netlist, model, adaptive-grid power measures, compact
 waveforms, matching conditions, convergence history and field assumptions.
 
+<a id="slow-mode"></a>
+## A slow mode of the input filter
+
+The inductors in series between the supply's rails ring against the rails'
+capacitors: on wpthb, L3 against C19 to C24 at 10.4 kHz
+(`power_bridge.slow_mode`), eight to eleven switching cycles a period and
+lightly damped. Anything that disturbs the input current (a start, a phase
+step of the power search) leaves it ringing for a hundred cycles, long after
+the windings, the bus and the load repeat from cycle to cycle, which is what
+the run waits for. Averaged over one switching cycle, the input power is then
+off by wherever the ringing happens to be, and the efficiency with it.
+
+The powers (input, load, gate drive, each part's) are therefore averaged over
+a whole number of switching cycles that is a whole number of the slow mode's
+periods to within 6 % of one (`power_bridge.average_cycles`: 9 cycles at
+90 kHz, 10 at 110 kHz on wpthb); currents' RMS and peaks and the bus ripple
+stay those of the last cycle. A run is at least that long. With the mode
+excited on purpose (wpthb's circuit, 30 W, the filter started at 0.5 A where
+1.33 A flows, 16-cycle runs), against runs of 1,500 cycles in which it has
+died out:
+
+| | 90 kHz | 110 kHz |
+|---|---|---|
+| settled reference | 93.594 % | 94.733 % |
+| one cycle (before) | 94.284 % (+0.69 points) | 94.627 % (−0.11) |
+| whole slow periods | 93.551 % (−0.04) | 94.683 % (−0.05) |
+
+in the same 3 s a case; what is left is the power search's own tolerance.
+
+The last run of a case starts the ringing again by itself: it continues from
+the search's end state at a tighter tolerance, and what a restart cannot carry
+over (the switches' own charge) is a small step for the filter. On the board
+with its copper (90 kHz, 10 W, runs of 400 cycles so that the search ends
+settled: 10.732 W of input power by either average), the final run's input
+power per switching cycle swings between 10.66 and 10.78 W over the mode's 8.7
+cycles. Its last cycle, which was the answer, reads 10.774 W (+0.40 %); the
+average over 9 cycles 10.723 W (−0.08 %, and the two tolerances differ by up
+to 0.04 %). With the default 32-cycle runs the answers are the same two, 10.774
+and 10.723 W: the regression case's stored input power and efficiency moved
+with this (92.69 to 93.13 %).
+Each `case.json` has `averaged_cycles` and `slow_mode_Hz`, and the report
+says so. `transient.slow_average: false` in a model gives the one-cycle
+average back.
+
 ## A value for a group of parts
 
 `--override GROUP.KEY=VALUE` (repeatable) sets a value for every part of a
@@ -331,10 +375,11 @@ Measured on wpthb (24 V, 24-port copper model, 5 and 30 W at 90 and 110 kHz,
 | L3 with a damped polymer on VHB | 127 s → 55 s | ≤ 0.02%; input power ≤ 0.46% |
 | L3 replaced by 10 mΩ | 133 s → 59 s | ≤ 0.05% |
 
-Input power is averaged over the last switching cycle, so a slow input-filter
-mode that has not fully decayed biases it in both versions (supply-current
-cycle-to-cycle change 0.15–0.6%); the periodicity check excludes supply
-current. Options alone on one fixed wpthb netlist (`tools/benchmark_circuit_options.py`):
+In those runs the input power was averaged over the last switching cycle, so a
+slow input-filter mode that had not fully decayed biased it in both versions
+(supply-current cycle-to-cycle change 0.15–0.6%). The powers are now averaged
+over whole periods of that mode ([below](#slow-mode)). Options alone on one
+fixed wpthb netlist (`tools/benchmark_circuit_options.py`):
 
 | `.options` | Time | Power/current change | VHB spike p-p change |
 |---|---|---|---|

@@ -481,3 +481,55 @@ def test_the_bridge_tool_describes_its_options(tmp_path, capsys):
     from pcbqs.circuit import __main__ as general
     assert general.main(['--describe', '--json']) == 0
     assert [o['key'] for o in json.loads(capsys.readouterr().out)['options']] == ['copper', 'fields', 'board', 'set', 'jobs']
+
+
+def test_the_supply_filter_s_slow_mode_and_the_cycles_averaged_over():
+    """slow_mode: the series inductors between the supply's rails against the rails' capacitors. average_cycles:
+    a whole number of switching cycles that is a whole number of that mode's periods, nearly; one without a slow
+    mode, with one faster than half the switching frequency, or when the model says not to."""
+    from pcbqs import power_bridge, power_circuit
+    w, sm = power_circuit.template('wpthb'), power_circuit.template('simple')
+    assert power_bridge.slow_mode(w) == pytest.approx(10378, rel=1e-3)        # L3 5.6 uH against C19 to C24, 42 uF
+    assert power_bridge.slow_mode(sm) == pytest.approx(1 / (2 * np.pi * np.sqrt(5.6e-6 * 47e-6)), rel=1e-9)
+    assert [power_bridge.average_cycles(w, f) for f in (50e3, 90e3, 100e3, 110e3, 150e3)] == [5, 9, 10, 10, 14]
+    for f in (50e3, 90e3, 110e3, 150e3, 400e3):
+        n, period = power_bridge.average_cycles(w, f), f / power_bridge.slow_mode(w)
+        assert abs(n / period - round(n / period)) <= power_bridge.SLOW_FIT and n >= int(period)
+    assert power_bridge.average_cycles(w, 15e3) == 1                          # the mode is not slow there
+    off = dict(w, transient=dict(w['transient'], slow_average=False))
+    assert power_bridge.average_cycles(off, 90e3) == 1
+    bare = dict(sm, components=[p for p in sm['components'] if p['type'] != 'inductor'])
+    assert power_bridge.slow_mode(bare) is None and power_bridge.average_cycles(bare, 90e3) == 1
+    nocap = dict(sm, components=[p for p in sm['components'] if p['ref'] != 'C1'])
+    assert power_bridge.slow_mode(nocap) is None                              # nothing for the inductor to ring with
+    two = copy.deepcopy(sm)                                                   # an inductor in the input lead too
+    next(p for p in two['components'] if p['ref'] == 'R1').update(type='inductor', value=2.2e-6)
+    lc = sorted(1 / (2 * np.pi * np.sqrt(l * c)) for l, c in ((5.6e-6, 47e-6), (2.2e-6, 47e-6)))
+    assert lc[0] * 0.5 < power_bridge.slow_mode(two) < lc[0]                  # two coupled sections: below either alone
+    m = power_bridge.matching(w, 90e3)
+    deck = power_bridge.build(w, 90e3, power_bridge.predicted_phase(w, 90e3, 30, m), m)
+    assert deck.average_cycles == 9 and {k for k, (kind, _) in deck.measures.items() if kind == 'AVG'} >= {
+        'input_power_W', 'load_power_W', 'gate_drive_power_W'}
+    assert deck.measures['primary_rms_A'][0] == 'RMS' and deck.measures['bus_ripple_V'][0] == 'PP'      # the last cycle's
+
+
+def test_a_ringing_input_filter_does_not_shift_the_efficiency(tmp_path):
+    """C8: the filter started with the wrong current rings at its slow mode through short runs. Averaged over one
+    switching cycle the efficiency is off by where the ringing is; over whole periods of the mode it is the
+    settled one (a run of 1,500 cycles: 93.59 percent at 90 kHz, 30 W)."""
+    import shutil
+    from pcbqs import power_circuit
+    if not shutil.which('ngspice'):
+        pytest.skip('ngspice is not installed')
+    eff = {}
+    for name, extra in (('one', dict(slow_average=False)), ('whole', {})):
+        c = power_circuit.template('wpthb')
+        c['transient'].update(cycles=16, initial_input_A=0.5, **extra)
+        c['frequencies_Hz'], c['powers_W'] = [90000.0], [30.0]
+        power_circuit.validate(c)
+        rows, _ = power_circuit.run_cases(c, tmp_path / name, log=lambda *a: None)
+        eff[name] = 100 * rows[0]['efficiency']
+        assert rows[0]['averaged_cycles'] == (9 if name == 'whole' else 1)
+        assert (rows[0]['slow_mode_Hz'] or 0) == pytest.approx(10378 if name == 'whole' else 0, rel=1e-3)
+    assert eff['whole'] == pytest.approx(93.594, abs=0.15)
+    assert eff['one'] - eff['whole'] > 0.4                                    # what the ringing added

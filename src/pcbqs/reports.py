@@ -231,6 +231,11 @@ def circuit_report(res, folder=''):
                  "named 'solver steps' show them).",
                  "The receiver, its load and unmeasured parasitics are model assumptions: model.json and each "
                  "case.json have the matching, the settling and the power checks."]
+        slow = next((c for c in res.get('cases', []) if (c.get('averaged_cycles') or 1) > 1), None)
+        if slow:
+            notes.append(f"Powers and efficiency: averaged over whole periods of the supply filter's slow mode "
+                         f"({slow['slow_mode_Hz'] / 1e3:.3g} kHz: {slow['averaged_cycles']} switching cycles at "
+                         f"{slow['frequency_Hz'] / 1e3:g} kHz), so a mode still ringing does not shift them.")
         if res.get('matching_definition'):
             notes.append(res['matching_definition'])
         if any('field_inference' in c for c in res.get('cases', [])):

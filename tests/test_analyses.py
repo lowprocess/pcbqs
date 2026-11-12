@@ -328,7 +328,7 @@ def test_the_full_bridge_s_run_is_a_circuit_result_too(tmp_path):
                assumptions=['The receiver coil is not on the board.'],
                cases=[dict(frequency_Hz=f, target_W=10, load_power_W=9.98, input_power_W=10.6, efficiency=0.941, phase_deg=120.0,
                            primary_rms_A=1.41, bus_ripple_V=0.2, bus_spike_pp_V=3.2, runtime_s=50.0, folder=str(case),
-                           field_inference=dict(harmonics=16))])
+                           field_inference=dict(harmonics=16), averaged_cycles=9, slow_mode_Hz=10378.0)])
     (run / 'power-circuit.json').write_text(json.dumps(res))
     a = A.Circuit()
     assert a.owns(str(run)) and not a.owns(str(run), preview=True) and not a.owns(str(tmp_path))
@@ -338,6 +338,7 @@ def test_the_full_bridge_s_run_is_a_circuit_result_too(tmp_path):
     notes = ' '.join(rep['notes'])
     assert 'solver timestep' in notes and 'Receiver matched per frequency.' in notes and 'not on the board' in notes
     assert 'Fields:' in notes and 'which the viewer opens' in notes
+    assert "slow mode (10.4 kHz: 9 switching cycles at 90 kHz)" in notes
     sets = a.curves(str(run))
     assert [s['title'] for s in sets] == [
         '90 kHz, 10 W: winding currents', '90 kHz, 10 W: bridge and coil voltages', '90 kHz, 10 W: supply filter currents',

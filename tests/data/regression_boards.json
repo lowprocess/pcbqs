@@ -80,11 +80,11 @@
   ]
  },
  "wpthb_circuit": {
-  "load_power_W": 9.99514,
-  "input_power_W": 10.7744,
-  "efficiency": 0.9269149880507679,
-  "phase_deg": 55.77052806189317,
-  "primary_rms_A": 1.43509,
-  "bus_ripple_V": 0.7860797311255432
+  "load_power_W": 9.99517,
+  "input_power_W": 10.72317,
+  "efficiency": 0.931259788392965,
+  "phase_deg": 55.770168053321214,
+  "primary_rms_A": 1.435105,
+  "bus_ripple_V": 0.7853432238761613
  }
 }

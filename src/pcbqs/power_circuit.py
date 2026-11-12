@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import find_peaks
 from .power_bridge import (load_config, validate, matching, predicted_phase, build, metrics, make_board_ports,
-                           end_state, apply_overrides, GROUPS)
+                           end_state, apply_overrides, average_cycles, slow_mode, GROUPS)
 from .power_spice import periodic_samples, cancel_active_runs, reset_runs
 from .wpt import link
 from .mqs_ports import CopperPorts, PortResponse, rl_error, foster_equivalent
@@ -268,10 +268,13 @@ def run_case(cfg, f, power, out, copper=None, ports=None, log=print):
         if warm:
             state = end_state(pilot_result, cfg)  # its parts' states; copper ports keep the estimate
     cycles = settings.get('cycles', 250)
+    window = average_cycles(cfg, f)         # the powers' averaging window (a slow filter mode: its whole periods)
     history = []
     accepted = None
 
-    def settled(m):  # supply current: slow filter modes are not judged here (C8)
+    def settled(m):
+        # The supply current is not judged cycle to cycle: a slow mode of the input filter rings for a hundred
+        # cycles, and the powers are averaged over its whole periods instead (average_cycles; C8).
         return max(v for k, v in m['periodic_error'].items() if k != 'supply.I') <= periodic_tolerance
 
     def record(folder, m, performance, cycles, reltol, **extra):
@@ -336,7 +339,7 @@ def run_case(cfg, f, power, out, copper=None, ports=None, log=print):
             state = end_state(result, cfg, ports)  # the next run continues from here
         if not settled(m) or (abs(error) < power_tolerance and periodic > periodic_tolerance):
             cycles = (
-                int(cycles * 1.6) + 1 if not warm else max(int(cycles * 0.8), 8)
+                int(cycles * 1.6) + 1 if not warm else max(int(cycles * 0.8), 8, window)
             )  # warm: the next run already continues
             if cycles > 2000:
                 raise RuntimeError('input filter/circuit did not settle; see ' + str(folder))
@@ -357,7 +360,7 @@ def run_case(cfg, f, power, out, copper=None, ports=None, log=print):
         raise RuntimeError('power targeting did not converge; see ' + str(out))
     if search['reltol'] > strict and not settings.get('skip_final'):
         # The reported run: the strict tolerance, continuing from the accepted (settled) state.
-        final_cycles = settings.get('final_cycles', 8)
+        final_cycles = max(settings.get('final_cycles', 8), window)
         for attempt in range(4):
             folder = out / f'final-{attempt:02d}'
             log(f'{f / 1000:g} kHz / {power:g} W: final, reltol {strict:g}, {final_cycles} cycles')
@@ -395,6 +398,8 @@ def run_case(cfg, f, power, out, copper=None, ports=None, log=print):
         phase_deg=phase,
         matching=match,
         **m,
+        averaged_cycles=window,                 # the powers: over this many cycles (a slow filter mode's periods)
+        slow_mode_Hz=slow_mode(cfg) if window > 1 else None,
         history=history,
         runtime_s=time.perf_counter() - started,
         folder=str(out),

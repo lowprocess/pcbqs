@@ -79,6 +79,7 @@ class Circuit:
     def __init__(self):
         self.step_labels = STEP_LABELS      # the signals also kept at the solver's own steps
         self.measure_lead = 0.0             # s the measuring window is opened beyond the last period at each end
+        self.average_cycles = 1             # periods an AVG measure is taken over, back from the end (the others: one)
         self.lines = []
         self.nodes = {'0': '0', 'NET:GND': '0'}
         self.signals = {}
@@ -394,9 +395,10 @@ class Circuit:
         for i, (label, (kind, expr)) in enumerate(self.measures.items()):
             for key, name in zip(labels, output_names):
                 expr = expr.replace('@' + key + '@', f'({self.signal_signs.get(key, 1)}*{name})')
+            span = max(int(self.average_cycles), 1) if kind.upper() == 'AVG' else 1
             measures.extend(
                 [f'let measure{i}={expr}',
-                 f'meas tran m{i} {kind} measure{i} from={stop - 1 / f - self.measure_lead:.17g} to={stop + self.measure_lead:.17g}']
+                 f'meas tran m{i} {kind} measure{i} from={stop - span / f - self.measure_lead:.17g} to={stop + self.measure_lead:.17g}']
             )
         if measures:
             # meas prints its result to 6 digits but keeps 7: print them again with every digit kept (a sum of

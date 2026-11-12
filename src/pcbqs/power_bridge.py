@@ -118,6 +118,7 @@ def net_of(config, terminal):
 
 
 GROUPS = ('tank', 'bridge-rail', 'input-rail', 'filter')     # the parts a setting can be given for together
+SLOW_FIT = 0.06                         # of a slow mode's period: how far an averaging window may be from whole ones
 
 
 def groups(config):
@@ -172,6 +173,60 @@ def apply_overrides(config, overrides):
                 p[key] = number
         done[item] = refs
     return done
+
+
+def slow_mode(config):
+    """The frequency (Hz) of the slowest mode of the supply's filter, or None when it has none: the inductors in
+    series between the supply's rails (VIN, VBUS, VHB) against the rails' capacitors to ground, the supply itself
+    stiff, a series resistor a connection. wpthb's L3 against C19 to C24: 10.4 kHz. Lightly damped, it rings for
+    many switching cycles after anything disturbs the input current."""
+    rails = ['VBUS', 'VHB']
+    tied = {'VIN': 'VIN', 'VBUS': 'VBUS', 'VHB': 'VHB'}
+    parts = [p for p in config.get('components', []) if p.get('enabled', True)]
+    ends = lambda p: (net_of(config, p['a']), net_of(config, p['b']))
+    for p in parts:                                             # a resistor between two rails: one node
+        a, b = ends(p)
+        if p['type'] == 'resistor' and a in tied and b in tied and a != b:
+            keep, gone = (a, b) if a == 'VIN' or (b != 'VIN' and a < b) else (b, a)
+            tied = {k: (keep if v == tied[gone] else v) for k, v in tied.items()}
+    nodes = sorted({tied[r] for r in rails} - {tied['VIN']})
+    if not nodes:
+        return None
+    at = {n: i for i, n in enumerate(nodes)}
+    gamma, cap = np.zeros((len(nodes), len(nodes))), np.zeros(len(nodes))
+    for p in parts:
+        a, b = ends(p)
+        if p['type'] == 'inductor' and a in tied and b in tied and tied[a] != tied[b] and p.get('value', 0) > 0:
+            for x, y in ((tied[a], tied[b]), (tied[b], tied[a])):
+                if x in at:
+                    gamma[at[x], at[x]] += 1 / p['value']
+                    if y in at:
+                        gamma[at[x], at[y]] -= 1 / p['value']
+        elif p['type'] == 'capacitor' and {a, b} & set(tied) and 'GND' in (a, b):
+            rail = tied[a if a in tied else b]
+            if rail in at:
+                cap[at[rail]] += p.get('value', 0)
+    if not gamma.any() or (cap <= 0).any():
+        return None
+    w2 = np.linalg.eigvals(gamma / cap[:, None]).real
+    w2 = w2[w2 > 1e-6 * w2.max()]
+    return float(np.sqrt(w2.min()) / (2 * np.pi)) if len(w2) else None
+
+
+def average_cycles(config, f):
+    """The switching cycles the powers of a run at f are averaged over: one, or with a slow mode of the supply's
+    filter (slow_mode) a whole number of cycles that is a whole number of its periods to within SLOW_FIT of one
+    (the fewest such; none within two and a half periods: the nearest). A mode that has not died out then adds
+    next to nothing to the average, where over one cycle it shifts the input power by its swing at that moment
+    (C8: 0.66 percent on wpthb). transient.slow_average false: one."""
+    slow = slow_mode(config) if config.get('transient', {}).get('slow_average', True) else None
+    if not slow or slow > f / 2:
+        return 1
+    period = f / slow                                           # in switching cycles
+    off = lambda n: abs(n / period - max(round(n / period), 1))
+    span = range(max(int(period), 2), int(2.5 * period) + 2)
+    good = [n for n in span if off(n) <= SLOW_FIT]
+    return int(min(good[0] if good else min(span, key=lambda n: (round(off(n), 6), n)), 64))
 
 
 def supply_drops(config):
@@ -354,6 +409,7 @@ def build(config, f, phase, match, copper=None, ports=None, state=None):
     c.measures['gate_drive_power_W'] = ('AVG', gate_expr)
     for ref in c.power_refs:
         c.measures['part_power.' + ref] = ('AVG', f'@{ref}.V@*@{ref}.I@')
+    c.average_cycles = average_cycles(config, f)                # the powers: over whole periods of a slow mode
     return c
 
 

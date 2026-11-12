@@ -59,6 +59,15 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   overrides one part, `--no-part-loads` ignores the fields, and the result names the loads that came from them
   (`pdn.rail.field_loads`).
 
+### Fixed
+- **A slow mode of the input filter no longer shifts the bridge's input power (C8).** The inductors in series
+  between the supply's rails ring against the rails' capacitors (wpthb: 10.4 kHz, eight to eleven switching
+  cycles a period) long after the rest of the circuit repeats, and the powers were averaged over the last
+  cycle: the efficiency was off by wherever the ringing was. They are averaged over whole periods of that
+  mode (`power_bridge.slow_mode`, `average_cycles`: 9 cycles at 90 kHz on wpthb). With the mode excited on
+  purpose, against a settled run of 1,500 cycles: +0.69 points of efficiency before, −0.04 now, in the same
+  time (docs/power-circuit.md#slow-mode).
+
 ### Changed
 - **No part of wpthb is named in the bridge's code (C7, U1).** A precharged start went by wpthb's references
   (C25/C27/C30, C19 to C24, CA*, L3) and its two supply resistances, with a second branch by connectivity for
