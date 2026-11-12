@@ -10,6 +10,15 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **A load with no pad on ground is asked about before the run (kicad2ems API 2.9).** A rail's load that is on
+  the rail and not on ground (a bridge's high-side switch: wpthb's Q1 and Q2) has its return left out of the
+  drop, with a note in the result that is easy to miss. The rail tool's plugin now says it as something the run
+  still needs (`PowerIntegrity.missing`): "Q1 has no pad on ground: name the part its current returns through,
+  Q1=AMPS@Q3 (Q3 is on its other net and on ground)", the part named where the board has one of the load's
+  kind on one of its nets that is no rail and on ground. kicad2ems's window lists it under the Rail drop
+  question's settings and does not start the run. The command line is as it was: it runs, and notes it. Also
+  for that API: the temperature says it can start from a circuit's result (`uses`), and the low-frequency
+  solver names its cell size as the setting a run is set up with (`basic`).
 - **The full bridge's run is a circuit result.** A `power-circuit.json` is the circuit analysis's as
   `circuit.json` is: its operating points, notes and assumptions as a report and table, each point's waveforms
   as curve sets (the windings, the bridge and coils, the series parts between the supply's rails found by what

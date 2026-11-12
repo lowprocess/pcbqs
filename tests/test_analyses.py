@@ -388,3 +388,35 @@ def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):
     assert not thermal.owns(str(tmp_path))
     (tmp_path / 'thermal.json').write_text('{')
     assert not thermal.owns(str(tmp_path))
+
+
+def test_a_load_with_no_pad_on_ground_is_still_needed(monkeypatch, tmp_path):
+    """Analysis.missing (kicad2ems 2.9) of the rail tool: besides what its command raises, a load typed without a
+    return that has no pad on ground (a bridge's high-side switch: wpthb's Q1), which the run would only note,
+    its return left out of the drop. It names the part to return through where the board has one such: of the
+    load's kind, on one of its nets that is no rail, and on ground."""
+    from pcbqs import analyses as A
+    board = tmp_path / 'b.kicad_pcb'
+    board.write_text('')
+    nets = dict(Q1={'', '/GH', '/SW', 'VHB'}, Q3={'/SW', '/GL', 'GND'}, U6={'/SW', 'GND', 'VCC'}, C32={'/SW', '/BOOT'},
+                Q2={'/SW2', 'VHB'}, Q4={'/SW2', 'GND'}, Q5={'/SW2', 'GND'}, U1={'VIN', 'GND'},
+                **{f'C{k}': {'VHB', 'GND'} for k in range(1, 10)})
+    monkeypatch.setattr(A, '_pad_nets', lambda path: nets)
+    pi = A.PowerIntegrity()
+    need = lambda **v: [(m['key'], m['text']) for m in pi.missing(v, str(board))]
+    assert need(rail='', load='U1=0.1') == [(None, 'name the rail (its net)')]
+    assert need(rail='VIN', load='U1=0.1') == []                                 # on ground: its return is there
+    got = need(rail='VIN', load='Q1=0.67\nQ2=0.67\nU1=0.1')                     # a form's list: one a line
+    assert [k for k, _ in got] == ['load', 'load']
+    assert got[0][1] == ('Q1 has no pad on ground: name the part its current returns through, Q1=AMPS@Q3 '
+                         '(Q3 is on its other net and on ground)')               # not U6, the driver on that node
+    assert got[1][1] == 'Q2 has no pad on ground: name the part its current returns through, Q2=AMPS@PART'   # Q4 or Q5
+    assert need(rail='VIN', load=['Q1=0.67@Q3', 'Q2=0.67@Q4']) == []             # named: nothing more
+    assert need(rail='VIN', load='Q9=1') == [] and need(rail='VIN', load='Q1=1', ground='GND,/SW') == []
+    assert A.QuasiStatic.basic == ('qs_dmax',) and A.Thermal.uses == ('circuit',)
+    wpthb = os.path.expanduser('~/Desktop/wpthb/wpthb.kicad_pcb')
+    if os.path.isfile(wpthb):                                                    # the board it was met on
+        monkeypatch.undo()
+        text = [m['text'] for m in A.PowerIntegrity().missing(dict(rail='VIN', load='Q1=0.67'), wpthb)]
+        assert text == ['Q1 has no pad on ground: name the part its current returns through, Q1=AMPS@Q3 '
+                        '(Q3 is on its other net and on ground)']

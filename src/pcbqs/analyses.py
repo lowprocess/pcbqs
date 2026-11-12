@@ -90,6 +90,52 @@ class _Tool(Analysis):
             return {}
 
 
+_PADS = {}
+
+
+def _pad_nets(board):
+    """{reference: the nets of its pads} of a KiCad board file (kept until the file changes)."""
+    stamp = os.path.getmtime(board)
+    if _PADS.get(board, (None,))[0] != stamp:
+        from kicad2ems.importers import open_board           # (as pcbqs._cli reads a board)
+        _PADS[board] = (stamp, {fp['ref']: {p.get('net') for p in fp.get('pads', [])} for fp in open_board(board).footprints})
+    return _PADS[board][1]
+
+
+def _floating_loads(values, board):
+    """The loads typed as REF=AMPS (no @RETURN) that are on the board with no pad on a ground net."""
+    if not board or not str(board).lower().endswith('.kicad_pcb') or not os.path.isfile(board):
+        return []
+    ground = {x.strip() for x in str(values.get('ground') or 'GND').split(',') if x.strip()}
+    loads = values.get('load') or []
+    loads = loads.splitlines() if isinstance(loads, str) else loads       # (a form's list: one a line)
+    nets = _pad_nets(board)
+    out = []
+    for item in loads:
+        ref = str(item).partition('=')[0].strip()
+        if '@' not in str(item) and ref in nets and not nets[ref] & ground:
+            out.append(ref)
+    return out
+
+
+def _return_of(ref, values, board):
+    """The one part a load with no pad on ground can return through, or None: of the load's own kind (its
+    reference's letters: a half bridge's low-side switch for its high-side one), on one of the load's nets that
+    is no rail (at most RETURN_NET parts) and on ground."""
+    ground = {x.strip() for x in str(values.get('ground') or 'GND').split(',') if x.strip()}
+    nets = _pad_nets(board)
+    kind = re.match(r'[A-Za-z]*', ref).group(0)
+    found = set()
+    for net in nets[ref] - {'', None}:
+        on = [r for r, ns in nets.items() if net in ns and r != ref]
+        if len(on) <= RETURN_NET:
+            found |= {r for r in on if nets[r] & ground and re.match(r'[A-Za-z]*', r).group(0) == kind}
+    return found.pop() if len(found) == 1 else None
+
+
+RETURN_NET = 8          # a net with more parts than this is a rail, not the node a load returns through
+
+
 class PowerIntegrity(_Tool):
     name, label, tool, module, order = 'pdn', 'Power integrity', 'pcbqs.pdn', 'pcbqs.pdn', 20
     about = "a rail's DC drop and the impedance its loads see"
@@ -124,6 +170,21 @@ class PowerIntegrity(_Tool):
         if not str(values.get('rail') or '').strip():
             raise ValueError('name the rail (its net)')
         return argv(self.module, self.options(), values, board, out)
+
+    def missing(self, values, board, results=None):
+        """What command() raises, and a load with no pad on ground whose return is not named (a bridge's
+        high-side switch): its return would be left out of the drop."""
+        out = super().missing(values, board, results) if hasattr(super(), 'missing') else []
+        try:
+            path = self._board(board)
+            for ref in _floating_loads(values, path):
+                back = _return_of(ref, values, path)
+                out.append(dict(key='load', text=f"{ref} has no pad on ground: name the part its current returns "
+                                f"through, {ref}=AMPS@{back or 'PART'}" + (f" ({back} is on its other net and on "
+                                                                              f"ground)" if back else '')))
+        except Exception:                                    # noqa: BLE001 (the run says what is wrong with a board)
+            pass
+        return out
 
     def status(self, line):
         return line[4:].strip()[:160] if line.startswith('pdn:') else None
@@ -297,6 +358,7 @@ class Thermal(_Tool):
     result = 'thermal.json'
     provides = ('thermal',)
     paths = ('circuit',)
+    uses = ('circuit',)                     # its losses, when none are typed (kicad2ems 2.9: Analysis.uses)
 
     def owns(self, folder, preview=False):
         """A thermal.json of pcbqs's: another engine's (Elmer's, of the same name) says whose it is."""
@@ -370,6 +432,7 @@ class QuasiStatic(Solver):
     api = API
     name, aliases, label = 'pcbqs', ('qs', 'quasistatic'), 'pcbqs (quasi-static, low frequency)'
     in_auto = in_all = False                            # asked for by name: a low band's solver, not a full-wave one
+    basic = ('qs_dmax',)                                # what a run is set up with (kicad2ems 2.9: Solver.basic)
     consumes, previewed, rank, order = 'board', False, 1, 60
     dumps = False                                       # its current maps are always written: nothing to ask for
     POINTS = 31                                         # solved on at most this many frequencies, a log scale
