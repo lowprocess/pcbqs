@@ -1,12 +1,14 @@
 # pcbqs
 
 PCB DC/power-integrity analysis, magneto-quasistatic and PEEC extraction, magnetic
-near fields, and ngspice operational circuits with passive copper feedback.
+near fields, low-frequency S-parameters, and ngspice operational circuits with
+passive copper feedback.
 
 ```sh
 pip install .
 python -m pcbqs.pdn --describe --json
 python -m pcbqs.mqs --describe --json
+python -m pcbqs.sparams board.kicad_pcb --fmin 1e3 --fmax 1e8 --out lf
 python -m pcbqs.power_circuit --template > model.json
 python -m pcbqs.power_circuit model.json --out result --jobs 4
 python -m pcbqs.circuit --template boost > boost.json
@@ -17,7 +19,8 @@ JSON-based solving, layout/mesh export and field reconstruction work without
 `mom25d` or `kicad2ems`. Install `.[kicad2ems]` to import `.kicad_pcb` files.
 
 With kicad2ems installed the four tools are its analyses (`pcbqs/analyses.py`, the
-`kicad2ems.analyses` entry points): `kicad2ems --check` lists them, a config keeps a
+`kicad2ems.analyses` entry points) and `pcbqs.sparams` one of its S-parameter solvers
+(`kicad2ems.solvers`: `--solvers pcbqs`): `kicad2ems --check` lists them, a config keeps a
 study's under `[analysis]`, and kicad2ems-gui builds each one's settings from its
 options table, runs it and shows what its result folder holds: the maps as field
 dumps in its Viewer, the report and the curves (`pcbqs/reports.py`) on its Results
@@ -38,6 +41,9 @@ Execution controls use `PCBQS_FILL_BACKEND`, `PCBQS_FILL_THREADS`,
 remain supported. Static-fill plugins use the `pcbqs.static_backends` entry group.
 
 - [Quasistatic guide](docs/quasistatic.md)
+- [Low-frequency S-parameters](docs/sparams.md): a board's ports from DC to a tenth of a wavelength, with the
+  return current where it flows; `--solvers pcbqs` in a kicad2ems run. Its example,
+  `examples/return-path/return_path.py`: what a ground via's place does to a layer change
 - [Circuits](docs/circuit.md): any circuit of parts, nodes and drives; ten examples, each with a board whose
   copper can be put in; KiCad boards, schematics and netlists read into a model
 - [Temperature](docs/thermal.md): a trial of a lightweight thermal solver, on a grid and on the triangle mesh

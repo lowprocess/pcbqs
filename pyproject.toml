@@ -24,6 +24,9 @@ kicad2ems = ["kicad2ems>=261112.post1"]    # the board importer, and the analysi
 test = ["pytest>=7"]
 
 # the tools as kicad2ems analyses: its --check, its configs' [analysis] tables and kicad2ems-gui's Study list them
+[project.entry-points."kicad2ems.solvers"]           # S-parameters at low frequency (sparams.py)
+pcbqs = "pcbqs.analyses:QuasiStatic"
+
 [project.entry-points."kicad2ems.analyses"]
 pdn = "pcbqs.analyses:PowerIntegrity"
 mqs = "pcbqs.analyses:NearField"

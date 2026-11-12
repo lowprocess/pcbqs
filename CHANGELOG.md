@@ -10,6 +10,23 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **Low-frequency S-parameters** (`pcbqs.sparams`, docs/sparams.md). A board's ports from the quasi-static
+  currents of its copper, DC to about a tenth of a wavelength: each port a 1 A source and its reference impedance
+  between the trace's end and the copper under it, one solve per driven port, S from the currents in the
+  terminations. Resistance and inductance alone while the copper's capacitance carries next to nothing; the
+  charge solved with the currents above that (`--capacitance auto`), with both limits estimated and written
+  (`valid_to_Hz`). It writes Touchstone, the path between each two ports as a series R and L per frequency (two
+  ports whose return is not joined are said to be so, with the capacitance that closes the path), and each
+  layer's current with a port driven, for kicad2ems's Viewer. `--thickness` models the copper's two faces: the
+  skin effect, and a narrow trace's inductance. With kicad2ems it is a solver, `--solvers pcbqs` (`qs`,
+  `quasistatic`), run only when named. `examples/return-path/return_path.py`: one ground via beside a layer
+  change, 8 mm away, at the board's corner (+1 nH of loop a step), or missing (open at DC; the planes' 29 pF
+  closes the path, −35 dB at 1 MHz). Against gfdtd on kicad2ems's `demo_transition` and `rf_diffvia`
+  from 0.05 to 1 GHz it is within 0.008 rms |ΔS| up to 200 MHz and 0.03 up to 1 GHz (0.010 with `--thickness`
+  and a cell at the trace's width); with `rf_diffvia`'s return vias taken out, the pair's common mode falls to
+  −11.0 dB at 50 MHz, gfdtd's −11.1 dB, which the line model does not see.
+- **Several drives in one solve.** `MQS.solve(freqs, amps=[{...}, ...])` gives a Result per drive with each
+  frequency's system factored once for them all (the dense solves, with and without the charge).
 - **kicad2ems analysis plugins.** `pcbqs/analyses.py` registers power integrity, near field, circuit and thermal
   as `kicad2ems.analyses` entry points (kicad2ems API 2.5). Each gives its options (its tool's `--describe`), the
   command that runs it, and what a result holds to read and to plot (`pcbqs/reports.py`: a report of text and

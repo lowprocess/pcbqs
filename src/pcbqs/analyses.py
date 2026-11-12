@@ -294,3 +294,110 @@ class Thermal(_Tool):
     def status(self, line):
         keep = line.startswith(('thermal ', 'losses of', 'results in')) or ' W into the board' in line
         return line.strip()[:160] if keep else None
+
+
+# ---- a solver: S-parameters at low frequency, from the copper's quasi-static currents (sparams.py) ----
+from kicad2ems.api.solver import Deviation, Option, Result, Solver, mixed_mode   # noqa: E402
+
+G_QS = 'pcbqs'
+
+
+class QuasiStatic(Solver):
+    """pcbqs as an S-parameter solver of kicad2ems (`--solvers pcbqs`): the board's ports from the resistance and
+    inductance of its copper, with the return current where it flows, and the copper's charge too where the band
+    asks for it (R, L and C). For the low end of a band, to about a tenth of a wavelength, where the full-wave
+    solvers are slow or lose accuracy; it is never picked by `--solvers auto`."""
+    api = API
+    name, aliases, label = 'pcbqs', ('qs', 'quasistatic'), 'pcbqs (quasi-static, low frequency)'
+    in_auto = in_all = False                            # asked for by name: a low band's solver, not a full-wave one
+    consumes, previewed, rank, order = 'board', False, 1, 60
+    dumps = False                                       # its current maps are always written: nothing to ask for
+    POINTS = 31                                         # solved on at most this many frequencies, a log scale
+    capabilities = dict(
+        ports='yes: a source and its termination between the trace and the copper under it', gap_ports='no',
+        diff_pairs="yes: the legs as single-ended ports, the modes from them",
+        parts='no: left out', vias='yes: filaments between the layers they join',
+        outline='ignored: the copper alone', planes='yes: meshed, the return current where it flows',
+        edge_walls='ignored', thickness="approximated: one sheet; its two faces with --qs-thickness",
+        conductor_loss="yes: the copper's DC sheet resistance; the skin effect through it with --qs-thickness",
+        roughness='no', finish='no', dispersion='no: constant er and tan d (with the capacitance); none without', radiation='no',
+        cavity='no', antenna='no')
+    options = [
+        Option('qs_dmax', None, "pcbqs: the largest mesh cell, mm (default: a twenty-fifth of the board, 0.5 to 3)",
+               float, name='dmax', gui='Largest cell (mm)', group=G_QS),
+        Option('qs_fine', None, "pcbqs: the cell at and around the ports' nets, mm (default: the narrowest port's "
+               "width)", float, name='fine', gui="Cell at the ports' nets (mm)", group=G_QS),
+        Option('qs_capacitance', 'auto', "pcbqs: the copper's charge with its currents (R, L and C): on, off, or "
+               "auto (when the band reaches above where resistance and inductance alone hold)",
+               choices=('auto', 'on', 'off'), name='capacitance', gui="Copper's capacitance", group=G_QS),
+        Option('qs_thickness', False, "pcbqs: the copper's thickness, as its two faces with the skin effect between "
+               "them, instead of one sheet with its DC resistance (twice the unknowns)", bool, name='thickness',
+               gui="Copper's thickness", group=G_QS),
+    ]
+
+    def check(self, s=None):
+        from . import __version__
+        return True, f"pcbqs {__version__} ({os.path.dirname(os.path.abspath(__file__))})"
+
+    def assess(self, run):
+        why = []
+        if run.antenna:
+            why.append('antenna mode')
+        gaps = [p.name for p in run.m.ports if getattr(p, 'kind', 'z') != 'z']
+        if gaps:
+            why.append(f"gap ports ({', '.join(gaps)}): only ports between a trace and the copper under it")
+        if run.freq[0] <= 0:
+            why.append('fmin has to be above 0')
+        return why
+
+    def solve(self, run, prep):
+        import numpy as np
+        from . import sparams
+        board = run.m.to_dict()
+        f = np.unique(np.geomspace(run.freq[0], run.freq[-1], min(len(run.freq), self.POINTS)))
+        r = sparams.solve(board, f, dmax=getattr(run.s, 'qs_dmax', None), fine=getattr(run.s, 'qs_fine', None),
+                          capacitance=getattr(run.s, 'qs_capacitance', None) or 'auto',
+                          thickness=bool(getattr(run.s, 'qs_thickness', False)), log=lambda s: run.log(f"  {s}"))
+        lf, want = np.log(f), np.log(run.freq)              # smooth in log f: onto the run's own frequencies
+        S = np.empty((len(run.freq),) + r['S'].shape[1:], complex)
+        for j in range(S.shape[1]):
+            for k in range(S.shape[2]):
+                S[:, j, k] = np.interp(want, lf, r['S'][:, j, k].real) + 1j * np.interp(want, lf, r['S'][:, j, k].imag)
+        self._last = (board, r)
+        info = r['info']
+        over = int((run.freq > info['valid_to_Hz']).sum())
+        apart = [sparams.apart_note(p) for p in sparams.paths(f, r['S'], r['names'], r['zref']) if not p['joined']]
+        if over:
+            run.log(f"  pcbqs: {over} of {len(run.freq)} frequencies are above about {info['valid_to_Hz'] / 1e6:.3g} MHz, "
+                    + ("where the ports' copper is over a tenth of a wavelength long: quasi-static, no radiation"
+                       if info['capacitance'] else "where the copper's capacitance counts: resistance and inductance only"))
+        for note in apart:
+            run.log(f"  pcbqs: {note}")
+        Smm, names, zref = mixed_mode(S, run.m)
+        about = ("The ports from pcbqs's quasi-static solve of the copper: every layer's sheet current, the vias and "
+                 "their mutual inductance, the return current where it flows"
+                 + (", and the copper's charge in the board's dielectrics (R, L and C). No radiation: "
+                    if info['capacitance'] else ". Resistance and inductance alone, no capacitance and no radiation: ")
+                 + f"valid to about {info['valid_to_Hz'] / 1e6:.3g} MHz on this board.")
+        return Result(Smm, names, zref, info['seconds'], comment=f"pcbqs quasi-static ({run.name})",
+                      info=dict({k: v for k, v in info.items() if k != 'model'},
+                                kpi=f"{info['triangles']:,} triangles, {info['seconds']:.1f} s", about=about,
+                                not_joined=apart))
+
+    def outputs(self, run, prep, res):
+        """The current of each layer with the first port driven, at three frequencies of the band, for the viewer."""
+        import numpy as np
+        from . import sparams
+        board, r = getattr(self, '_last', (None, None))
+        if r is None:
+            return
+        try:
+            got = sparams.write_maps(run.s.out, board, r, r['names'][0], np.geomspace(r['f'][0], r['f'][-1], 3),
+                                     name='pcbqs', log=lambda s: run.log(f"  {s}"))
+            run.wrote('pcbqs: the current of each layer', os.path.join(run.s.out, got['dumps'][0]['file']))
+        except Exception as exc:                            # noqa: BLE001 (the maps are extra: the answer stands)
+            run.log(f"  pcbqs: current maps not written: {exc}")
+
+    def deviations(self, run, prep):
+        return [Deviation(f"part:{p.ref}", 'parts', 'left out', dropped=True) for p in run.m.parts]
+

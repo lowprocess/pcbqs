@@ -608,7 +608,15 @@ class MQS:
         return out
 
     def solve(self, freqs, amps=None):
-        """The currents at each frequency (Hz) for the sources' currents (amps: {source: A}, default 1 A each)."""
+        """The currents at each frequency (Hz) for the sources' currents (amps: {source: A}, default 1 A each).
+        amps a list of such: a list of Results, one per drive, each frequency's system factored once for them
+        all (the dense magnetic solve; the others solve drive by drive)."""
+        if isinstance(amps, (list, tuple)):
+            if self.matrix_backend == 'hierarchical':
+                return [self.solve(freqs, a) for a in amps]
+            if self.capacitance:
+                return self._solve_charge(freqs, list(amps))
+            return self._solve_dense(freqs, list(amps))
         if self.capacitance:
             if self.matrix_backend == 'hierarchical':
                 from .peec_iterative import solve
@@ -618,6 +626,33 @@ class MQS:
         if self.matrix_backend == 'hierarchical':
             from .mqs_iterative import solve
             return solve(self, freqs, amps)
+        return self._solve_dense(freqs, [amps])[0]
+
+    def _solve_charge(self, freqs, drives):
+        """The dense solve with the charge (peec.solve) for each of `drives`: [Result]. Frequency by frequency, so
+        that one factor is held at a time and every drive uses it (the cache's budget is for a sweep's repeats)."""
+        from .peec import prepare, solve
+        f = np.atleast_1d(np.asarray(freqs, float))
+        if f.ndim != 1 or not np.isfinite(f).all() or (f <= 0).any():
+            raise ValueError('frequencies must be finite and positive')
+        budget, self.factor_cache_bytes = self.factor_cache_bytes, float('inf')
+        steps = []
+        try:
+            for fi in f:
+                steps.append([solve(self, [fi], a) for a in drives])
+                m = prepare(self)
+                m['factors'].clear()
+                m['factor_bytes'] = 0
+        finally:
+            self.factor_cache_bytes = budget
+        join = lambda d, get: np.concatenate([get(s[d]) for s in steps])
+        return [Result(f, join(d, lambda r: r.i), {n: join(d, lambda r: r.z[n]) for n in steps[0][d].z},
+                       steps[0][d].names, charge=join(d, lambda r: r.charge), potential=join(d, lambda r: r.potential))
+                for d in range(len(drives))]
+
+    def _solve_dense(self, freqs, drives):
+        """The dense magnetic solve for each of `drives` ({source: A} or None): [Result]."""
+        from scipy.linalg import lu_factor, lu_solve
         f = np.atleast_1d(np.asarray(freqs, float))
         if f.ndim != 1 or not np.isfinite(f).all() or (f <= 0).any():
             raise ValueError('frequencies must be finite and positive')
@@ -626,10 +661,11 @@ class MQS:
         Cd = m['C']
         src = {self.parts[k - ne - nv]['name']: c for k, c in m['src'].items()}
         free = [c for c in range(Cd.shape[1]) if c not in src.values()]
-        I = np.zeros((len(f), nb), complex)
-        Z = {n: np.zeros(len(f), complex) for n in src}
-        Zc = {n: np.zeros(len(f), complex) for n in src}
         sc = list(src.values())
+        nd = len(drives)
+        I = np.zeros((nd, len(f), nb), complex)
+        Z = [{n: np.zeros(len(f), complex) for n in src} for _ in drives]
+        Zc = [{n: np.zeros(len(f), complex) for n in src} for _ in drives]
         for i, fi in enumerate(f):
             w = 2 * np.pi * fi
             zp = np.zeros(nb, complex)                           # the parts' own impedances
@@ -643,20 +679,25 @@ class MQS:
             if dR.nnz:
                 Zcu += (Cd.T @ dR @ Cd).toarray()
             Zl = Zcu + (Cd.T @ diags(zp) @ Cd).toarray()
-            x = np.zeros(Cd.shape[1], complex)
-            for n, c in src.items():
-                x[c] = (amps or {}).get(n, 1.0)
+            x = np.zeros((Cd.shape[1], nd), complex)
+            for d, amps in enumerate(drives):
+                for n, c in src.items():
+                    x[c, d] = (amps or {}).get(n, 1.0)
             rhs = -Zl[np.ix_(free, sc)] @ x[sc]
-            x[free] = np.linalg.solve(Zl[np.ix_(free, free)], rhs)
-            I[i] = Cd @ x
+            if free:
+                x[free] = lu_solve(lu_factor(Zl[np.ix_(free, free)]), rhs) if nd > 1 else \
+                    np.linalg.solve(Zl[np.ix_(free, free)], rhs)
+            I[:, i] = (Cd @ x).T
             # Kirchhoff's voltage law round each source's loop, in loop space:
             # C^T v = Zl x, where v holds every branch drop (the copper's mutual
             # coupling included) and the ideal source branch itself drops nothing.
             loop_v, copper_v = Zl[sc] @ x, Zcu[sc] @ x
-            for j, (n, c) in enumerate(src.items()):
-                Z[n][i] = loop_v[j] / x[c] if x[c] else np.nan
-                Zc[n][i] = copper_v[j] / x[c] if x[c] else np.nan
-        return Result(f, I, Z, [p['name'] for p in self.parts], Zc)
+            for d in range(nd):
+                for j, (n, c) in enumerate(src.items()):
+                    Z[d][n][i] = loop_v[j, d] / x[c, d] if x[c, d] else np.nan
+                    Zc[d][n][i] = copper_v[j, d] / x[c, d] if x[c, d] else np.nan
+        names = [p['name'] for p in self.parts]
+        return [Result(f, I[d], Z[d], names, Zc[d]) for d in range(nd)]
 
     def moment(self, res, fi):
         """The magnetic dipole moment (A m^2, (3,) complex) of the currents at frequency index fi: m = 1/2 int r x J
