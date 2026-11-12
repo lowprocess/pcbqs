@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The full bridge says what it draws from its rail.** A run of `pcbqs.power_circuit` has `supply` in each
+  point, as a general circuit's has (`circuit/supply.py`, `bridge_currents`): each high-side switch's average
+  current and 40 harmonics (`supply-<switch>.csv`), the rail named from the supply's side with the filter's
+  inductors on the way (`through`, `dcr`), and its result proposes that rail to the power integrity. On wpthb
+  at 90 kHz and 30 W: Q1 and Q2 draw 1.11 and 0.20 A, their fundamentals cancel in the rail, and the rail's
+  model gives 36.6 mV at 180 kHz on the bridge rail against the 34.7 mV the circuit's own bus voltage has (20.8
+  and 19.7 mΩ of the same capacitors, by two models).
 - **Several rails, or converters, in one study (kicad2ems API 2.10).** The power-integrity and near-field
   plugins say that a study may hold several settings of them (`several`: `'rail'`, `'converter'`): a config's
   `[[analysis.pdn]]` tables are a run each of `kicad2ems study`, into folders named by the rail.

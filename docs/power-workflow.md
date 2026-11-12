@@ -127,6 +127,23 @@ question it is copied to is ticked, so Run includes it.
   1.03 A at 1 MHz) and differ fivefold at its nulls (0.03 against 0.15 A at 3 MHz):
   the settled duty is 0.72, not 0.66, and the current has the inductor's ripple.
 
+The full bridge's runs (`pcbqs.power_circuit`) say the same of their high-side
+switches, with the rail named from the supply's side and the filter's inductor on
+the way (`through`, `dcr`). On wpthb at 90 kHz and 30 W, Q1 and Q2 draw 1.11 and
+0.20 A on average, and their fundamentals cancel in the rail, which sees twice the
+switching frequency:
+
+```sh
+python -m pcbqs.pdn wpthb.kicad_pcb --rail VIN --volts 24 --source TP2 --ground-source TP1 --through L3 --dcr L3=0.03 \
+    --load Q1=1.109 --load Q2=0.198 --load-spectrum Q1=out/90kHz_30W/supply-Q1.csv --load-spectrum Q2=out/90kHz_30W/supply-Q2.csv
+```
+
+The rail's model gives 36.6 mV at 180 kHz on the bridge rail (20.8 mΩ), where the
+circuit's own bus voltage has 34.7 mV (19.7 mΩ): two models of the same capacitors,
+one in the frequency domain on the board's planes, one in time, within 6 %. Above
+that the two differ as their capacitors' ESL and ESR do (the rail's by package, the
+circuit's from its model).
+
 The two tools' fields of the same current, peak |H| at 1 MHz over U702:
 
 | above the copper | `pcbqs.mqs`, parts 0.5 mm up | `pcbqs.mqs`, `--part-height 0` | circuit `--fields` |

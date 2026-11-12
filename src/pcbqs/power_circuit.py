@@ -404,6 +404,12 @@ def run_case(cfg, f, power, out, copper=None, ports=None, log=print):
         runtime_s=time.perf_counter() - started,
         folder=str(out),
     )
+    try:                                    # what the bridge draws from its rail: for a power-integrity run
+        from .circuit import supply
+        row['supply'] = supply.write(out, supply.bridge_currents(cfg, result, f))
+    except Exception as exc:                # noqa: BLE001  (an extra, not the result)
+        row['supply'] = []
+        log(f'{f / 1000:g} kHz / {power:g} W: the supply currents were not written: {type(exc).__name__}: {exc}')
     (out / 'case.json').write_text(json.dumps(row, indent=2))
     return row, result
 

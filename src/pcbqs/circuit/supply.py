@@ -30,15 +30,30 @@ HARMONICS = 40
 GROUND = ('0', 'GND', 'gnd')
 
 
-def currents(model, result, period, harmonics=HARMONICS):
-    """The supply rows of a resolved model's reported run (result: {signal: samples}, uniformly sampled)."""
-    from .copper import net_name
+def _period(result, period, harmonics):
+    """(the samples of the last period, how many, the harmonics that fit), or None: less than a period sampled."""
     t = np.asarray(result['time_s'])
     n = int(round(period / (t[1] - t[0])))
     if n < 4 or len(t) < n + 1:
+        return None
+    return slice(len(t) - 1 - n, len(t) - 1), n, min(int(harmonics), n // 2 - 1)   # its end left to the next period
+
+
+def _load(at, i, n, count, period):
+    """A load's row from its current over the period: its average, its RMS and its harmonics."""
+    c = np.fft.rfft(i) / n
+    return dict(at, avg_A=float(c[0].real), rms_A=float(np.sqrt(np.mean(i ** 2))),
+                f_Hz=[float(k / period) for k in range(1, count + 1)], A=[float(x) for x in 2 * np.abs(c[1:count + 1])],
+                deg=[float(x) for x in np.degrees(np.angle(c[1:count + 1]))])
+
+
+def currents(model, result, period, harmonics=HARMONICS):
+    """The supply rows of a resolved model's reported run (result: {signal: samples}, uniformly sampled)."""
+    from .copper import net_name
+    got = _period(result, period, harmonics)
+    if got is None:
         return []
-    last = slice(len(t) - 1 - n, len(t) - 1)                        # one period, its end left to the next
-    count = min(int(harmonics), n // 2 - 1)
+    last, n, count = got
     names = (model.get('board') or {}).get('parts', {})
     rows = []
     for src in model['parts']:
@@ -57,20 +72,49 @@ def currents(model, result, period, harmonics=HARMONICS):
             at = drawn.setdefault(fp, dict(footprint=fp, parts=[], i=0.0))
             at['parts'].append(part['ref'])
             at['i'] = at['i'] + i
-        loads = []
-        for at in drawn.values():
-            i = at.pop('i')
-            c = np.fft.rfft(i) / n
-            a = 2 * np.abs(c[1:count + 1])
-            loads.append(dict(at, avg_A=float(c[0].real), rms_A=float(np.sqrt(np.mean(i ** 2))),
-                              f_Hz=[float(k / period) for k in range(1, count + 1)], A=[float(x) for x in a],
-                              deg=[float(x) for x in np.degrees(np.angle(c[1:count + 1]))]))
+        loads = [_load(at, at.pop('i'), n, count, period) for at in drawn.values()]
         if loads:
             caps = [names.get(p['ref'], p['ref']) for p in model['parts'] if p['type'] == 'capacitor'
                     and p.get('enabled', True) and node in p['nodes'] and set(p['nodes']) & set(GROUND)]
             rows.append(dict(node=node, net=net_name(model, node, ()), source=src['ref'], volts=float(src['dc_V']),
                              capacitors=caps, loads=loads))
     return rows
+
+
+def bridge_currents(config, result, frequency, harmonics=HARMONICS):
+    """The supply row of a full bridge's run (pcbqs.power_circuit's model, format 1; result: its signals): what
+    each high-side switch draws from the bridge's rail, as currents() gives a general circuit's. The rail is
+    named from the supply's side: the net the series parts lead back to from the switches' (VHB, through L3 and
+    R9 to VIN on wpthb), with the inductors on that way in `through` and their DC resistance in `dcr`, so that
+    a model of the rail has them (pcbqs.pdn --through, --dcr)."""
+    from ..power_bridge import net_of
+    period = 1.0 / frequency
+    got = _period(result, period, harmonics)
+    high = [sw for sw in config.get('switches', []) if sw.get('high') and sw['ref'] + '.I' in result]
+    if got is None or not high:
+        return []
+    last, n, count = got
+    bus = net_of(config, high[0]['a'])
+    net, through, dcr, seen = bus, [], {}, {bus}
+    while True:                                                     # back towards the supply, a series part at a time
+        step = next((p for p in config.get('components', []) if p.get('enabled', True)
+                     and p['type'] in ('inductor', 'resistor')
+                     and net in (net_of(config, p['a']), net_of(config, p['b']))
+                     and ({net_of(config, p['a']), net_of(config, p['b'])} - {net}) - seen - set(GROUND)), None)
+        if step is None:
+            break
+        net = ({net_of(config, step['a']), net_of(config, step['b'])} - {net}).pop()
+        seen.add(net)
+        if step['type'] == 'inductor':
+            through.append(step['ref'])
+            if step.get('DCR_ohm'):
+                dcr[step['ref']] = float(step['DCR_ohm'])
+    loads = [_load(dict(footprint=sw['ref'], parts=[sw['ref']]), np.asarray(result[sw['ref'] + '.I'])[last], n, count, period)
+             for sw in high if net_of(config, sw['a']) == bus]
+    caps = [p['ref'] for p in config.get('components', []) if p['type'] == 'capacitor' and p.get('enabled', True)
+            and {net_of(config, p['a']), net_of(config, p['b'])} == {bus, 'GND'}]
+    return [dict(node=bus, net=net, source='supply', volts=float(config['voltage_V']), through=through, dcr=dcr,
+                 capacitors=caps, loads=loads)]
 
 
 def write(folder, rows):

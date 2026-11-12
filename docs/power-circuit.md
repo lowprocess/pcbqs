@@ -171,6 +171,18 @@ the run saved them). A point's fields open in the Viewer from its folder.
 Results include every netlist, model, adaptive-grid power measures, compact
 waveforms, matching conditions, convergence history and field assumptions.
 
+<a id="supply"></a>
+## What the bridge draws from its rail
+
+Each point's `supply` in `power-circuit.json` (and `supply-<switch>.csv` beside it) says what
+each high-side switch draws from the bridge's rail over the last period: its average
+and 40 harmonics, the rail named from the supply's side (`net`: VIN on wpthb) with the
+filter's inductors on the way (`through`, `dcr`). A power-integrity run takes them as
+the rail's loads and their current spectra and gives the ripple they make
+(`python -m pcbqs.pdn --through L3 --load Q1=... --load-spectrum Q1=...`); in the
+window it is a button on the circuit's result
+([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next)).
+
 <a id="slow-mode"></a>
 ## A slow mode of the input filter
 

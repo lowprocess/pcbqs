@@ -216,16 +216,18 @@ def mqs_suggest(res, folder=''):
 
 
 def circuit_suggest(res, folder='', pads=None):
-    """What a general circuit's run draws from its supply (a case's 'supply': circuit/supply.py), for the others:
-    the rail with its DC loads and their current spectra for the power-integrity analysis, and a part's input
-    current for the near field. Of the point that draws most. pads: {footprint: the nets of its pads} of the
-    model's board, when known: only parts on it are proposed."""
+    """What a circuit's run draws from its supply (a case's 'supply': circuit/supply.py), for the others: the
+    rail with its DC loads and their current spectra for the power-integrity analysis, and, of a general
+    circuit, a part's input current for the near field. Of the point that draws most. pads: {footprint: the
+    nets of its pads} of the model's board, when known: only parts on it are proposed."""
     cases = [c for c in res.get('cases') or [] if c.get('supply')]
-    if res.get('format') != 2 or not cases:
+    if not cases:
         return []
-    case = max(cases, key=lambda c: c.get('source_power_W') or 0.0)
-    here = case.get('folder') if os.path.isdir(str(case.get('folder') or '')) else os.path.join(folder or '', case['name'])
-    of = f" (point {case['name']})" if len(res['cases']) > 1 else ''
+    general = res.get('format') == 2
+    case = max(cases, key=lambda c: c.get('source_power_W') or c.get('input_power_W') or 0.0)
+    name = case.get('name') or os.path.basename(str(case.get('folder') or ''))
+    here = case.get('folder') if os.path.isdir(str(case.get('folder') or '')) else os.path.join(folder or '', name)
+    of = f" (point {name})" if len(res['cases']) > 1 else ''
     ground = next((g for g in ('GND', 'gnd', '0', 'GNDPWR', 'PGND') if any(g in ns for ns in (pads or {}).values())),
                   'GND')                                        # (as circuit/copper.py finds the board's ground)
     try:
@@ -235,19 +237,26 @@ def circuit_suggest(res, folder='', pads=None):
         pass
     out = []
     for row in case['supply']:
+        on = row.get('node') if row.get('through') else row['net']      # behind a filter: the net its loads are on
         loads = [l for l in row['loads'] if os.path.isfile(os.path.join(here, l['file']))
-                 and (pads is None or row['net'] in pads.get(l['footprint'], ()))]
+                 and (pads is None or on in pads.get(l['footprint'], ()) or row['net'] in pads.get(l['footprint'], ()))]
         if not loads:
             continue
         file = lambda l: os.path.abspath(os.path.join(here, l['file']))
+        values = dict(rail=row['net'], ground=ground, volts=row['volts'],
+                      load='\n'.join(f"{l['footprint']}={l['avg_A']:.4g}" for l in loads),
+                      load_spectrum='\n'.join(f"{l['footprint']}={file(l)}" for l in loads))
+        if row.get('through'):                                  # the filter's inductors: in the rail's model
+            values['through'] = ','.join(row['through'])
+        if row.get('dcr'):
+            values['dcr'] = '\n'.join(f"{r}={v:g}" for r, v in row['dcr'].items())
         out.append(dict(
             to='pdn', label=f"Copy the rail {row['net']} and what is drawn from it to Power integrity",
-            values=dict(rail=row['net'], ground=ground, volts=row['volts'],
-                        load='\n'.join(f"{l['footprint']}={l['avg_A']:.4g}" for l in loads),
-                        load_spectrum='\n'.join(f"{l['footprint']}={file(l)}" for l in loads)),
-            need=[], note=f"The rail {row['net']} with what the circuit's parts draw from it{of}: their average as "
-                          f"DC loads, their harmonics as current spectra. Set its source before Run."))
-        for l in sorted(loads, key=lambda l: -l['rms_A'])[:2]:
+            values=values, need=[],
+            note=f"The rail {row['net']} with what the circuit's parts draw from it{of}: their average as "
+                 f"DC loads, their harmonics as current spectra"
+                 + (f", through {', '.join(row['through'])}" if row.get('through') else '') + ". Set its source before Run."))
+        for l in sorted(loads, key=lambda l: -l['rms_A'])[:2] if general else []:
             if pads is not None and ground not in pads.get(l['footprint'], ()):
                 continue                                        # (the near field's source: a part on both)
             caps = [c for c in row.get('capacitors') or [] if pads is None or {row['net'], ground} <= set(pads.get(c, ()))]
