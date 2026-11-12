@@ -104,6 +104,21 @@ Rdc, Linf and every residue matrix are positive semidefinite, and p is positive.
 Mode removal preserves passivity and is limited by the configured
 `mesh.circuit_fit_tolerance` (default 3% at the fit frequencies); lower this
 value to retain more states at increased circuit-simulation cost.
+
+What the tolerance costs and buys, on wpthb at 90 kHz and 10 W with the board's copper
+(24 ports, each tolerance reduced from the same extraction; 2026-11-12):
+
+| Tolerance | Modes kept (of 146) | Case time | Settled bus ripple | Edge spike | Efficiency |
+|---|---|---|---|---|---|
+| 0 or 1% | 146 | 123 s | 0.774 V | 3.18 V | 92.69% |
+| 3% (default) | 39 | 57 s | +1.4% | −0.4% | 92.69% |
+| 6% | 26 | 34 s | −19% | −1.0% | 92.53% |
+| 10% | 18 | 23 s | −73% | −29% | 92.90% |
+| 20% | 10 | 17 s | −81% | −16% | 92.93% |
+
+Load power, primary current and the phase found are the same to 0.01% down to 10%. The bus
+ripple is what the copper's higher modes carry, so it is the first to go: 3% is as loose as
+the tolerance can be.
 The PSD-constrained fit is exported as a real passive RL network with ideal
 linear modal transformations implemented with native controlled sources. The model's frequency errors are recorded;
 a good training fit is not a mesh or independent-frequency convergence result.

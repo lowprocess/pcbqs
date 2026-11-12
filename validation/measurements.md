@@ -1,4 +1,4 @@
-# Bench measurements on wpthb (ROADMAP item 5)
+# Bench measurements on wpthb (the roadmap's Measurements item)
 
 All pcbqs validation so far is solver against solver. These measurements check the model against the as-built
 board (`~/Desktop/wpthb`). They are ordered by the equipment they need and by what they test. Predictions to

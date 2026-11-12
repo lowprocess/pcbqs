@@ -8,7 +8,7 @@ Minima and the wpthb wireless-power bridge; see
 [power-workflow.md](power-workflow.md) and `examples/power-workflow/`.
 
 **Fixed on `claude/circuit-sim-speed` and its base** marks findings found and
-fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
+fixed while running these boards; the rest are in the [roadmap](https://github.com/lowprocess/kicad2ems/blob/main/ROADMAP.md#power-tools-pcbqs) ("ROADMAP" below).
 
 ## Correctness
 
@@ -20,7 +20,7 @@ fixed while running these boards; the rest are in [ROADMAP.md](../ROADMAP.md).
 | C4 | Gate pulses with an on-interval spanning t = 0 started off: every transient began with a wrong bridge state for part of a cycle, re-exciting the input filter; at 180° a low-side switch skipped a whole period. | `power_spice.py` `switch()` | Fixed |
 | C5 | abstol 1e-9 A made strict runs fail ("timestep too small") at hard-switched edges; no retry existed. | `power_spice.py` | Fixed: 1e-6 A default, trap/cold retries, failed logs kept |
 | C6 | Coaxial via segments used 1e-7 m separation for their mutual inductance; vias through inner copper were over-inductive (Jetson X −1.6% after fixing). | `mqs.py` `_via_matrices` | Fixed (earlier this branch's base) |
-| C7 | Precharge hard-codes the template's references and drops (C19–C24, CA*, L3, C25/C27/C30; 0.055/0.085 Ω). Another board, or a renamed or replaced L3, starts far from steady state. Warm starts now replace it after the first (pilot) run. | `power_bridge.py:98-101,150` | Partly: warm starts; generic DC precharge on ROADMAP |
+| C7 | Precharge hard-codes the template's references and drops (C19–C24, CA*, L3, C25/C27/C30; 0.055/0.085 Ω). Another board, or a renamed or replaced L3, starts far from steady state. Warm starts now replace it after the first (pilot) run. | `power_bridge.py:98-101,150` | Mostly: warm starts; precharge by connectivity (2026-11-11). wpthb's own values still in the code: ROADMAP |
 | C8 | The periodicity check ignores supply current, and input power is averaged over one switching cycle, so a slowly decaying input-filter mode biases input power and efficiency (≤ 0.66% on wpthb in both old and new code). | `power_circuit.py:160,181` | ROADMAP |
 | C9 | High-side FET loads have no ground pad, so a bridge's DC return (through the low-side FET) is not modelled; the tool only notes it. | `pdn/dc.py:250` | Fixed 2026-11-10: `--load REF=A@RETURN` |
 | C10 | The PDN target defaults to V × 5% ÷ (half the loads' current) even for a switching bridge, where it has little meaning. | `pdn/cli.py:196-197` | Fixed 2026-11-10: `--load-target REF=OHMS`, `--no-target` |

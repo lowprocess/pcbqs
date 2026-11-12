@@ -2,7 +2,7 @@
 
 A list of structures for a board made only to check pcbqs against measurement. Everything in `validation/` so
 far is solver against solver; [measurements.md](measurements.md) covers what can be measured on wpthb as built.
-The items are ordered by how much each decides something open in the model (ROADMAP, "Validation and accuracy").
+The items are ordered by how much each decides something open in the model (the roadmap's Power tools, "Accuracy and validation").
 Items 1–4 are where the solvers disagree with each other or with the references. No layout or dimensions are
 fixed yet, so there are no predictions per structure: add them (a script per structure in `validation/`) once
 the layout exists.
