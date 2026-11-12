@@ -20,8 +20,15 @@ core = ["pybind11>=2.10"]
 gpu-cuda12 = ["cupy-cuda12x>=14"]
 gpu-cuda13 = ["cupy-cuda13x>=14"]
 gpu-rocm7 = ["cupy-rocm-7-0>=14"]
-kicad2ems = ["kicad2ems>=261101.post1"]
+kicad2ems = ["kicad2ems>=261112"]      # the board importer, and the analysis plugins below (kicad2ems.api 2.5)
 test = ["pytest>=7"]
+
+# the tools as kicad2ems analyses: its --check, its configs' [analysis] tables and kicad2ems-gui's Study list them
+[project.entry-points."kicad2ems.analyses"]
+pdn = "pcbqs.analyses:PowerIntegrity"
+mqs = "pcbqs.analyses:NearField"
+circuit = "pcbqs.analyses:Circuit"
+thermal = "pcbqs.analyses:Thermal"
 
 [tool.setuptools.dynamic]
 version = {attr = "pcbqs.__version__"}
@@ -30,7 +37,8 @@ version = {attr = "pcbqs.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb", "PROVENANCE.json"]
+pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "data/*.toml", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb",
+         "circuit/examples/*.toml", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

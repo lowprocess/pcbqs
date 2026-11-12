@@ -4,6 +4,10 @@
     python -m pcbqs.thermal --circuit circuit-results            # the board and the losses of a circuit run
     python -m pcbqs.thermal --circuit circuit-results --method both
     python -m pcbqs.thermal --describe --json                     # the options, for kicad2ems-gui's form
+
+It writes <out>/thermal.json (each part's temperature, each layer's hottest and mean, the heat in and out),
+thermal.npz (the maps), thermal.png and, where kicad2ems's viewer reads results, the board and each layer's
+temperature as field dumps (thermal/viewer.py).
 """
 import argparse
 import json
@@ -133,6 +137,15 @@ def main(argv=None):
     for n in p.notes:
         print('note:', n)
     np.savez_compressed(out / 'thermal.npz', layers=np.array([l.name for l in p.layers]), **arrays)
+    try:                                                # the same maps for the viewer; a failure costs only them
+        from .viewer import write_viewer
+        shown = write_viewer(str(out), board, p, res)
+    except Exception as e:
+        shown = None
+        print(f"note: the viewer's maps were not written: {type(e).__name__}: {e}")
+    for m in summary:
+        if m in res:
+            summary[m]['viewer'] = shown
     (out / 'thermal.json').write_text(json.dumps(summary if len(res) > 1 else summary[methods[0]], indent=1))
     print(f"results in {out}")
     return 0

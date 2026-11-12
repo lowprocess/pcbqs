@@ -1,0 +1,11 @@
+# pcbqs circuit example: phase-shifted full bridge on a board's terminals (the wpthb wireless-power board's model)
+#   python -m pcbqs.power_circuit wpthb-power.json --out out/wpthb_bridge
+# The model names that board's own parts: name the board under Board (it is not shipped) to include its copper;
+# without one the circuit runs alone.
+out   = "out"
+
+[analysis]
+run = ["circuit"]
+
+[analysis.circuit]
+model = "wpthb-power.json"

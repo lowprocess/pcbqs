@@ -44,14 +44,20 @@ main()
 
 
 def test_no_rf_or_application_dependency_in_core():
+    # kicad2ems is imported in two places only: _cli.py (reading a KiCad board) and analyses.py (the plugins that
+    # kicad2ems itself loads). Nothing in pcbqs imports analyses.py, so the tools run without kicad2ems.
     root=Path(__file__).parents[1]/'src/pcbqs'
     for file in root.rglob('*.py'):
         for node in ast.walk(ast.parse(file.read_text())):
-            if isinstance(node,ast.ImportFrom) and node.module:
-                assert not node.module.startswith('mom25d'),file
-                if node.module.startswith('kicad2ems'):assert file.name=='_cli.py',file   # the one KiCad import path
+            if isinstance(node,ast.ImportFrom):
+                module=node.module or ''
+                assert not module.startswith('mom25d'),file
+                if module.startswith('kicad2ems'):assert file.name in ('_cli.py','analyses.py'),file
+                names=[module.split('.')[-1]]+[n.name for n in node.names]
+                assert 'analyses' not in names or module.startswith('kicad2ems'),file   # the plugins: kicad2ems's to load
             elif isinstance(node,ast.Import):
                 assert not any(n.name.startswith('mom25d') for n in node.names),file
+                assert not any(n.name.split('.')[-1]=='analyses' for n in node.names),file
 
 
 def test_automatic_fallback_without_native_core(tmp_path):

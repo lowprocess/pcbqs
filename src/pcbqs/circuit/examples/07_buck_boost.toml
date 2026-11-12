@@ -1,0 +1,11 @@
+# pcbqs circuit example: the inductor is charged from the input and discharged into a negative output
+#   python -m pcbqs.circuit 07_buck_boost.json --out out/buck_boost      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "07_buck_boost.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit", "thermal"]   # a Run of the window: the circuit, then the board's temperature from its losses (no S-parameters)
+
+[analysis.circuit]
+model = "07_buck_boost.json"       # the parts, nodes and drives: the Circuit page's schematic

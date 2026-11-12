@@ -1,0 +1,11 @@
+# pcbqs circuit example: two complementary switches drive a series LC and a resistor above resonance; no target, a sweep of the frequency
+#   python -m pcbqs.circuit 09_half_bridge_resonant.json --out out/half_bridge_resonant      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "09_half_bridge_resonant.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit", "thermal"]   # a Run of the window: the circuit, then the board's temperature from its losses (no S-parameters)
+
+[analysis.circuit]
+model = "09_half_bridge_resonant.json"       # the parts, nodes and drives: the Circuit page's schematic

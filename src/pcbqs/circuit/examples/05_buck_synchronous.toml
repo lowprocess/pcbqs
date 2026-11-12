@@ -1,0 +1,11 @@
+# pcbqs circuit example: two switches on one drive, the lower its complement with dead time; swept over a constant-current load
+#   python -m pcbqs.circuit 05_buck_synchronous.json --out out/buck_synchronous      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "05_buck_synchronous.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit", "thermal"]   # a Run of the window: the circuit, then the board's temperature from its losses (no S-parameters)
+
+[analysis.circuit]
+model = "05_buck_synchronous.json"       # the parts, nodes and drives: the Circuit page's schematic

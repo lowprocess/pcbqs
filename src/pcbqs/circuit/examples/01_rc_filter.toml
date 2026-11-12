@@ -1,0 +1,11 @@
+# pcbqs circuit example: a 5 V square wave through an RC low-pass: the simplest periodic circuit, no switches
+#   python -m pcbqs.circuit 01_rc_filter.json --out out/rc_filter      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "01_rc_filter.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit"]   # a Run of the window: the circuit (no S-parameters)
+
+[analysis.circuit]
+model = "01_rc_filter.json"       # the parts, nodes and drives: the Circuit page's schematic

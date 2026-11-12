@@ -1,0 +1,11 @@
+# pcbqs circuit example: non-synchronous boost: the duty is adjusted until the output is 24 V
+#   python -m pcbqs.circuit 06_boost.json --out out/boost      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "06_boost.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit", "thermal"]   # a Run of the window: the circuit, then the board's temperature from its losses (no S-parameters)
+
+[analysis.circuit]
+model = "06_boost.json"       # the parts, nodes and drives: the Circuit page's schematic

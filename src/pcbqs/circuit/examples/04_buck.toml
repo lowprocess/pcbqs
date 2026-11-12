@@ -1,0 +1,11 @@
+# pcbqs circuit example: non-synchronous buck: the duty is adjusted until the output is 5 V into a resistive load
+#   python -m pcbqs.circuit 04_buck.json --out out/buck      # the circuit alone, from the command line
+#   kicad2ems-gui: File > Examples > Circuits                     # the circuit on its board, in the window
+board = "04_buck.kicad_pcb"   # paths are relative to this file
+out   = "out"
+
+[analysis]
+run = ["circuit", "thermal"]   # a Run of the window: the circuit, then the board's temperature from its losses (no S-parameters)
+
+[analysis.circuit]
+model = "04_buck.json"       # the parts, nodes and drives: the Circuit page's schematic

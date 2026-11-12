@@ -15,6 +15,14 @@ python -m pcbqs.circuit boost.json --out result
 
 JSON-based solving, layout/mesh export and field reconstruction work without
 `mom25d` or `kicad2ems`. Install `.[kicad2ems]` to import `.kicad_pcb` files.
+
+With kicad2ems installed the four tools are its analyses (`pcbqs/analyses.py`, the
+`kicad2ems.analyses` entry points): `kicad2ems --check` lists them, a config keeps a
+study's under `[analysis]`, and kicad2ems-gui builds each one's settings from its
+options table, runs it and shows what its result folder holds: the maps as field
+dumps in its Viewer, the report and the curves (`pcbqs/reports.py`) on its Results
+page. The circuit examples are configs beside their models
+(`circuit/examples/*.toml`), under its File > Examples > Circuits.
 Install ngspice separately for operational circuits. Component models and
 parasitics are explicit assumptions; footprints do not imply calibrated models.
 

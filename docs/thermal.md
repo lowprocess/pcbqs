@@ -10,13 +10,17 @@ Elmer through kicad2ems-fem, and the two agree within 2 K on eleven boards (belo
     python -m pcbqs.thermal board.kicad_pcb --loss U1=1.2 --theta U1=8 --film 12 --ambient 40
     python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --film-edge 0  # the edges insulated
 
-In kicad2ems-gui it is the **Thermal** analysis: its form comes from `python -m pcbqs.thermal --describe --json`,
-and with no losses typed it takes the Circuit page's latest run.
+In kicad2ems-gui it is the **Thermal** analysis (`pcbqs.analyses.Thermal`, a kicad2ems analysis plugin): its form
+is its options table, and with no losses typed it takes the latest circuit run's, on that run's board.
 
 It writes `thermal.json` (each part's temperature, each layer's hottest and mean, heat in and out, the board and
 the circuit case they came from),
 `thermal.npz` (the maps) and `thermal.png`; with `--method both` a picture per solver and
-`thermal-compare.png`.
+`thermal-compare.png`. The maps also go where kicad2ems's viewer reads a run's (`thermal/viewer.py`):
+`thermal_board.json` and, under `thermal/exc_board/`, each layer's temperature as a field dump in °C (NaN off the
+board; with both solvers each one's, and mesh minus grid in K), so the Viewer turns, cuts and probes them in 2D and
+3D on a colour scale from the board's coolest point to its hottest. The report (`reports.thermal_report`: the
+parts' and the layers' tables) is on its Results page.
 
 ![The synchronous buck's top layer from the grid and the mesh, and their difference](images/thermal-compare.png)
 
