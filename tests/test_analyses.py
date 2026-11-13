@@ -141,7 +141,8 @@ def test_the_circuit_command(tmp_path):
     assert [k for k, o in opts.items() if o['only'] == ''] == ['model', 'copper', 'fields', 'jobs']
     assert [k for k, o in opts.items() if o['only'] == 'general'] == ['set'] and opts['jobs']['default'] == 4
     assert [k for k, o in opts.items() if o['only'] == 'bridge'] == ['field_harmonics', 'frequencies', 'powers', 'coupling',
-                                                                     'receiver_c', 'load', 'switch_type', 'override']
+                                                                     'primary_l', 'secondary_l', 'receiver_c', 'load',
+                                                                     'switch_type', 'override']
     assert opts['switch_type']['choices'][0] == 'vdmos' and 'board' not in opts
 
 

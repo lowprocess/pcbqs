@@ -10,6 +10,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The full bridge takes its coils' inductances as options** (`--primary-l`, `--secondary-l`, uH, beside
+  `--coupling`): what a field solution of the coils gives. kicad2ems-fem's *Coils and ferrite* (Elmer) proposes
+  the three to the circuit from its result, so a wireless-power bridge runs with the coils as solved beside their
+  ferrite, not a datasheet's figure.
 - **The rail tool names what differs by rail** (`several_keys`, kicad2ems API 2.10): the rail, its volts, source,
   ground source, loads and load spectra, which kicad2ems's window shows as a table of a board's rails.
 - **The near field of a converter built from discrete parts.** The tool knew a converter only as one IC with pads

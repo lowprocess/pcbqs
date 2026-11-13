@@ -23,6 +23,10 @@ OPTIONS = [            # (key, kind, default, help, group[, choices]): _cli's ta
     ('frequencies', 'str', None, "the operating frequencies, Hz, comma separated (default: the model's)", 'Operating points'),
     ('powers', 'str', None, "the receiver's powers, W, comma separated (default: the model's)", 'Operating points'),
     ('coupling', 'float', None, "the coils' coupling k (default: the model's)", 'Operating points'),
+    ('primary_l', 'float', None, "the primary coil's inductance, uH (default: the model's): with the secondary's "
+     "and the coupling, what a field solution of the coils gives (kicad2ems-fem's coils with ferrite)",
+     'Operating points'),
+    ('secondary_l', 'float', None, "the secondary coil's inductance, uH (default: the model's)", 'Operating points'),
     ('receiver_c', 'float', None, "the receiver's capacitor, nF, held at this (default: the model's; a model "
      "without one tunes it at each frequency)", 'Operating points'),
     ('load', 'float', None, "the receiver's load, ohm, held at this (default: the model's; a model without one "
@@ -649,6 +653,11 @@ def main(argv=None):
                 cfg[key] = [float(v) for v in opt.split(',') if v.strip()]
         if args.coupling is not None:
             cfg['coupling'] = args.coupling
+        for value, coil in ((args.primary_l, 'primary'), (args.secondary_l, 'secondary')):
+            if value is not None:
+                if value <= 0:
+                    raise ValueError(f"the {coil} coil's inductance must be positive (uH)")
+                cfg[coil]['L_H'] = value * 1e-6
         if args.receiver_c is not None:
             cfg['secondary_C_F'] = args.receiver_c * 1e-9
         if args.load is not None:

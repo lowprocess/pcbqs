@@ -467,8 +467,9 @@ def test_the_bridge_tool_describes_its_options(tmp_path, capsys):
     assert power_circuit.main(['--describe', '--json']) is None
     d = json.loads(capsys.readouterr().out)
     opts = {o['key']: o for o in d['options']}
-    assert list(opts) == ['frequencies', 'powers', 'coupling', 'receiver_c', 'load', 'switch_type', 'override',
-                          'copper', 'fields', 'field_harmonics', 'board', 'jobs']
+    assert list(opts) == ['frequencies', 'powers', 'coupling', 'primary_l', 'secondary_l', 'receiver_c', 'load',
+                          'switch_type', 'override', 'copper', 'fields', 'field_harmonics', 'board', 'jobs']
+    assert 'uH' in opts['primary_l']['help'] and opts['secondary_l']['kind'] == 'float'
     assert opts['switch_type']['choices'] == ['vdmos', 'mosfet', 'subcircuit', 'switch', 'ideal'] and opts['override']['kind'] == 'list'
     assert opts['switch_type']['group'] == 'Switches' and 'may not settle' in opts['switch_type']['help']
     model = tmp_path / 'm.json'
@@ -478,6 +479,9 @@ def test_the_bridge_tool_describes_its_options(tmp_path, capsys):
     assert "no part of tank takes ohms" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         power_circuit.main([str(model), '--switch-type', 'relay'])
+    with pytest.raises(SystemExit):                                 # a coil's inductance (a field solution's): uH
+        power_circuit.main([str(model), '--out', str(tmp_path / 'o'), '--primary-l', '-3'])
+    assert "primary coil's inductance must be positive" in capsys.readouterr().err
     from pcbqs.circuit import __main__ as general
     assert general.main(['--describe', '--json']) == 0
     assert [o['key'] for o in json.loads(capsys.readouterr().out)['options']] == ['copper', 'fields', 'board', 'set', 'jobs']

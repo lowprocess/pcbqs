@@ -244,7 +244,8 @@ what the parts join, not by their references:
 So `--override tank.ESR_ohm=0.004` changes the resonant bank and leaves the
 rails' ceramics and polymers as they are. The starting state of a precharged
 run goes by the same groups; no part's reference is in the code.
-`--coupling`, `--receiver-c` (nF) and `--load` (ohm) set what the model holds,
+`--coupling`, `--primary-l` and `--secondary-l` (the coils' inductances, uH: a field solution's, as
+kicad2ems-fem's coils with ferrite gives them), `--receiver-c` (nF) and `--load` (ohm) set what the model holds,
 as `--frequencies`, `--powers` and `--switch-type` do. ngspice may not settle
 the behavioural `switch` model on a hard-switched bridge: the templates use
 `vdmos`.
