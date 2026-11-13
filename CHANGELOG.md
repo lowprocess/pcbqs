@@ -10,6 +10,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The settings that name a net or a part say so** (an option's `pick`, kicad2ems API 2.11): the rail, its
+  ground, source, ground source, `through` and `stop`; a converter, its inductor, input net and capacitors.
+  kicad2ems's window puts a pick button beside each, and a click on the board fills it in.
 - **The full bridge takes its coils' inductances as options** (`--primary-l`, `--secondary-l`, uH, beside
   `--coupling`): what a field solution of the coils gives. kicad2ems-fem's *Coils and ferrite* (Elmer) proposes
   the three to the circuit from its result, so a wireless-power bridge runs with the coils as solved beside their

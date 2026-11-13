@@ -44,11 +44,17 @@ def argv(module, options, values, board, out):
     return out_argv
 
 
+# the settings that name a net or a part of the board (kicad2ems API 2.11: an option's `pick`; plural: several)
+PICK = dict(rail='net', ground='nets', vin='net', source='part', ground_source='part', converter='part',
+            inductor='part', through='parts', stop='parts', capacitors='parts')
+
+
 class _Tool(Analysis):
     """One of pcbqs's command-line tools: its options table (pcbqs._cli's form), its command, its results."""
     api = API
     engine = 'pcbqs'
     module = ''
+    pick = {}                               # a tool's own word over PICK's
 
     def check(self):
         from . import __version__
@@ -59,7 +65,12 @@ class _Tool(Analysis):
 
     def options(self):
         from ._cli import describe
-        return describe(self.table())['options']
+        opts = describe(self.table())['options']
+        pick = {**PICK, **self.pick}
+        for o in opts:                                              # what a front end may pick on the board
+            if o['key'] in pick:
+                o['pick'] = pick[o['key']]
+        return opts
 
     def report(self, folder):
         from . import reports
@@ -188,6 +199,7 @@ class NearField(_Tool):
     result, preview_result = 'mqs.json', 'mqs-preview.json'
     provides = ('nearfield',)
     several = 'converter'                   # and several converters
+    pick = dict(ground='net')               # (one ground net: the loop's return)
 
     def table(self):
         from .mqs_cli import OPTIONS

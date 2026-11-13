@@ -45,6 +45,12 @@ def test_the_four_register_with_kicad2ems():
         assert opts and all(o['kind'] in KINDS and o['flag'].startswith('--') for o in opts)
         assert set(a.paths) <= {o['key'] for o in opts}
     assert made[1].previewed and made[1].preview_result == 'mqs-preview.json' and made[2].page
+    # what names a net or a part says so, for a front end to pick it on the board (kicad2ems API 2.11)
+    pick = lambda a: {o['key']: o['pick'] for o in a.options() if 'pick' in o}
+    assert pick(made[0]) == dict(rail='net', ground='nets', source='part', ground_source='part', through='parts',
+                                 stop='parts')
+    assert pick(made[1]) == dict(converter='part', inductor='part', vin='net', ground='net', capacitors='parts')
+    assert pick(made[2]) == {} and pick(made[3]) == {}
     import tomllib
     eps = tomllib.load(open(Path(__file__).resolve().parents[1] / 'pyproject.toml', 'rb'))['project']['entry-points']
     assert eps['kicad2ems.analyses'] == {a.name: f"pcbqs.analyses:{type(a).__name__}" for a in made}
