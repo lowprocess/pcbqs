@@ -10,6 +10,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The low-frequency S-parameters take the board's lumped parts** (`pcbqs.sparams`, `--solvers pcbqs`): each a
+  series R, L and C between patches of the copper at its two pads, so a filter of parts or a trace with a
+  series capacitor has its low end (they were left out: a series part's gap was an open circuit). The fine
+  mesh follows the signal through the series parts. `demo_lowpass` against mom25d solved point by point: |S21|
+  0.9910 for 0.9912 at 117 MHz, 0.9886 for 0.9882 at 274 MHz. A part with no value or a pad on no copper is
+  left out and named.
 - **The settings that name a net or a part say so** (an option's `pick`, kicad2ems API 2.11): the rail, its
   ground, source, ground source, `through` and `stop`; a converter, its inductor, input net and capacitors.
   kicad2ems's window puts a pick button beside each, and a click on the board fills it in.

@@ -458,7 +458,7 @@ class QuasiStatic(Solver):
     capabilities = dict(
         ports='yes: a source and its termination between the trace and the copper under it', gap_ports='no',
         diff_pairs="yes: the legs as single-ended ports, the modes from them",
-        parts='no: left out', vias='yes: filaments between the layers they join',
+        parts='yes: a series R, L and C between their pads', vias='yes: filaments between the layers they join',
         outline='ignored: the copper alone', planes='yes: meshed, the return current where it flows',
         edge_walls='ignored', thickness="approximated: one sheet; its two faces with --qs-thickness",
         conductor_loss="yes: the copper's DC sheet resistance; the skin effect through it with --qs-thickness",
@@ -541,5 +541,7 @@ class QuasiStatic(Solver):
             run.log(f"  pcbqs: current maps not written: {exc}")
 
     def deviations(self, run, prep):
-        return [Deviation(f"part:{p.ref}", 'parts', 'left out', dropped=True) for p in run.m.parts]
+        from . import sparams
+        return [Deviation(f"part:{ref}", 'parts', f"left out: {why}", dropped=True)
+                for ref, why in sparams.part_elements(run.m.to_dict())[1]]
 

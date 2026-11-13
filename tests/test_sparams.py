@@ -160,6 +160,57 @@ def test_with_the_charge_it_is_a_transmission_line():
     assert np.allclose(rlc['drive'][1][0].charge, alone.charge, rtol=1e-8, atol=1e-24)
 
 
+def with_parts(series=dict(R=0.5, L=10e-9, C=None), shunt=dict(R=0.2, L=1e-9, C=100e-12)):
+    """The thru with a 1 mm gap at 20 mm bridged by a part in series, and a part from the trace at 25 mm down to a
+    pad with a via to the plane (a low-pass filter's two parts)."""
+    b = thru()
+    half = lambda net, x0, x1: dict(net=net, polygon=mapping(box(x0, 10 - W / 2, x1, 10 + W / 2)))
+    b['copper']['F.Cu'] = [half('IN', 5, 19.5), half('OUT', 20.5, 5 + LEN), dict(net='GND', polygon=mapping(box(24.5, 7, 25.5, 8)))]
+    b['vias'] = [dict(x=25.0, y=7.5, r=0.15, z0=0.0, z1=H, net='GND')]
+    b['ports'][0]['net'], b['ports'][1]['net'] = 'IN', 'OUT'
+    part = lambda ref, axis, s, e, v: dict(ref=ref, layer='F.Cu', z=H, axis=axis, s=s + [H], e=e + [H], **v)
+    b['parts'] = [part('L1', 0, [19.5, 10 - W / 2], [20.5, 10 + W / 2], series),
+                  part('C1', 1, [24.5, 8.0], [25.5, 10 - W / 2], shunt)]
+    return b
+
+
+def test_the_board_s_parts_are_elements_between_their_pads(thru_rl):
+    """A part of the board (a kicad2ems board's `parts`: a gap between two pads and its R, L, C) is a series
+    element between patches of the copper at the gap's two ends. With the trace cut and bridged by a part, and
+    a capacitor from it to ground, S is that of the ladder the parts make with the copper's own resistance and
+    inductance; without the parts nothing would get through the cut."""
+    b = with_parts()
+    took, left = SP.part_elements(b)
+    assert [(e['ref'], e['nets']) for e in took] == [('L1', ['IN', 'OUT']), ('C1', ['GND', 'OUT'])] and left == []
+    assert SP.signal_nets(b, b['ports']) == {'IN', 'OUT'}           # (through the series part; not the ground)
+    f = np.array([1e3, 1e5, 1e6, 1e7])
+    r = SP.solve(b, f, **QUIET)
+    assert r['info']['parts'] == ['L1', 'C1'] and r['info']['parts_left_out'] == []
+    p = path(thru_rl)                                               # the uncut trace's own R and L, per mm
+    Rm, Lm = p['R_ohm'][0] / LEN, p['L_H'][-1] / LEN
+    w = 2 * np.pi * f
+    cu = lambda mm: mm * (Rm + 1j * w * Lm)
+    z1 = cu(14.5) + 0.5 + 1j * w * 10e-9 + cu(4.5)                  # port 1 to the capacitor's tap
+    y = 1 / (0.2 + 1j * w * 1e-9 + 1 / (1j * w * 100e-12))
+    z2 = cu(10.0)
+    A, B, C, D = 1 + z1 * y, z1 + z2 + z1 * z2 * y, y, 1 + z2 * y
+    den = A + B / 50 + C * 50 + D
+    assert np.abs(r['S'][:, 1, 0] - 2 / den).max() < 0.01 and np.abs(r['S'][:, 0, 0] - (A + B / 50 - C * 50 - D) / den).max() < 0.01
+    assert abs(r['S'][0, 1, 0]) == pytest.approx(100 / (100 + 0.5 + Rm * 29), abs=2e-4)     # 1 kHz: the resistances
+    assert abs(r['S'][3, 0, 0]) > 0.1 > abs(r['S'][0, 0, 0])        # 10 MHz: the capacitor counts
+    # a part with no value, and one whose pad is on no copper, are left out and named
+    b = with_parts(series=dict(R=None, L=None, C=None))
+    b['parts'][1]['s'][1] = 5.0                                     # (the capacitor's lower pad: off its pad)
+    b['parts'][1]['e'][1] = 6.0
+    took, left = SP.part_elements(b)
+    assert took == [] and left == [('L1', 'no value'), ('C1', 'a pad on no copper of F.Cu')]
+    r = SP.solve(b, f[:1], **QUIET)
+    assert abs(r['S'][0, 1, 0]) < 1e-6 and r['info']['parts_left_out'] == [list(x) for x in left]
+    # a single value is that element alone: a 0 ohm link passes everything
+    link = SP.solve(with_parts(series=dict(R=0.0, L=None, C=None), shunt=dict(R=None, L=None, C=1e-15)), f[:1], **QUIET)
+    assert abs(link['S'][0, 1, 0]) == pytest.approx(100 / (100 + Rm * 29), abs=2e-4)
+
+
 def test_what_it_refuses():
     b = thru()
     for change, msg in ((dict(ports=[]), 'no ports'), (dict(ports=[dict(b['ports'][0], kind='gap')]), 'no gap ports'),

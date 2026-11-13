@@ -80,15 +80,76 @@ def terminal_box(p):
     return box(lo[0], lo[1], hi[0], hi[1])
 
 
+def part_patches(p):
+    """The two patches of copper a board's part joins (a kicad2ems board's `parts`: the gap between its pads, from
+    s to e, along its axis): the copper at each end of the gap, the gap's width across and half of that (at least
+    0.2 mm) along."""
+    from shapely.geometry import box
+    a = int(p['axis'])
+    g0, g1 = sorted((p['s'][a], p['e'][a]))
+    w0, w1 = sorted((p['s'][1 - a], p['e'][1 - a]))
+    reach = max(0.5 * (w1 - w0), 0.2)
+    out = []
+    for lo, hi in ((g0 - reach, g0), (g1, g1 + reach)):
+        b = [0.0] * 4
+        b[a], b[a + 2], b[1 - a], b[3 - a] = lo, hi, w0, w1
+        out.append(box(*b))
+    return out
+
+
+def part_elements(board):
+    """(the parts the solve takes: [dict(ref, layer, patches, nets, R, L, C)], those it leaves out: [(ref, why)]).
+    A part is a series R, L and C between its two pads, as kicad2ems's other solvers have it (a value of one of
+    them: that element alone); one with no value, or with a pad that is on no copper of its layer, is left out."""
+    from shapely.geometry import shape
+    took, left = [], []
+    for p in board.get('parts') or []:
+        vals = {k: p.get(k) for k in 'RLC'}
+        if all(v is None for v in vals.values()):
+            left.append((p['ref'], 'no value'))
+            continue
+        patches, nets = part_patches(p), []
+        for patch in patches:
+            on = [r.get('net') or '' for r in board['copper'].get(p['layer'], []) if shape(r['polygon']).intersects(patch)]
+            nets.append(on[0] if on else None)
+        if None in nets:
+            left.append((p['ref'], f"a pad on no copper of {p['layer']}"))
+            continue
+        took.append(dict(ref=p['ref'], layer=p['layer'], patches=patches, nets=nets, R=float(vals['R'] or 0.0),
+                         L=float(vals['L'] or 0.0), C=None if vals['C'] is None else float(vals['C'])))
+    return took, left
+
+
 def _nets(board):
     return {r['net'] for records in board['copper'].values() for r in records if r.get('net')}
 
 
+def signal_nets(board, ports):
+    """The nets the ports' signals are on: the ports' own, and those a part joins them to (a filter's inner
+    nodes), but not the ground nets nor the nets of the copper under the ports."""
+    from shapely.geometry import shape
+    ground = set(board.get('ground_nets') or [])
+    for p in ports:                                         # (a board file with no ground named: what is under a port)
+        patch = terminal_box(p)
+        ground |= {r.get('net') for r in board['copper'].get(p.get('ref_layer'), []) if r.get('net')
+                   and shape(r['polygon']).intersects(patch)}
+    nets = {p['net'] for p in ports if p.get('net')}
+    links = [set(e['nets']) - ground for e in part_elements(board)[0]]
+    grew = True
+    while grew:
+        grew = False
+        for link in links:
+            if link & nets and not link <= nets:
+                nets |= link
+                grew = True
+    return nets
+
+
 def _signal(board, ports):
-    """The copper of the ports' nets, every layer's, as one geometry."""
+    """The copper of the ports' signals (signal_nets), every layer's, as one geometry."""
     from shapely.geometry import shape
     from shapely.ops import unary_union
-    nets = {p['net'] for p in ports if p.get('net')}
+    nets = signal_nets(board, ports)
     return unary_union([shape(r['polygon']) for records in board['copper'].values() for r in records
                         if r.get('net') in nets])
 
@@ -101,7 +162,7 @@ def limits(board, ports):
     from shapely.geometry import shape
     zs = {c['name']: c['z'] for c in board['stack']['copper']}
     er = max((l.get('er', 1.0) for l in board['stack'].get('layers', [])), default=1.0)
-    nets = {p['net'] for p in ports if p.get('net')}
+    nets = signal_nets(board, ports)
     sig = _signal(board, ports)
     x0, y0, x1, y1 = sig.bounds if not sig.is_empty else (0, 0, 1, 1)
     f_wave = C0 / (10 * np.sqrt(er) * max(np.hypot(x1 - x0, y1 - y0), 1e-3) * 1e-3)
@@ -125,8 +186,9 @@ def limits(board, ports):
 def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto', capacitance='auto',
           thickness=False, log=print):
     """The S-parameters of a board's ports at freqs (Hz, all positive): dict(f, S (nf, n, n), names, zref, q, drive,
-    info). board: a kicad2ems board dict (stack, copper, vias, ports); ports: its own unless given, each dict(name,
-    layer, ref_layer, c, axis, sgn, w, z0, net), single-ended, between a trace and the copper under it.
+    info). board: a kicad2ems board dict (stack, copper, vias, ports, parts); ports: its own unless given, each
+    dict(name, layer, ref_layer, c, axis, sgn, w, z0, net), single-ended, between a trace and the copper under it.
+    Its parts are series R, L and C between their pads (part_elements).
     capacitance: 'on', 'off' or 'auto' (the charge solved too when freqs reach above where R and L alone hold).
     thickness: the copper as its two faces (MQS's conductor_loss='slab') instead of one sheet of its DC resistance.
     drive[k]: the solve with port k driven (pcbqs.mqs.Result) and the current that entered the port, for the
@@ -158,6 +220,10 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
             if not any(shape(r['polygon']).intersects(patch) for r in board['copper'].get(lay, [])):
                 raise ValueError(f"port {p['name']}: no copper on {lay} at ({p['c'][0]:.2f}, {p['c'][1]:.2f}) for {what}")
             terms[p['name'] + sign] = [(lay, patch)]
+    parts, left_out = part_elements(board)                  # the board's lumped parts: between their pads
+    for e in parts:
+        for i, patch in enumerate(e['patches']):
+            terms[f"{e['ref']}:{i + 1}"] = [(e['layer'], patch)]
     f_wave, f_cap, cap = limits(board, ports)
     charge = capacitance == 'on' or (capacitance == 'auto' and f.max() > f_cap)
     sig = _signal(board, ports)
@@ -185,6 +251,11 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
     for p in ports:
         q.element(p['name'] + '.Z', p['name'] + '+', p['name'] + '-', R=p['z0'], part_h=0)
         q.source(p['name'] + '.I', p['name'] + '-', p['name'] + '+', part_h=0)     # into the trace
+    for e in parts:                                         # (its own inductance is its value's: no loop over it)
+        q.element(e['ref'], e['ref'] + ':1', e['ref'] + ':2', R=e['R'], L=e['L'], C=e['C'], part_h=0)
+    if parts or left_out:
+        log(f"sparams: {len(parts)} part(s) between their pads"
+            + (f"; left out: {', '.join(f'{ref} ({why})' for ref, why in left_out)}" if left_out else ''))
     n = len(ports)
     S = np.zeros((len(f), n, n), complex)
     drive = []
@@ -200,6 +271,7 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
                 seconds=round(time.perf_counter() - t0, 2), capacitance=bool(charge), thickness=bool(thickness),
                 valid_to_Hz=float(f_wave if charge else min(f_wave, f_cap)),
                 tenth_wavelength_Hz=float(f_wave), capacitance_limit_Hz=float(f_cap), capacitance_F=float(cap),
+                parts=[e['ref'] for e in parts], parts_left_out=[list(x) for x in left_out],
                 model=("copper resistance, inductance and capacitance (quasi-static currents and charge); no "
                        "radiation" if charge else
                        'copper resistance and inductance (magneto-quasistatic); no capacitance, no radiation')
