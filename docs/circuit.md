@@ -63,7 +63,8 @@ the power it absorbs.
 - **targets**: adjust one number of the model, inside a range, until a measure (or `load_power_W`,
   `source_power_W`, `efficiency`, `loss_W`) has a value. Several targets, each with its own knob.
 - **sweep**: paths and the values each takes; every combination is a point, in its own folder.
-- **analysis**: `cycles` (200 periods a run), `periodic_tolerance` (0.003), `energy_tolerance` (0.002),
+- **analysis**: `engine` (`"ngspice"`, the default, or `"pwl"`: [below](#the-piecewise-linear-engine)),
+  `cycles` (200 periods a run), `periodic_tolerance` (0.003), `energy_tolerance` (0.002),
   `target_tolerance` (0.005), `max_cycles`, `samples_per_cycle`, `period_s`, `ignore`, `solver` (ngspice's
   `reltol`, `method`, ...).
 
@@ -81,6 +82,37 @@ the power it absorbs.
    reached inside its range ends the point saying which end it stopped at and what it gave there.
 5. The reported run repeats a few periods at the strict tolerance (`reltol` 1e-4; the search runs at 1e-3) with
    steps four times finer. If ngspice cannot hold that, the search's result is reported and a note says so.
+
+## The piecewise-linear engine
+
+`python -m pcbqs.circuit model.json --engine pwl` (or `"analysis": {"engine": "pwl"}` in the model; *Engine* in
+the window's Circuit settings) does not run a transient. Between two switching instants a converter of ideal
+switches is a linear circuit, whose capacitor voltages and inductor currents have an exact solution (a matrix
+exponential), so a period is a handful of those and the steady state is the state a period maps onto itself:
+Newton's method on that map finds it in a few periods, where a transient runs hundreds to let an output filter
+settle. A diode's state is the circuit's own: it turns on when its voltage reaches its threshold and off when
+its current reaches zero, at the instant that happens, so discontinuous conduction, a rectifier's commutation
+and the dead time's conduction through a body diode come out without being told. Everything after a run is the
+same: the targets' search, the parts' figures, the supply's currents, the report.
+
+| Example | ngspice | pwl | Agreement |
+|---|---|---|---|
+| Buck | 5.9 s | 0.3 s | duty 0.4462 / 0.4458, output ripple 6.75 / 6.74 mV, efficiency 93.63 / 93.67 % |
+| Synchronous buck | 39.9 s | 0.8 s | duty 0.2872 / 0.2881, inductor ripple 0.438 / 0.438 A, efficiency 98.2 / 98.9 % |
+| Boost | 13.8 s | 0.3 s | duty 0.5143 / 0.5139, output ripple 65.4 / 65.3 mV, efficiency 97.51 / 97.55 % |
+| Buck-boost | 17.2 s | 0.3 s | duty 0.5663 / 0.5660, efficiency 95.76 / 95.83 % |
+| Flyback (coupled inductors) | 11.3 s | 0.4 s | duty 0.3347 / 0.3355, switch peak 64.3 / 65.5 V, efficiency 82.1 / 81.7 % |
+| Resonant half bridge | 4.4 s | 0.8 s | tank current 1.971 / 1.971 A, efficiency 98.33 / 98.32 % |
+| Phase-shifted full bridge | 9.9 s | 0.8 s | phase 54.3 / 54.5°, currents within 0.1 %, efficiency 94.5 / 94.8 % |
+
+What it is for is where the answer does not hang on a device: operating points, ripples, RMS currents, the
+conduction loss, a sweep of many points. What it leaves out is what makes the difference in the table: a switch
+is its on resistance or nothing (no capacitance, no gate charge, no edges: the synchronous buck's 12 mW of
+switching loss), a diode a threshold and a resistance (no junction capacitance, no recovery), a capacitor has
+no ESL (said in the result's notes). The spikes ngspice shows at hard-switched edges (the full bridge's 21 A in
+a switch, its bus ripple of 105 mV for 46 mV) are those capacitances' and are not in it. A source with a wave
+(a rectifier's mains), a MOSFET model, a winding's self-capacitance and core loss, and the board's copper in the
+circuit (`--copper`) stop it with a line saying they are ngspice's.
 
 ## Results
 

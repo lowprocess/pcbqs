@@ -145,7 +145,8 @@ def test_the_circuit_command(tmp_path):
     assert c.tag(dict(model=str(model))) == 'm' and c.env
     opts = {o['key']: o for o in c.options()}                        # the two tools' own tables, by the kind of model
     assert [k for k, o in opts.items() if o['only'] == ''] == ['model', 'copper', 'fields', 'jobs']
-    assert [k for k, o in opts.items() if o['only'] == 'general'] == ['set'] and opts['jobs']['default'] == 4
+    assert [k for k, o in opts.items() if o['only'] == 'general'] == ['set', 'engine'] and opts['jobs']['default'] == 4
+    assert opts['engine']['choices'] == ['ngspice', 'pwl']             # (the piecewise-linear engine: circuit/pwl.py)
     assert [k for k, o in opts.items() if o['only'] == 'bridge'] == ['field_harmonics', 'frequencies', 'powers', 'coupling',
                                                                      'primary_l', 'secondary_l', 'receiver_c', 'load',
                                                                      'switch_type', 'override']

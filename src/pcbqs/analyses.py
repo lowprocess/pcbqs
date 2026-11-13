@@ -272,8 +272,9 @@ EXAMPLE_GROUPS = (
 
 class Circuit(_Tool):
     name, label, tool, module, order = 'circuit', 'Circuit', 'pcbqs.circuit', 'pcbqs.circuit', 40
-    about = ("ngspice runs of a circuit model: any circuit of parts, nodes and drives, settled, with its targets "
-             "met; with the board's copper between the parts' pads when asked")
+    about = ("a circuit model run until it repeats, with its targets met: any circuit of parts, nodes and drives, "
+             "by ngspice (with the board's copper between the parts' pads when asked) or, for ideal switches, "
+             "the piecewise-linear steady state")
     result = 'circuit.json'
     provides = ('circuit',)
     fields = 'fields'                                   # the option that adds the H and E fields over the board

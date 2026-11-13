@@ -20,6 +20,17 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `validation/README.md`.
 
 ### Added
+- **A piecewise-linear engine for the circuit tool** (`circuit/pwl.py`; `python -m pcbqs.circuit --engine pwl`,
+  `analysis.engine` in a model, *Engine* in the window). No transient: between switching instants the circuit
+  is linear and solved exactly (a matrix exponential), and the periodic steady state is found by Newton's
+  method on the period's map in a few periods. Diodes change state when the circuit says so (discontinuous
+  conduction, commutation, the dead time through a body diode). Coupled inductors, several drives, constant
+  power and constant current loads, targets and sweeps as before; the result is the same signals and figures,
+  so the report, the supply currents and the window read it as any run. The seven converter examples agree
+  with ngspice (duty within 0.001, ripples within 0.2 %, efficiency within 0.7 point) in 0.3 to 0.8 s where
+  ngspice takes 4 to 40 s. Ideal switches and diodes only: no capacitance, no edges, no ESL; waves, MOSFET
+  models, a winding's parasitics and the board's copper are still ngspice's, and it says so
+  (docs/circuit.md).
 - **A boost found on a board is made into a circuit** (`pcbqs.mqs --circuit`, *Open ... as a circuit* on a near
   field's result; `circuit/converter.py: boost_of`). Only a buck was: a cell with a diode up from its switch node
   stopped with "only a buck is made into a circuit". The near field's capacitors are the boost's output's, the

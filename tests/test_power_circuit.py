@@ -484,7 +484,7 @@ def test_the_bridge_tool_describes_its_options(tmp_path, capsys):
     assert "primary coil's inductance must be positive" in capsys.readouterr().err
     from pcbqs.circuit import __main__ as general
     assert general.main(['--describe', '--json']) == 0
-    assert [o['key'] for o in json.loads(capsys.readouterr().out)['options']] == ['copper', 'fields', 'board', 'set', 'jobs']
+    assert [o['key'] for o in json.loads(capsys.readouterr().out)['options']] == ['copper', 'fields', 'board', 'set', 'engine', 'jobs']
 
 
 def test_the_supply_filter_s_slow_mode_and_the_cycles_averaged_over():
