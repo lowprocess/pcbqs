@@ -131,6 +131,7 @@ class PowerIntegrity(_Tool):
     result = 'pdn.json'
     provides = ('dc', 'pdn')                # one run: the drop alone when the impedance is not asked for
     several = 'rail'                        # a study may hold several rails, a run each (kicad2ems 2.10)
+    several_keys = ('rail', 'volts', 'source', 'ground_source', 'load', 'load_spectrum')    # what differs by rail
 
     def for_questions(self, values, asked):
         return values if 'pdn' in asked else dict(values, no_pdn=True)

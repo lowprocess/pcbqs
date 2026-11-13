@@ -444,6 +444,7 @@ def test_a_study_s_rails_are_a_run_each(tmp_path):
     from kicad2ems import study
     from test_pdn_rail import board
     assert (A.PowerIntegrity.several, A.NearField.several, A.Circuit.several, A.Thermal.several) == ('rail', 'converter', '', '')
+    assert set(A.PowerIntegrity.several_keys) <= {o['key'] for o in A.PowerIntegrity().options()}
     (tmp_path / 'b_board.json').write_text(json.dumps(board()))
     cfg = tmp_path / 'c.toml'
     cfg.write_text('board = "b_board.json"\nout = "out"\n\n[study]\nrun = ["dc"]\n\n'

@@ -10,6 +10,8 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The rail tool names what differs by rail** (`several_keys`, kicad2ems API 2.10): the rail, its volts, source,
+  ground source, loads and load spectra, which kicad2ems's window shows as a table of a board's rails.
 - **The near field of a converter built from discrete parts.** The tool knew a converter only as one IC with pads
   on the input, the switch node and ground, so none of the circuit examples (all discrete power stages) had one.
   It now also finds a switching cell: a transistor or diode up from a switch node to a decoupled net and one down
