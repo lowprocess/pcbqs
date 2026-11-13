@@ -8,16 +8,18 @@ input net and capacitors, the inductor on its switch net), with what the board h
 
 The model is a buck as the board draws it:
 
-    V1      the supply, on the input net: the board does not say where it comes from (not on the board: at the
-            net's node)
+    V1      the supply, on the input net: on the board's one connector between that net and ground, when it
+            has just one (else not on the board: at the net's node)
     C...    the input capacitors of the near-field selection, with its ESR and ESL
     QH, QL  the regulator's two switches, input to switch node and switch node to ground, both on the regulator's
             footprint (board.parts), the lower the complement of the upper with a dead time; where the board has
-            a diode from ground to the switch node, that diode instead of QL
+            a diode from ground to the switch node, that diode instead of QL. A discrete cell: QH on its upper
+            transistor, QL on its lower one (or its diode)
     L...    the inductor, its value from the board
     C...    the capacitors on the inductor's far net within reach of the regulator or the inductor; none there:
             COUT, all that net's capacitance in one (not on the board)
-    RL      the load, vout / iout: what the output net feeds is not the model's to know
+    RL      the load, vout / iout: what the output net feeds is not the model's to know (on the output net's
+            one connector, when it has just one)
 
 The duty is adjusted until the output is vout. The nodes are in, sw and out, their nets in board.nets, so the
 board's copper between the pads can be put in (--copper) and the fields over it (--fields). What a board cannot
@@ -56,6 +58,13 @@ def model_of(board, path, a):
     if len({(c['inductor'], c['switch']) for c in found}) > 1:
         raise ValueError(f"{ref}: several inductors on its nets ({', '.join(sorted(c['inductor'] for c in found))}): "
                          f"name one, --inductor")
+    cell = found[0].get('low')                                      # a discrete switching cell: its own parts
+    if not found[0]['inductor']:
+        raise ValueError(f"{ref}: no one inductor on its switch node {found[0]['switch']}: only a buck is made into a "
+                         f"circuit (a bridge's tank, a resonant stage: a model of your own)")
+    if cell and not re.match(r'(Q|M)\d', ref.upper()):
+        raise ValueError(f"{ref}: the part up from the switch node is not a switch (a boost's diode): only a buck is "
+                         f"made into a circuit")
     ind, sw = parts[found[0]['inductor']], found[0]['switch']
     far = sorted(ind.nets() - {sw})
     if len(far) != 1 or far[0] in (vin, ground):
@@ -87,7 +96,7 @@ def model_of(board, path, a):
     else:
         low = ql
         model_parts.append(dict(ref=ql, type='switch', nodes=['sw', '0'], drive='pwm', invert=True, model=dict(switch)))
-        on_board[ql] = ref
+        on_board[ql] = cell or ref                                  # the cell's lower switch, else the regulator's
     assumed.append(f"{RON * 1e3:g} mOhm switches")
     dcr = field_value(ind, 'DCR', 'dcr')
     model_parts.append(dict(ref=ind.ref, type='inductor', nodes=['sw', 'out'], value=henries, DCR_ohm=dcr or DCR))
@@ -109,6 +118,14 @@ def model_of(board, path, a):
     else:
         raise ValueError(f"{out}: no capacitor from the inductor's far net to {ground}")
     model_parts.append(dict(ref=rl, type='load', nodes=['out', '0'], resistance_ohm='vout/iout'))
+    # where the board meets the outside, when it shows it: the one connector on the input net and ground is the
+    # supply's footprint, the one on the output net and ground the load's (their copper then in the circuit, and
+    # the supply's as the rail's source for a power-integrity run)
+    plug = lambda net: [p.ref for p in parts.values() if re.match(r'(J|P|CN|X)\d', p.ref) and {net, ground} <= p.nets()]
+    for model_ref, net in ((v1, vin), (rl, out)):
+        found_plug = plug(net)
+        if len(found_plug) == 1:
+            on_board[model_ref] = found_plug[0]
     nets = {'in': vin, 'sw': sw, 'out': out}
     if ground not in ('GND', 'gnd', '0', 'GNDPWR', 'PGND'):         # (those copper.net_name finds itself)
         nets['0'] = ground

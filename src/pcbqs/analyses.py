@@ -216,7 +216,9 @@ class NearField(_Tool):
         for c in found:
             for i in c.get('inputs', []):
                 caps = i.get('capacitors', [])
-                label = (f"{c['converter']}: {i['vin']} (inductor {c.get('inductor', '?')}, switch {c.get('switch', '?')}; "
+                part = f"{c['converter']} and {c['low']}" if c.get('low') else c['converter']     # a discrete cell's two
+                what = f"inductor {c['inductor']}, " if c.get('inductor') else ''
+                label = (f"{part}: {i['vin']} ({what}switch node {c.get('switch', '?')}; "
                          f"{len(caps)} capacitor{'s' if len(caps) != 1 else ''}: {', '.join(caps[:6])}"
                          f"{'…' if len(caps) > 6 else ''})")
                 out.append((label, dict(converter=c['converter'], vin=i['vin'], capacitors=','.join(caps))))

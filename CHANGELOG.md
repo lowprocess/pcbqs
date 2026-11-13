@@ -10,6 +10,18 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The near field of a converter built from discrete parts.** The tool knew a converter only as one IC with pads
+  on the input, the switch node and ground, so none of the circuit examples (all discrete power stages) had one.
+  It now also finds a switching cell: a transistor or diode up from a switch node to a decoupled net and one down
+  to ground, at least one a transistor. Its input loop runs from the capacitors through the upper part, the switch
+  node's copper and the lower part (a 10 mOhm conductor) back to ground. On the examples: the buck (Q1 and D1,
+  1.8 nH), the synchronous buck (Q1 and Q2, 1.5 nH), the boost (D1 and Q1, the output's loop, 2.3 nH), the half
+  bridge, and each leg of the full bridge (`--converter Q1` or `Q3`; 5.5 nH for the leg furthest from its
+  capacitor). A cell's capacitors out of reach are taken by connection. A discrete buck becomes a circuit with
+  its own parts (QH on Q1, D1 or QL on the lower one), and the converter's model now puts the supply and the load
+  on the board's connectors where it has one on each net (J1, J2), so their copper is in the circuit. The boost
+  and the bridges are not made into circuits (their examples have their own models), and say so. Not found: the
+  flyback (its loop runs through the transformer), the inverting buck-boost (through both capacitors).
 - **The full bridge says what it draws from its rail.** A run of `pcbqs.power_circuit` has `supply` in each
   point, as a general circuit's has (`circuit/supply.py`, `bridge_currents`): each high-side switch's average
   current and 40 harmonics (`supply-<switch>.csv`), the rail named from the supply's side with the filter's

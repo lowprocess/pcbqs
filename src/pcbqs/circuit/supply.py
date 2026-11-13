@@ -12,11 +12,12 @@ as parts. A part's current is taken at its pin on the node, over the last period
 load) and its harmonics, i(t) = avg + sum A_n cos(2 pi n t / period + phase_n). Parts on one footprint (a
 regulator's switches) are one load, their currents added.
 
-    [dict(node='in', net='+5V', source='V1', volts=5.0, capacitors=['C704', 'C705', 'C706'], loads=[
+    [dict(node='in', net='+5V', source='V1', source_footprint=None, volts=5.0, capacitors=['C704', 'C705', 'C706'], loads=[
         dict(footprint='U702', parts=['QH'], avg_A=1.40, rms_A=1.67, f_Hz=[...], A=[...], deg=[...],
              file='supply-U702.csv')])]
 
-(capacitors: the node's capacitors to ground, by footprint: a near-field run's input capacitors.)
+(capacitors: the node's capacitors to ground, by footprint: a near-field run's input capacitors.
+source_footprint: the supply's own footprint, when the model's board has it: the rail's source.)
 
 The CSV: f_Hz, A (peak), deg, a line a harmonic. Harmonics above HARMONICS are left out; the samples of a period
 (engine: 1024, or analysis.final_samples_per_cycle) carry them without aliasing.
@@ -76,7 +77,8 @@ def currents(model, result, period, harmonics=HARMONICS):
         if loads:
             caps = [names.get(p['ref'], p['ref']) for p in model['parts'] if p['type'] == 'capacitor'
                     and p.get('enabled', True) and node in p['nodes'] and set(p['nodes']) & set(GROUND)]
-            rows.append(dict(node=node, net=net_name(model, node, ()), source=src['ref'], volts=float(src['dc_V']),
+            rows.append(dict(node=node, net=net_name(model, node, ()), source=src['ref'],
+                             source_footprint=names.get(src['ref']), volts=float(src['dc_V']),
                              capacitors=caps, loads=loads))
     return rows
 

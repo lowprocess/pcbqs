@@ -65,20 +65,27 @@ def parser():
     return ap
 
 
-def discover(board, ground='GND'):
-    """Structural candidates only: an inductor-to-IC switch net, and VIN/GND capacitors.
+SWITCHING = r'(Q|D|M)\d'      # the parts a discrete switching cell is made of: transistors and diodes, by reference
+LOW_SIDE_R = 0.01            # ohms: the lower part of a discrete cell, conducting while the upper one is off
 
-    Ambiguity is returned, never resolved by picking the first net or part.
-    """
+
+def discover(board, ground='GND'):
+    """Structural candidates only; ambiguity is returned, never resolved by picking the first net or part.
+
+    A regulator IC: an inductor-to-IC switch net, and VIN/GND capacitors (the IC both switches).
+    A discrete switching cell: a switch node with a transistor or diode up to a net that has capacitors to ground
+    (the upper part, the converter's name), and one down to ground (the lower part, `low`). Its input loop runs
+    from those capacitors through the upper part, the switch node and the lower part back to ground: a buck's
+    switch and diode (or its two switches), a boost's diode and switch (its capacitors the output's), a half
+    bridge's leg. The inductor on the switch node, where there is one, is named too."""
+    import re
     from .pdn.rail import parts_of, classify
     parts=parts_of(board)
     regulators=[p for p in parts if p.ref.upper().startswith('U') and ground in p.nets()]
     caps=[p for p in parts if p.ref.upper().startswith('C') and ground in p.nets()]
+    inductors=[p for p in parts if (classify(p) or ('',))[0]=='inductor']
     candidates=[]
-    for ind in parts:
-        kind=classify(ind)
-        if not kind or kind[0]!='inductor':
-            continue
+    for ind in inductors:
         for reg in regulators:
             switch=(ind.nets() & reg.nets())-{ground}
             for sw in sorted(switch):
@@ -89,6 +96,25 @@ def discover(board, ground='GND'):
                         inputs.append(dict(vin=net,capacitors=[p.ref for p in cc]))
                 if inputs:
                     candidates.append(dict(converter=reg.ref,inductor=ind.ref,switch=sw,inputs=inputs))
+    cells=[p for p in parts if re.match(SWITCHING,p.ref.upper())]
+    for low in cells:
+        if ground not in low.nets():
+            continue
+        for sw in sorted(low.nets()-{ground}):
+            for up in cells:
+                if up is low or sw not in up.nets() or ground in up.nets():
+                    continue
+                if not any(re.match(r'(Q|M)\d',p.ref.upper()) for p in (up,low)):
+                    continue                            # two diodes: a rectifier's leg, nothing switched
+                inputs=[]
+                for net in sorted(up.nets()-{sw}):
+                    cc=[p for p in caps if net in p.nets() and sw not in p.nets()]
+                    if cc:
+                        inputs.append(dict(vin=net,capacitors=[p.ref for p in cc]))
+                if inputs:
+                    ind=[p.ref for p in inductors if sw in p.nets()]
+                    candidates.append(dict(converter=up.ref,inductor=ind[0] if len(ind)==1 else '',switch=sw,
+                                           inputs=inputs,low=low.ref))
     return candidates
 
 
@@ -97,7 +123,8 @@ def select(board, a, require_values=True):
     parts={p.ref:p for p in parts_of(board)}
     candidates=[c for c in discover(board,a.ground) if (not a.converter or c['converter']==a.converter)
                 and (not a.inductor or c['inductor']==a.inductor)]
-    if a.converter and a.vin:
+    cell=[c for c in candidates if c.get('low') and (not a.vin or any(i['vin']==a.vin for i in c['inputs']))]
+    if a.converter and a.vin and not cell:
         ref=a.converter  # Explicit input-loop selection also works without a recognizable switch/inductor.
     else:
         refs=sorted({c['converter'] for c in candidates})
@@ -106,14 +133,26 @@ def select(board, a, require_values=True):
         ref=refs[0]
     if ref not in parts:
         raise ValueError(f'unknown converter {ref}')
+    low=sw=None
+    if cell:                                            # a discrete cell: its upper part, its switch node, its lower
+        lows=sorted({(c['low'],c['switch']) for c in cell})
+        if len(lows)!=1:
+            raise ValueError(f"{ref}: several parts close its loop to ground ({', '.join(l for l,_ in lows)}): "
+                             f"name the input net, --vin")
+        low,sw=lows[0]
     reg=parts[ref]
     centre=unary_union([p.geom for p in reg.pads]).centroid
     local=[p for p in parts.values() if p.ref.upper().startswith('C') and a.ground in p.nets()
+           and (sw is None or sw not in p.nets())
            and min((pad.geom.distance(centre) for pad in p.pads),default=float('inf'))<=a.cap_radius]
+    if cell and not any(any(i['vin'] in p.nets() for i in c['inputs']) for c in cell for p in local):
+        local=[parts[r] for c in cell for i in c['inputs'] if not a.vin or i['vin']==a.vin for r in i['capacitors']]
+        print(f"mqs: no capacitor within {a.cap_radius:g} mm of {ref}: its loop's are taken wherever they are "
+              f"({', '.join(sorted({p.ref for p in local}))})",flush=True)       # (a cell's own: by connection)
     if a.vin:
         vin=a.vin
     else:
-        options={i['vin'] for c in candidates for i in c['inputs']
+        options={i['vin'] for c in (cell or candidates) for i in c['inputs']
                  if any(i['vin'] in p.nets() for p in local)}
         if len(options)!=1:
             raise ValueError('ambiguous input supply; set --vin from: '+', '.join(sorted(options)))
@@ -125,18 +164,22 @@ def select(board, a, require_values=True):
         raise ValueError('input supply and ground must differ')
     from .contacts import contact_terminal
     terms={}
-    for name in [ref,*caps]:
+    pads=[(c,net) for c in caps for net in (vin,a.ground)]
+    pads+=[(ref,vin),(ref,sw),(low,sw),(low,a.ground)] if low else [(ref,vin),(ref,a.ground)]
+    for name,net in pads:
         if name not in parts:
             raise ValueError(f'unknown part {name}')
-        for net in [vin,a.ground]:
-            pads=contact_terminal(parts[name],parts[name].on({net}),getattr(a,'pad_contact','termination'))
-            if not pads:
-                raise ValueError(f'{name} has no copper pads on {net}')
-            terms[f'{name}:{net}']=pads
+        found=contact_terminal(parts[name],parts[name].on({net}),getattr(a,'pad_contact','termination'))
+        if not found:
+            raise ValueError(f'{name} has no copper pads on {net}')
+        terms[f'{name}:{net}']=found
     values={c:part_value(parts[c]) for c in caps}
     if require_values and any(v is None or v<=0 for v in values.values()):
         raise ValueError('each selected capacitor needs a positive capacitance value')
-    return dict(converter=ref,vin=vin,ground=a.ground,capacitors=caps,values=values),terms
+    out=dict(converter=ref,vin=vin,ground=a.ground,capacitors=caps,values=values)
+    if low:
+        out.update(switch=sw,low=low)
+    return out,terms
 
 
 def numbers(text, name):
@@ -283,8 +326,9 @@ def run(a):
     selected,terms=select(board,a,require_values=not preview)
     extent=unary_union([p for pp in terms.values() for _,p in pp])
     crop=extent.buffer(a.margin).envelope
-    print(f"mqs: {selected['converter']}, {selected['vin']}, capacitors {', '.join(selected['capacitors'])}",flush=True)
-    q=MQS(board,{selected['vin'],a.ground},terminals=terms,region=crop,dmax=a.dmax,
+    print(f"mqs: {selected['converter']}"+(f" and {selected['low']} (switch node {selected['switch']})" if selected.get('low') else '')
+          +f", {selected['vin']}, capacitors {', '.join(selected['capacitors'])}",flush=True)
+    q=MQS(board,{selected['vin'],a.ground,*([selected['switch']] if selected.get('low') else [])},terminals=terms,region=crop,dmax=a.dmax,
           fine=extent.buffer(1).envelope,dmax_fine=a.fine,fill_backend=a.fill_backend,
           fill_workers=a.fill_workers or None,fill_chunk=a.fill_chunk,fill_device=a.fill_device if a.fill_backend=='cupy' else None)
     if preview:
@@ -298,7 +342,12 @@ def run(a):
         print(f'mqs: wrote mesh preview to {out}',flush=True)
         return summary
     ref=selected['converter'];vin=selected['vin']
-    q.source(ref,f'{ref}:{vin}',f'{ref}:{a.ground}',part_h=a.part_height)
+    if selected.get('low'):                             # a discrete cell: through the upper part to the switch node,
+        sw,low=selected['switch'],selected['low']       # through the lower part to ground
+        q.source(ref,f'{ref}:{vin}',f'{ref}:{sw}',part_h=a.part_height)
+        q.element(low,f'{low}:{sw}',f'{low}:{a.ground}',R=LOW_SIDE_R,part_h=a.part_height)
+    else:
+        q.source(ref,f'{ref}:{vin}',f'{ref}:{a.ground}',part_h=a.part_height)
     for cap,value in selected['values'].items():
         q.element(cap,f'{cap}:{vin}',f'{cap}:{a.ground}',C=value,ESR=a.esr,ESL=a.esl,part_h=a.part_height)
     r=q.solve(n*fsw)
@@ -318,6 +367,8 @@ def run(a):
         heights_above_top_mm=heights.tolist(),peak_H_Am=np.linalg.norm(H,axis=3).max(axis=(0,1)).T.tolist(),
         triangles=len(q.tris),fill=q.fill_info,field_convergence=info,
         notes=['Input-loop magnetic model; switch-node E and output-inductor leakage are excluded.',
+               *([f"A discrete switching cell: the current through {ref} to the switch node {selected['switch']} and "
+                  f"through {selected['low']} ({LOW_SIDE_R*1e3:g} mOhm, conducting) to ground."] if selected.get('low') else []),
                ('Pulse spectrum, ESR, ESL and part filament heights are explicit assumptions.' if given is None else
                 f"The input current's harmonics are those of {Path(a.spectrum).name}; ESR, ESL and part filament "
                 f"heights are explicit assumptions."),

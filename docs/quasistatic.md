@@ -323,9 +323,18 @@ python -m pcbqs.mqs board.kicad_pcb --converter U702 --vin +5V \
 ```
 
 The command reads KiCad through kicad2ems, or a previously exported board JSON.
-It identifies candidate regulators from power-inductor/IC switch-net connectivity
-and input-to-ground capacitors. A unique candidate and supply can be selected
-automatically; ambiguous candidates require `--converter` and/or `--vin`.
+It identifies candidate converters two ways: a regulator IC from power-inductor/IC
+switch-net connectivity and input-to-ground capacitors; and a discrete switching cell,
+a transistor or diode up from a switch node to a net with capacitors to ground and one
+down to ground (at least one of the two a transistor). The cell's upper part names it,
+and its input loop runs from those capacitors through the upper part, the switch node's
+copper and the lower part (a 10 mΩ conductor) back to ground: a buck's switch and diode
+or two switches, a boost's diode and switch (its loop is the output's), each leg of a
+half or full bridge. A flyback (its loop through a transformer) and an inverting
+buck-boost (through both capacitors) are not found. A cell's capacitors are those
+within `--cap-radius`, else every capacitor of its loop's net. A unique candidate and
+supply can be selected automatically; ambiguous candidates require `--converter`
+and/or `--vin`.
 `--inductor`, `--ground`, `--capacitors` and `--cap-radius` refine selection.
 Only populated parts with usable copper pads participate. Discovery is a buck
 input-loop heuristic, not recognition of arbitrary converter topologies.

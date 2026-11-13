@@ -84,7 +84,7 @@ def mesh_stats(q):
 
 def save_layout(out, board, q, crop, selected):
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
-    layout = crop_layout(board, crop, q.nets, {selected['converter'], *selected['capacitors']})
+    layout = crop_layout(board, crop, q.nets, {selected['converter'], *selected['capacitors'], *([selected['low']] if selected.get('low') else [])})
     (out/'mqs_board.json').write_text(json.dumps(layout))
     nodes = np.column_stack([q.nodes * 1000, np.zeros(len(q.nodes))])
     # Mesh_sheet allocates distinct vertices per physical layer.

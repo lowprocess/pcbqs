@@ -165,7 +165,10 @@ def mqs_report(res, folder=''):
         res['frequencies_Hz'], res['harmonic_peak_A'], res['copper_R_ohm'], res['copper_L_H'], res['peak_H_Am'])]
     columns = ['frequency (Hz)', 'peak (A)', 'copper R (mΩ)', 'copper L (nH)', 'peak H (A/m)']
     formats = ['g', '.4g', '.4g', '.4g', '.4g']
-    text = f"Input capacitors: {', '.join(s['capacitors'])}; {res['triangles']:,} triangles."
+    name = f"{s['converter']} and {s['low']}" if s.get('low') else s['converter']      # a discrete cell's two parts
+    text = (f"Input capacitors: {', '.join(s['capacitors'])}"
+            + (f"; the loop through {s['converter']}, the switch node {s['switch']} and {s['low']}" if s.get('low') else '')
+            + f"; {res['triangles']:,} triangles.")
     sp = res.get('spectrum')
     if sp:                                                      # a circuit's current, beside the pulse of the settings
         rows = [[*row[:2], a, *row[2:]] for row, a in zip(rows, sp['assumed_peak_A'])]
@@ -174,8 +177,8 @@ def mqs_report(res, folder=''):
         text += (f" The input current's harmonics are those of {os.path.basename(sp['file'])} (a circuit's run), not "
                  f"the rectangular pulse of the settings, which is beside them.")
     return dict(
-        title=f"{s['converter']}: {s['vin']} / {s['ground']}",
-        summary=(f"Near field, {s['converter']} on {s['vin']}: {n} harmonic{'s' if n != 1 else ''}"
+        title=f"{name}: {s['vin']} / {s['ground']}",
+        summary=(f"Near field, {name} on {s['vin']}: {n} harmonic{'s' if n != 1 else ''}"
                  + (" of a circuit's input current" if sp else '')),
         sections=[dict(title='', text=text),
                   dict(title='Harmonics', table=_table(columns, rows, formats)),
@@ -201,7 +204,7 @@ def mqs_suggest(res, folder=''):
     s = res['selection']
     volts = (res.get('settings') or {}).get('vin_volts') or ''
     out = [dict(to='pdn', label='Copy the input rail to Power integrity',
-                values=dict(rail=s['vin'], ground=s['ground'], ground_source=s['converter'], volts=volts, load=''),
+                values=dict(rail=s['vin'], ground=s['ground'], ground_source=s.get('low') or s['converter'], volts=volts, load=''),
                 need=[] if volts else ['volts'],
                 note='The input rail is copied. Set its source' + ('' if volts else ', its voltage')
                      + ' and its DC loads before Run.')]
@@ -246,6 +249,10 @@ def circuit_suggest(res, folder='', pads=None):
         values = dict(rail=row['net'], ground=ground, volts=row['volts'],
                       load='\n'.join(f"{l['footprint']}={l['avg_A']:.4g}" for l in loads),
                       load_spectrum='\n'.join(f"{l['footprint']}={file(l)}" for l in loads))
+        src = row.get('source_footprint')                       # the supply is a part of the board: the rail's
+        known = bool(src) and (pads is None or {row['net'], ground} <= set(pads.get(src, ())))     # source, both sides
+        if known:
+            values.update(source=src, ground_source=src)
         if row.get('through'):                                  # the filter's inductors: in the rail's model
             values['through'] = ','.join(row['through'])
         if row.get('dcr'):
@@ -255,7 +262,8 @@ def circuit_suggest(res, folder='', pads=None):
             values=values, need=[],
             note=f"The rail {row['net']} with what the circuit's parts draw from it{of}: their average as "
                  f"DC loads, their harmonics as current spectra"
-                 + (f", through {', '.join(row['through'])}" if row.get('through') else '') + ". Set its source before Run."))
+                 + (f", through {', '.join(row['through'])}" if row.get('through') else '')
+                 + (f"; its source is {src}." if known else ". Set its source before Run.")))
         for l in sorted(loads, key=lambda l: -l['rms_A'])[:2] if general else []:
             if pads is not None and ground not in pads.get(l['footprint'], ()):
                 continue                                        # (the near field's source: a part on both)
