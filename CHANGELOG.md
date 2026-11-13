@@ -17,7 +17,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   0.040 in |S| at 1 GHz, now 0.019; 1.4 times the triangles. The same rings on `MQS(capacitance=True)` (an
   option there, as it was): two traces 0.1 mm apart −2.5 % self and −3.6 % mutual against FasterCap at 0.5 mm
   cells (−10 % and −23 % on plain cells, −7 % and −16 % at 0.25 mm), a microstrip +0.8 % (−2.4 %):
-  `validation/README.md`.
+  `validation/README.md`. `--thickness` (the copper's two faces) has the rings too: with the skin effect the
+  current crowds at a trace's edges as the charge does. A 1 mm trace 1.6 mm over a plane against FastHenry:
+  −9 % at 10 MHz and −10 % at 100 MHz, from −26 % and −33 %; the thru's resistance at 100 MHz 69 mΩ for 46 mΩ,
+  and its inductance there the field solver's line's within 0.5 %.
 
 ### Added
 - **A piecewise-linear engine for the circuit tool** (`circuit/pwl.py`; `python -m pcbqs.circuit --engine pwl`,

@@ -157,8 +157,11 @@ steps for gfdtd here) while this one goes on down to DC.
 By default the copper is one sheet with its DC resistance. That is exact at the low end, and the lightest
 model, but it leaves two things out that show at the top of the band:
 
-- **The skin effect.** At 100 MHz the current of 35 µm copper is in its faces (a skin depth of 6.6 µm): the
-  thru's resistance is 45.9 mΩ, where one sheet keeps 16.4 mΩ.
+- **The skin effect.** At 100 MHz the current of 35 µm copper is in its faces (a skin depth of 6.6 µm), and
+  crowds at the trace's edges: the thru's resistance is 69.3 mΩ, where one sheet keeps 16.4 mΩ. (On plain
+  cells the two faces gave 45.9 mΩ: the edges' share needs graded cells there, which `--thickness` has since
+  2026-11-13. Against FastHenry a 1 mm trace 1.6 mm over a plane is −9 % at 10 MHz and −10 % at 100 MHz with
+  them, −26 % and −33 % without; its inductance at 100 MHz is then the field solver's line's within 0.5 %.)
 - **A narrow trace's impedance.** A sheet's inductance is a few percent high and its capacitance low for a trace
   not much wider than it is thick, so a matched line's S11 reads high.
 

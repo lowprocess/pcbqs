@@ -176,6 +176,20 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
     reference, not the default.
   - Across the board the trace needs about 10 cells (`edge_rings`, `edge_width` = trace width): at dmax 0.5 a 1 mm
     trace is two triangles wide and every model was -21% at 10 MHz. Part of every earlier face-sheet error was this.
+  - The same at dmax 0.5 with graded rings over half the trace's width (2026-11-13, R at 1 / 10 / 100 MHz against
+    FastHenry; `~/pcbqs-bench/validation/face_rings.py`):
+
+    | | plain cells | 6 rings | 10 rings |
+    |---|---|---|---|
+    | 1.6 mm over the plane, one sheet | −5 / −28 / −37 % | −0.5 / −15 / −22 % | −0.2 / −14 / −18 % |
+    | 1.6 mm, two faces | −4 / −26 / −33 % | +0.3 / −9 / −10 % | +0.5 / −9 / −6 % |
+    | 0.1 mm, one sheet | +1 / −23 / −38 % | +1 / −21 / −36 % | +1 / −21 / −35 % |
+    | 0.1 mm, two faces | +0.4 / −18 / −13 % | +0.8 / −14 / −10 % | +0.8 / −14 / −9 % |
+
+    Far from the plane the rings are most of the error (the current crowding at the trace's edges); close over
+    it they are a third, and what is left (−14 % at 10 MHz, where the copper is a skin depth and a half thick)
+    is the two faces' coupling through the copper, which the stacked sheets have. `pcbqs.sparams` uses six
+    rings whenever it solves the charge or the two faces; the circuit's copper and the near field do not yet.
 
 ## Not done yet
 

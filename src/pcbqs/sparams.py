@@ -62,9 +62,11 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
      'none: no maps)', G_OUT),
     ('map_port', 'str', '', 'the port driven in the current maps (default: the first)', G_OUT),
 ]
-EDGE_RINGS = 6          # with the charge solved: cells across the copper's edges, graded (the edge charge: a matched
-                        # line's |S11| 8.8 % above the field solver's line with none, 0.1 % with these; two traces
-                        # 0.1 mm apart -23 % in mutual capacitance, then -3.6 %), over half the narrowest port's width
+EDGE_RINGS = 6          # with the charge solved, or the copper's two faces: cells across the copper's edges, graded,
+                        # over half the narrowest port's width. The edge charge: a matched line's |S11| 8.8 % above
+                        # the field solver's line with none, 0.1 % with these; two traces 0.1 mm apart -23 % in
+                        # mutual capacitance, then -3.6 %. The edge current: a trace's resistance at 100 MHz 33 %
+                        # under FastHenry's with none, 10 % with these
 DENSE_MAX = 9000        # triangles: above it the mesh is made coarser (auto), or the matrices compressed
 CHARGE_MAX = 5000       # the same with the charge solved too (a larger, dense system)
 COARSEN = 1.4           # a mesh over the limit: both cell sizes by this, up to four times
@@ -240,9 +242,9 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
     limit = (CHARGE_MAX if charge else DENSE_MAX) * (2 if thickness else 1)     # a triangle on each face
     t0 = time.perf_counter()
     kw = dict(capacitance=True, dielectric='stack') if charge else {}
-    if charge and edge_rings != 1:                          # the charge crowds at the copper's edges: graded rings
+    if (charge or thickness) and edge_rings != 1:           # the charge, and with the skin effect the current, crowd
         kw.update(edge_rings=int(edge_rings or EDGE_RINGS), edge_width=max(0.5 * min(p['w'] for p in ports), 0.05))
-    if thickness:
+    if thickness:                                           # at the copper's edges: graded rings there
         kw['conductor_loss'] = 'slab'
     for attempt in range(5):
         # the return current of a trace lies within a few heights of it: the fine cells reach that far

@@ -98,11 +98,18 @@ def test_the_copper_s_thickness_brings_the_skin_effect(thru_rl):
     sheet = path(SP.solve(thru(), f, capacitance='off', **QUIET))
     r = SP.solve(thru(), f, capacitance='off', thickness=True, **QUIET)
     faces = path(r)
-    assert r['info']['thickness'] and r['info']['triangles'] == 2 * thru_rl['info']['triangles']
+    plain = SP.solve(thru(), f, capacitance='off', thickness=True, edge_rings=1, **QUIET)
+    assert r['info']['thickness'] and plain['info']['triangles'] == 2 * thru_rl['info']['triangles']
+    # with the skin effect the current crowds at the trace's edges too: graded cells there (EDGE_RINGS), and a
+    # resistance at 100 MHz a tenth and more above plain cells' (FastHenry: validation/README.md)
+    assert r['info']['edge_rings'] == SP.EDGE_RINGS and plain['info']['triangles'] < r['info']['triangles'] < 1.6 * plain['info']['triangles']
+    assert faces['R_ohm'][1] > 1.1 * path(plain)['R_ohm'][1] and faces['R_ohm'][0] == pytest.approx(path(plain)['R_ohm'][0], rel=0.01)
     assert 'two faces' in r['info']['model'] and 'one sheet' in thru_rl['info']['model']
     assert faces['R_ohm'][0] == pytest.approx(sheet['R_ohm'][0], rel=0.01)
     assert faces['R_ohm'][1] > 2.2 * sheet['R_ohm'][1] and sheet['R_ohm'][1] < 1.1 * sheet['R_ohm'][0]
-    assert faces['L_H'][1] == pytest.approx(sheet['L_H'][1], rel=0.03) and faces['L_H'][1] < sheet['L_H'][1]
+    # and its inductance is the 2D field solver's line's (487.4 nH/m over 29.5 mm), where one sheet on plain
+    # cells is 5 % over it
+    assert faces['L_H'][1] == pytest.approx(487.4e-9 * 29.5e-3, rel=0.02) and faces['L_H'][1] < 0.97 * sheet['L_H'][1]
 
 
 def test_a_slot_under_the_trace_lengthens_the_return(thru_rl):
