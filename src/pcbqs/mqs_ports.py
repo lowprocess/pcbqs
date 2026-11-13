@@ -6,7 +6,6 @@ are excluded from field responses. No lumped parts are allowed in this reduction
 """
 from dataclasses import dataclass
 import numpy as np
-from scipy.linalg import solve
 from .mqs import Result
 
 
@@ -53,15 +52,18 @@ class CopperPorts:
 def direct_ports(q, C, Rl, Ll, sc, frequencies, log=None, note=None):
     """Port impedances (F, P, P) and branch currents (F, nb, P) from the dense loop matrices Rl, Ll of the loop
     basis C, the ports' loops the columns sc: the other loops eliminated by a direct solve at each frequency."""
+    from .kernels import loop_system,lu_factor_rows,lu_solve_rows
     free=np.setdiff1d(np.arange(C.shape[1]),sc);C=C.tocsc()
+    Rl,Ll=np.ascontiguousarray(Rl),np.ascontiguousarray(Ll)
     Zs=[];responses=[]
     for fi in frequencies:
-        Z=Rl.astype(complex)+2j*np.pi*fi*Ll
+        # R + jw L and the resistance's change (sparse) on the blocks used, the free loops' filled in one pass
+        # and factored in its own memory (kernels.py): it was the whole matrix, then the block copied out of it
         delta=q._resistance_delta(fi) if fi else None
-        if delta is not None and delta.nnz:Z+=(C.T@delta@C).toarray()
-        X=solve(Z[np.ix_(free,free)],-Z[np.ix_(free,sc)],assume_a='sym',overwrite_a=True,check_finite=False) \
-            if len(free) else np.zeros((0,len(sc)),complex)
-        zp=Z[np.ix_(sc,sc)]+Z[np.ix_(sc,free)]@X
+        change=(C.T@delta@C).tocsr() if delta is not None and delta.nnz else None
+        Z=lambda rows,cols:loop_system(Rl,Ll,2j*np.pi*fi,rows,cols,None if change is None else change[rows][:,cols])
+        X=lu_solve_rows(lu_factor_rows(Z(free,free)),-Z(free,sc)) if len(free) else np.zeros((0,len(sc)),complex)
+        zp=Z(sc,sc)+Z(sc,free)@X
         Zs.append(zp);responses.append(-(C[:,sc].toarray()+C[:,free]@X))
         if log:log(f'Copper ports: {fi:g} Hz'+(f' ({note})' if note else ''))
     return np.asarray(Zs),np.asarray(responses)

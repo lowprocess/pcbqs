@@ -18,6 +18,7 @@ template <class T> using arr = py::array_t<T, py::array::c_style | py::array::fo
 #include "compressed_kernels.hpp"
 #include "layered_kernels.hpp"
 #include "hmatrix_build.hpp"
+#include "dense_kernels.hpp"
 PYBIND11_MODULE(_core, m) {
     m.def("static_pairs", &static_pairs);
     m.def("static_fill", &static_fill);
@@ -28,6 +29,9 @@ PYBIND11_MODULE(_core, m) {
     m.def("rwg_inductance", &rwg_inductance);
     m.def("layered_pairs", &layered_pairs);
     bind_hmatrix_build(m);
+    m.def("loop_system", &loop_system);
+    m.def("peec_system", &peec_system);
+    m.def("tri_locate", &tri_locate);
 #ifdef _OPENMP
     m.attr("static_openmp") = true;
 #else

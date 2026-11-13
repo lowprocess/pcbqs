@@ -585,7 +585,7 @@ class MQS:
         C, src_cols, is_src, tree = self._loops(allow_open=self.capacitance, return_tree=True)
         # PEEC and the compressed backend never project onto the loops densely (peec*.py, mqs_iterative.py)
         Rl, Ll = (None, None) if self.capacitance or self.matrix_backend == 'hierarchical' else (
-            (C.T @ R @ C).toarray(), self._project_inductance(C, Le, Lv))
+            np.ascontiguousarray((C.T @ R @ C).toarray()), np.ascontiguousarray(self._project_inductance(C, Le, Lv)))
         self._mats = dict(R=R, L=L, C=C, Rl=Rl, Ll=Ll, src=src_cols, is_src=is_src, nb=nb, tree=tree)
         self.log(f"mqs: {C.shape[1]:,} loops; matrices in {time.time() - t:.1f} s")
         return self._mats
@@ -652,7 +652,7 @@ class MQS:
 
     def _solve_dense(self, freqs, drives):
         """The dense magnetic solve for each of `drives` ({source: A} or None): [Result]."""
-        from scipy.linalg import lu_factor, lu_solve
+        from .kernels import loop_system, lu_factor_rows, lu_solve_rows
         f = np.atleast_1d(np.asarray(freqs, float))
         if f.ndim != 1 or not np.isfinite(f).all() or (f <= 0).any():
             raise ValueError('frequencies must be finite and positive')
@@ -672,26 +672,30 @@ class MQS:
             for k, p in enumerate(self.parts):
                 if p['kind'] == 'Z':
                     zp[ne + nv + k] = p['R'] + 1j * w * p['L'] + (1 / (1j * w * p['C']) if p.get('C') else 0)
-            # Loop impedance of the copper alone, then with the parts' own RLC.
-            Zcu = np.empty(m['Rl'].shape, complex)
-            Zcu.real, Zcu.imag = m['Rl'], w * m['Ll']
+            # Loop impedance of the copper alone (R + jw L and, sparse, the conductors' change of resistance with
+            # frequency), then with the parts' own RLC (sparse too). Only what is used is made: the free loops'
+            # block, filled in one pass and factored in its own memory (kernels.py), and the sources' rows and
+            # columns. It was the whole matrix twice, the block copied out of it and copied again to be factored:
+            # four matrices where there is now one.
             dR = self._resistance_delta(fi)
-            if dR.nnz:
-                Zcu += (Cd.T @ dR @ Cd).toarray()
-            Zl = Zcu + (Cd.T @ diags(zp) @ Cd).toarray()
+            cu = (Cd.T @ dR @ Cd).tocsr() if dR.nnz else None
+            parts = (Cd.T @ diags(zp) @ Cd).tocsr()
+            both = parts if cu is None else parts + cu
             x = np.zeros((Cd.shape[1], nd), complex)
             for d, amps in enumerate(drives):
                 for n, c in src.items():
                     x[c, d] = (amps or {}).get(n, 1.0)
-            rhs = -Zl[np.ix_(free, sc)] @ x[sc]
+            every = np.arange(Cd.shape[1])
             if free:
-                x[free] = lu_solve(lu_factor(Zl[np.ix_(free, free)]), rhs) if nd > 1 else \
-                    np.linalg.solve(Zl[np.ix_(free, free)], rhs)
+                rhs = -loop_system(m['Rl'], m['Ll'], 1j * w, free, sc, both[free][:, sc]) @ x[sc]
+                x[free] = lu_solve_rows(lu_factor_rows(
+                    loop_system(m['Rl'], m['Ll'], 1j * w, free, free, both[free][:, free])), rhs)
             I[:, i] = (Cd @ x).T
             # Kirchhoff's voltage law round each source's loop, in loop space:
             # C^T v = Zl x, where v holds every branch drop (the copper's mutual
             # coupling included) and the ideal source branch itself drops nothing.
-            loop_v, copper_v = Zl[sc] @ x, Zcu[sc] @ x
+            loop_v = loop_system(m['Rl'], m['Ll'], 1j * w, sc, every, both[sc]) @ x
+            copper_v = loop_system(m['Rl'], m['Ll'], 1j * w, sc, every, None if cu is None else cu[sc]) @ x
             for d in range(nd):
                 for j, (n, c) in enumerate(src.items()):
                     Z[d][n][i] = loop_v[j, d] / x[c, d] if x[c, d] else np.nan

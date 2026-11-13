@@ -20,7 +20,7 @@ the circuit case they came from),
 `thermal_board.json` and, under `thermal/exc_board/`, each layer's temperature as a field dump in °C (NaN off the
 board; with both solvers each one's, and mesh minus grid in K), so the Viewer turns, cuts and probes them in 2D and
 3D on a colour scale from the board's coolest point to its hottest. The report (`reports.thermal_report`: the
-parts' and the layers' tables) is on its Results page.
+parts' and the layers' tables) is on its Report and Tables pages.
 
 ![The synchronous buck's top layer from the grid and the mesh, and their difference](images/thermal-compare.png)
 
@@ -62,6 +62,9 @@ r.out_W, r.edge_W                                   # the heat given off, and of
 r.T                                                 # grid: (layers, ny, nx) C; mesh: (layers, vertices), r.nodes, r.tris
 r.sample('F.Cu', x, y)                              # either, at points (mm)
 ```
+
+`sample` is the solution's own interpolation: between cell centres on the grid, and on the mesh's own triangles
+(NaN off the board, and in its holes).
 
 ## The two solvers
 

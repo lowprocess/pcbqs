@@ -19,7 +19,9 @@ def test_copper_snapshot_parity():
     with np.load(Path(__file__).parent/'fixtures/copper-reference.npz') as expected:
         np.testing.assert_array_equal(q.nodes,expected['nodes']);np.testing.assert_array_equal(q.tris,expected['tris'])
         np.testing.assert_allclose(r.impedance,expected['impedance'],rtol=1e-11,atol=1e-14)
-        np.testing.assert_allclose(r.currents,expected['currents'],rtol=1e-10,atol=1e-12)
+        # (atol 1e-11 of currents up to 0.07: the free loops are eliminated by LU, the reference's by a symmetric
+        # indefinite factorization, and at DC one branch's current differs by 1.7e-12)
+        np.testing.assert_allclose(r.currents,expected['currents'],rtol=1e-10,atol=1e-11)
         np.testing.assert_allclose(q.h_field(r.drive(np.ones((3,1))),1,np.array([[.015,.010,.002]])),expected['H'],rtol=1e-10)
 
 

@@ -243,12 +243,15 @@ class Result:
             with np.errstate(invalid='ignore', divide='ignore'):
                 out = np.where(tot > 0, (w * np.nan_to_num(q)).sum(axis=0) / tot, np.nan)
             return np.where(ok, out, np.nan)
-        from scipy.interpolate import LinearNDInterpolator
-        import shapely
-        f = LinearNDInterpolator(self.nodes, self.T[i])
-        out = f(np.c_[x.ravel(), y.ravel()]).reshape(x.shape)
-        out[~shapely.contains_xy(self.problem.outline, x, y)] = np.nan
-        return out
+        # on the mesh's own triangles (the solution is linear on each): a point's triangle and its weights on the
+        # corners. (It was a Delaunay triangulation of the nodes, made again at every call and masked by the
+        # outline: 1.7 s a layer on 60,000 nodes, and not the solution's triangles where the mesh is not Delaunay.)
+        from ..kernels import tri_locate
+        index, weight = tri_locate(self.nodes, self.tris, np.c_[x.ravel(), y.ravel()])
+        out = np.full(len(index), np.nan)
+        ok = index >= 0
+        out[ok] = (self.T[i][self.tris[index[ok]]] * weight[ok]).sum(axis=1)
+        return out.reshape(x.shape)
 
     def summary(self):
         p = self.problem

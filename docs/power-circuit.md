@@ -163,7 +163,7 @@ powers, k, a held receiver capacitor and load, the switch model, the board's
 copper and fields. Those the model holds show its values, and what is typed
 goes into the model. Per-part parameters and library paths remain explicit in
 the editor. A run is a result of the circuit analysis like `pcbqs.circuit`'s:
-its operating points, notes and assumptions are the Results page's report and
+its operating points, notes and assumptions are the Report page's text and its
 table, and each point's waveforms its plots (the windings' currents, the
 bridge's and coils' voltages, the currents of the series parts between the
 supply's rails, the bus voltages; again at the solver's own timesteps where

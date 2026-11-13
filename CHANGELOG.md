@@ -10,6 +10,27 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **The solves' own Python is in the compiled core** (`core/dense_kernels.hpp`, `pcbqs/kernels.py`). A profile of
+  each tool (`tools/perf/workloads.py`; its README has where every tool's time goes) found three places where the
+  time was pcbqs's own NumPy rather than LAPACK or the fill:
+  the charge solve built its system at each frequency as NumPy expressions (seven temporaries of the whole
+  matrix: as long as its factorization); the dense magnetic solve made the whole loop matrix twice, copied the
+  free loops' block out of it, and SciPy copied that again to factor it; and a thermal mesh was sampled for its
+  pictures through a Delaunay triangulation of its nodes, made again at every call. The systems are now filled
+  in one pass, in parallel, with the parts' impedances and the conductors' change of resistance kept sparse, and
+  factored in their own memory; a mesh is sampled on its own triangles. On mom25d's demo board: the charge
+  solve's system 1.14 s to 0.08 s a frequency (the run 20 s to about 15 s, 3.9 to 3.1 GB); the two-face
+  magnetic solve 188 s and 24.9 GB to 147 s and 15.2 GB; the bridge's copper ports 19.0 s to 12.6 s; the bridge's temperature with its pictures 38.6 s to 15.7 s. The answers are the
+  same to rounding (S within 4e-14), and without the core the NumPy twins run (`kernels.py`), which the tests
+  hold the compiled ones to. `mqs_ports.direct_ports` uses the same kernel.
+- **The coefficients of potential are solved by Cholesky** where the matrix is real in value (`kernels.solve_symmetric`).
+  A layered stack's images make it complex in type, so it went to LAPACK's symmetric indefinite solve; without
+  loss its imaginary part is zero and it is positive definite. Two traces on FR4 (14,538 triangles): the
+  capacitance matrix in 8.9 s for 18.5 s, the same to 3e-16. A lossy stack, or a matrix Cholesky finds not
+  definite, is solved as before.
+- **A rail's pads find their vias in one test** (`pdn/stack.py`). The copper island under a pad was grown again
+  (shapely's `buffer`) for every via of the board to ask whether the via was on it: 12,500 buffers and 7.8 s of
+  CM5's +5V run. One buffer and one vectorised test: 1.2 s, the same result to the last digit.
 - **The charge is solved on graded edge cells** (`pcbqs.sparams`, whenever it solves the copper's charge:
   `EDGE_RINGS` = 6 across half the narrowest port's width; `edge_rings=1` for plain cells). A constant charge per
   triangle does not resolve the edge charge on plain cells, so a trace's capacitance was low: the thru's |S11|

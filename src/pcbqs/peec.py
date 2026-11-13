@@ -9,13 +9,14 @@ this avoids both 1/w ill-conditioning and subtracting almost equal currents
 to recover a small charge at low frequency.
 """
 import numpy as np
-from scipy.sparse import coo_matrix, eye, hstack
+from scipy.sparse import coo_matrix, csr_matrix, diags, eye, hstack
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse.linalg import splu
-from scipy.linalg import solve as dense_solve, lu_factor, lu_solve
+from scipy.linalg import lu_factor, lu_solve
 from collections import OrderedDict
 
 from ._numerics.base import qform
+from .kernels import peec_system, lu_factor_rows, lu_solve_rows, solve_symmetric
 
 
 def electric_field(model, result, fi, pts, chunk=100_000):
@@ -118,7 +119,7 @@ def capacitance_matrix(model):
         from .peec_iterative import potential_solve
         C = B.T @ potential_solve(model,B)
     else:
-        C = B.T @ dense_solve(model._potential, B, assume_a='sym')
+        C = B.T @ solve_symmetric(model._potential, B)
     return (C + C.T) / 2, labels, {name: int(labels[node]) for name, node in model.term_node.items()}
 
 
@@ -150,7 +151,7 @@ def node_potential(model):
     cached = getattr(model, '_node_potential', None)
     if cached is not None and cached[0] is Pc:
         return cached[1], cached[2]
-    X = dense_solve(Pc, Bn.toarray(), assume_a='sym')    # Pc^-1 Bn (complex symmetric in a lossy stack)
+    X = solve_symmetric(Pc, Bn.toarray())                # Pc^-1 Bn (complex symmetric in a lossy stack)
     C = Bn.T @ X                                         # the node-level capacitance (Maxwell, to infinity)
     C = (C + C.T) / 2
     Peff = np.linalg.inv(C)
@@ -179,12 +180,12 @@ def prepare(model):
     T = A[:, passive] @ K[:, nl:]
     P, _ = node_potential(model)
     pscale = np.max(np.abs(P))
-    electro = qform(T, P, T) / pscale
+    electro = np.ascontiguousarray(qform(T, P, T) / pscale)
     kc = K.tocoo()
     full_basis = coo_matrix((kc.data, (passive[kc.row], kc.col)),
                             shape=(nb, K.shape[1])).tocsc()
-    R = (full_basis.T @ m['R'] @ full_basis).toarray()
-    L = model._project_inductance(full_basis, *m['L'])
+    R = np.ascontiguousarray((full_basis.T @ m['R'] @ full_basis).toarray())     # (row-major: the system's
+    L = np.ascontiguousarray(model._project_inductance(full_basis, *m['L']))     # kernel reads them in place)
     names = [model.parts[k - len(model.br)]['name'] for k in sources]
     # Split out the electrostatic equilibrium charge of each passive graph
     # component. The remaining tree currents are jw times a correction.
@@ -202,7 +203,7 @@ def prepare(model):
                        R=R, L=L, names=names, passive=passive, sources=sources,
                        B=B, keep=keep, tree_lu=tree_lu, PT=P @ T, nl=nl,
                        source_components=A[:, sources].T @ B,
-                       part_rows=part_rows, E=K[part_rows].toarray(),
+                       part_rows=part_rows, E=K[part_rows].toarray(), Es=K[part_rows].tocsr(),
                        factors=OrderedDict(), factor_bytes=0, factorizations=0, full_basis=full_basis)
     return model._peec
 
@@ -227,7 +228,7 @@ def solve(model, freqs, amps=None):
     vpart = np.zeros(B.shape[1], complex)
     if np.any(totals):
         if 'PinvB' not in m:
-            m['PinvB'] = dense_solve(P, B, assume_a='sym')
+            m['PinvB'] = solve_symmetric(P, B)
             m['component_lu'] = lu_factor(B.T @ m['PinvB'])
         vpart = lu_solve(m['component_lu'], -totals)
         qpart = m['PinvB'] @ vpart
@@ -244,7 +245,7 @@ def solve(model, freqs, amps=None):
     for fi, freq in enumerate(f):
         jw = 2j * np.pi * freq
         dr = model._resistance_delta(freq)
-        delta = (m['full_basis'].T @ dr @ m['full_basis']).toarray() if dr.nnz else 0
+        delta = (m['full_basis'].T @ dr @ m['full_basis']).tocsr() if dr.nnz else None     # (sparse: a few per row)
         zp = np.array([model.parts[passive[j] - len(model.br)]['R'] +
                        jw * model.parts[passive[j] - len(model.br)]['L'] +
                        (1 / (jw * model.parts[passive[j] - len(model.br)]['C'])
@@ -253,12 +254,15 @@ def solve(model, freqs, amps=None):
         if len(passive) and K.shape[1]:                  # (a terminal covering a whole conductor leaves no unknowns)
             cached = m['factors'].pop(float(freq), None)
             if cached is None:
-                Z = R + delta + jw * L + m['E'].T @ (zp[:, None] * m['E'])
-                zscale = max(np.max(np.abs(Z)), np.finfo(float).tiny)
-                system = Z / zscale
-                system[:, nl:] = jw * Z[:, nl:] / pscale
-                system[nl:, nl:] += m['electro']
-                cached = lu_factor(system, overwrite_a=True), zscale
+                # Z = R + jw L with the parts' impedances and the resistance's change (both sparse), scaled: the
+                # loops' columns by 1 / zscale, the tree's (as charge) by jw / pscale, with the potential
+                # coefficients on the tree's block. Filled in one pass and factored in its own memory
+                # (kernels.py); it was seven temporaries of the whole matrix, as long as the factorization.
+                changes = m['Es'].T @ diags(zp) @ m['Es'] if len(zp) else csr_matrix(R.shape, dtype=complex)
+                if delta is not None:
+                    changes = changes + delta
+                system, zscale = peec_system(R, L, jw, pscale, nl, m['electro'], changes)
+                cached = lu_factor_rows(system), zscale
                 m['factorizations'] += 1
                 size = cached[0][0].nbytes + cached[0][1].nbytes
                 if size <= model.factor_cache_bytes:
@@ -270,8 +274,8 @@ def solve(model, freqs, amps=None):
             else:
                 m['factors'][float(freq)] = cached
             factor, zscale = cached
-            rhs = -(rb + (delta @ baseline if dr.nnz else 0) + jw * lb + m['E'].T @ (zp * eb)) / zscale
-            x = lu_solve(factor, rhs)
+            rhs = -(rb + (delta @ baseline if delta is not None else 0) + jw * lb + m['E'].T @ (zp * eb)) / zscale
+            x = lu_solve_rows(factor, rhs)
             alpha = zscale / pscale
             currents[fi, passive] = K[:, :nl] @ x[:nl] + K[:, nl:] @ (y0 + jw * alpha * x[nl:])
             charge[fi] = qpart / jw - alpha * (T @ x[nl:])

@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass, field
 
 import numpy as np
+import shapely
 from scipy.sparse import coo_matrix, diags
 from scipy.sparse.linalg import splu
 from shapely.geometry import Point, shape
@@ -171,13 +172,16 @@ class RailPDN:
             return Conn(why='no copper')
         pg = unary_union([q.geom for q in pads])
         win = pg.buffer(window)
-        isl = [q for q in getattr(cu.intersection(win), 'geoms', [cu.intersection(win)])
+        near = cu.intersection(win)
+        isl = [q for q in getattr(near, 'geoms', [near])
                if q.geom_type == 'Polygon' and q.buffer(1e-4).intersects(pg)]
         isl = unary_union(isl) if isl else None
         if isl is None or isl.is_empty:
             return Conn(why='pad not on its copper')
         planes = [self.zt[l][0] for l in self.plane_layers]
-        reach = [v for v in vias if isl.buffer(1e-4).contains(Point(v['x'], v['y'])) and
+        # the vias on the island: one test for them all (the island was grown again for every via of the board)
+        on = shapely.contains_xy(isl.buffer(1e-4), [v['x'] for v in vias], [v['y'] for v in vias]) if vias else []
+        reach = [v for v, hit in zip(vias, on) if hit and
                  any(v['z0'] - 1e-6 <= z <= v['z1'] + 1e-6 for z in planes) and
                  (v['z0'] - 1e-6 <= zl <= v['z1'] + 1e-6)]
         if not reach:
@@ -258,7 +262,8 @@ class RailPDN:
             for t in ties:
                 if ci in t[:2]:
                     pts.append(t[2]); owner.append(('tie', t))
-            ok = [k for k, (x, y, r) in enumerate(pts) if c.geom.buffer(1e-6).contains(Point(x, y))]
+            hit = shapely.contains_xy(c.geom.buffer(1e-6), [v[0] for v in pts], [v[1] for v in pts]) if pts else []
+            ok = [k for k, h in enumerate(hit) if h]
             nodes, tris, rings, _ = mesh_sheet(c.geom, [pts[k] for k in ok], dmax)
             c.nodes, c.tris, c.off = nodes, tris, off
             c.K = stiffness(nodes, tris).tocoo()
