@@ -320,5 +320,16 @@ def test_boost_fields_come_from_its_own_currents_and_voltages(boost_copper):
     assert high.mean() == pytest.approx(1 - case['knobs']['drives.pwm.duty'], abs=0.04)
     assert (out / 'run' / 'fields.png').is_file() and case['notes'] == []
     assert any('fields at 1 mm' in line for line in log)
+    # the Viewer's: time-domain dumps under <run>/<point>/exc_fields, which kicad2ems finds as any run's
+    assert f['dumps'] == ['dump_H_topp1mm_td', 'dump_H_topp5mm_td', 'dump_E_topp1mm_td', 'dump_E_topp5mm_td']
+    info = json.loads((out / 'run' / 'exc_fields' / 'dump_info.json').read_text())
+    assert info['dt_ps'] == pytest.approx(case['period_s'] / 64 * 1e12) and [d['field'] for d in info['dumps']] == ['H', 'H', 'E', 'E']
+    assert len(list((out / 'run' / 'exc_fields').glob('dump_E_topp5mm_td_*.vtr'))) == 64
+    from kicad2ems.fields.frames import find_dumps
+    found = find_dumps(str(out))
+    assert sorted(d.name for d in found) == sorted(f['dumps'])
+    from pcbqs import reports
+    rep = reports.report('circuit', str(out))
+    assert rep['images'] == [] and rep['show'] == dict(field='H')   # in the Viewer, not a picture in the report
     again = run(model, out, log=lambda s: None, copper=True, fields=True)['cases'][0]
     assert again['notes'] == [] and again['fields']['E_ac_rms_max_V_per_m'] == f['E_ac_rms_max_V_per_m']

@@ -120,6 +120,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Fixed
+- **A circuit's fields in the Viewer, not as a picture in its report.** `python -m pcbqs.circuit --fields` wrote its
+  H and E only as `fields.npz` and `fields.png`, so a front end showed them as an image in the report and the
+  Viewer had nothing. Each point now also writes them as time-domain field dumps, H and E on each plane over the
+  period (64 frames), in `<run>/<point>/exc_fields/` (`fields.write_dumps`), where kicad2ems's Viewer finds a run's
+  dumps and plays them; the report keeps its table and leaves the picture out. The full bridge's (`power_circuit
+  --fields`) were dumps already, one folder too deep for the Viewer (`<point>/mqs/exc_bridge`): now
+  `<point>/exc_bridge`.
 - **A slow mode of the input filter no longer shifts the bridge's input power (C8).** The inductors in series
   between the supply's rails ring against the rails' capacitors (wpthb: 10.4 kHz, eight to eleven switching
   cycles a period) long after the rest of the circuit repeats, and the powers were averaged over the last

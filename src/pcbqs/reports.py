@@ -411,8 +411,10 @@ def circuit_report(res, folder=''):
                     f['heights_mm'], f['H_ac_rms_max_A_per_m'], f['E_ac_rms_max_V_per_m'])), ['.4g'] * 3),
                 text=f"The copper and its vias only: no part's own field. H to {f['highest_Hz'] / 1e6:.4g} MHz; "
                      "E from the nets' voltages."))
-            if f.get('picture') and os.path.isfile(f['picture']):
-                out['images'].append(f['picture'])
+            if f.get('picture') and os.path.isfile(f['picture']) and not f.get('dumps'):
+                out['images'].append(f['picture'])                  # (written as dumps: the Viewer shows them)
+            if f.get('dumps'):
+                out['show'] = dict(field='H')
     out['footer'] = 'Completed.' if res.get('complete') else 'Partial results.'
     return out
 

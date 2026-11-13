@@ -494,7 +494,7 @@ def infer_fields(q, ports, model, cfg, rows, results, crop, out, key, harmonics=
             ).real
             folder = Path(row['folder'])
             save_layout(folder, q.board, q, crop, dict(converter=references[0], capacitors=references[1:]))
-            exc = folder / 'mqs' / 'exc_bridge'
+            exc = folder / 'exc_bridge'                       # <run>/<point>/exc_*: where a viewer looks
             exc.mkdir(parents=True, exist_ok=True)
             for old in exc.glob('dump_H_*'):
                 old.unlink()

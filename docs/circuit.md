@@ -156,8 +156,9 @@ what a real one does.
 ## Fields over the board
 
 `--fields` (which implies `--copper`) writes, for every case, the fields on planes 1 and 5 mm above the top copper
-over the last period: `fields.npz` (H and E in time, their RMS maps, H's harmonics) and `fields.png` (the AC RMS
-maps over the board's copper).
+over the last period: as field dumps in `exc_fields/` (H and E on each plane, 64 frames over the period), which
+kicad2ems's Viewer shows with the run and plays (its Cut view); `fields.npz` (H and E in time, their RMS maps, H's
+harmonics); and `fields.png` (the AC RMS maps over the board's copper).
 
 - **H** comes from the currents in the copper. The reported run's port currents are taken apart into harmonics
   of the period (16 by default, from ngspice's own steps); the solver that gave the circuit its copper model

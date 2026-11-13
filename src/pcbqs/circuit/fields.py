@@ -25,9 +25,11 @@ What that is, and is not:
     - H up to the last harmonic kept: the ringing at the edges (hundreds of MHz) is above it, and case['fields']
       says what share of the port currents' AC was left out.
 
-<case>/fields.npz: x_mm, y_mm, heights_mm, time_s, H_A_per_m and E_V_per_m (time, x, y, height, 3), their RMS maps
-with and without the part that does not change over the period, H's harmonics; <case>/fields.png: the AC RMS maps
-over the board's copper.
+<case>/exc_fields/: the fields as field dumps a viewer shows (kicad2ems's Viewer finds <run>/*/exc_*): H and E on
+each plane over the period, time_samples frames each (dump_H_top_1mm_td_0000.vtr ...), with dump_info.json (the
+period's step, the copper to outline). <case>/fields.npz: x_mm, y_mm, heights_mm, time_s, H_A_per_m and E_V_per_m
+(time, x, y, height, 3), their RMS maps with and without the part that does not change over the period, H's
+harmonics; <case>/fields.png: the AC RMS maps over the board's copper (a picture for a page, not the report's).
 """
 import json
 from pathlib import Path
@@ -193,6 +195,10 @@ def export(model, summary, copper, out, log=print):
             H_ac_rms_A_per_m=ac(Ht).astype(np.float32), E_ac_rms_V_per_m=ac(Et).astype(np.float32),
             H_harmonics_A_per_m=np.linalg.norm(np.abs(H), axis=3).astype(np.float32) * weights / np.sqrt(2),
             frequencies_Hz=np.arange(count + 1) / period)
+        try:                                                        # the frames the Viewer plays over the period
+            fields['dumps'] = write_dumps(folder / 'exc_fields', q, board, x, y, z, s['heights_mm'], Ht, Et, period)
+        except Exception as exc:                                    # noqa: BLE001  (the npz has them)
+            case.setdefault('notes', []).append(f"the fields' dumps were not written: {type(exc).__name__}: {exc}")
         try:
             picture(folder / 'fields.png', board, model, case, x, y, ac(Ht), ac(Et), s['heights_mm'])
         except Exception as exc:                                    # noqa: BLE001  (a picture is not the result)
@@ -207,6 +213,42 @@ def export(model, summary, copper, out, log=print):
         log(f"{case['name']}: fields at {s['heights_mm'][0]:g} mm: H to {fields['H_ac_rms_max_A_per_m'][0]:.3g} A/m, "
             f"E to {fields['E_ac_rms_max_V_per_m'][0]:.3g} V/m (AC RMS)")
     return summary
+
+
+def write_dumps(exc, q, board, x, y, z, heights, Ht, Et, period):
+    """H and E (time, x, y, height, 3) over the period as time-domain field dumps in exc (a viewer's run folder):
+    a plane a height, a frame a sample. [the dumps' names]"""
+    import shutil
+    from shapely.geometry import box, shape
+    from .._artifacts import Dump, write_info
+    from ..power_circuit import write_vtr
+    if exc.exists():
+        shutil.rmtree(exc)                                          # a rerun's frames: none of the last one's
+    exc.mkdir(parents=True)
+    dumps = []
+    for field, F in (('H', Ht), ('E', Et)):
+        for k, h in enumerate(heights):
+            dm = Dump(f"{field}@top+{h:g}mm", field, (x[0], y[0], z[k]), (x[-1], y[-1], z[k]), None, 2, f"top+{h:g}mm")
+            for t in range(F.shape[0]):
+                write_vtr(exc / f"{dm.name}_{t:04d}.vtr", x, y, z[k], F[t, :, :, k, :])
+            dumps.append(dm)
+    crop = box(x[0], y[0], x[-1], y[-1])
+    copper = {}
+    for lay, records in board['copper'].items():
+        polys = []
+        for record in records:
+            if record['net'] not in q.nets:
+                continue
+            g = shape(record['polygon']).intersection(crop)
+            polys.extend(p for p in getattr(g, 'geoms', [g]) if p.geom_type == 'Polygon' and not p.is_empty)
+        copper[lay] = polys
+    from types import SimpleNamespace
+    m = SimpleNamespace(outline=crop, cu_z={c['name']: c['z'] for c in board['stack']['copper']}, copper=copper,
+                        ports=[], vias=[(v['x'], v['y'], v['r'], v['z0'], v['z1']) for v in board['vias']
+                                        if v['net'] in q.nets and crop.contains(__import__('shapely').Point(v['x'], v['y']))],
+                        thickness=board['stack'].get('thickness', max(c['z'] for c in board['stack']['copper'])))
+    write_info(str(exc), dumps, m, dt_ps=period / Ht.shape[0] * 1e12)
+    return [d.name for d in dumps]
 
 
 def picture(path, board, model, case, x, y, H, E, heights):
