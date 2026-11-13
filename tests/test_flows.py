@@ -3,6 +3,7 @@ what a circuit draws from its supply (circuit/supply.py) as a rail's loads and c
 ripple) and as the near field's input current (mqs_cli.py's --spectrum), and what each result proposes to the
 others (reports.py)."""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -93,6 +94,59 @@ def test_a_converter_is_a_circuit_model(board, tmp_path):
     with pytest.raises(ValueError, match='no inductor on a net it shares'):
         model_of(load_board(str(bare)), bare, parser().parse_args([str(bare), '--converter', 'U1', '--vin', 'in',
                                                                    '--cap-radius', '30']))
+
+
+def _example(name):
+    import pcbqs.circuit
+    return os.path.join(os.path.dirname(pcbqs.circuit.__file__), 'examples', name)
+
+
+def test_a_boost_found_on_a_board_is_a_circuit_model():
+    """The cell whose upper part is a diode: its hot loop's capacitors are the output's and its inductor's far net
+    the input (the boost example's board, from which nothing is typed but the operating point)."""
+    pytest.importorskip('kicad2ems')
+    from pcbqs._cli import load_board
+    board = _example('06_boost.kicad_pcb')
+    a = parser().parse_args([board, '--vin-volts', '12', '--vout', '24', '--fsw', '200e3', '--current', '1'])
+    m = model_of(load_board(board), board, a)
+    M.validate(m)
+    kinds = {p['ref']: (p['type'], p['nodes']) for p in m['parts']}
+    assert kinds == dict(V1=('source', ['in', '0']), C1=('capacitor', ['in', '0']), L1=('inductor', ['in', 'sw']),
+                         Q1=('switch', ['sw', '0']), D1=('diode', ['sw', 'out']), C2=('capacitor', ['out', '0']),
+                         RL=('load', ['out', '0']))
+    assert m['board'] == dict(file=board, parts=dict(V1='J1', RL='J2'), nets={'in': 'in', 'sw': 'sw', 'out': 'out'})
+    assert m['parameters'] == dict(fsw=200e3, vin=12.0, vout=24.0, iout=0.5)      # 1 A in the inductor: 0.5 A out
+    assert m['drives']['pwm']['duty'] == 0.5 and m['targets'][0]['initial'] == '1 - vin/vout'
+    assert 'ESL_H' not in next(p for p in m['parts'] if p['ref'] == 'C2')
+    assert 'ESL_H' in next(p for p in m['parts'] if p['ref'] == 'C1') and 'The boost of Q1 and D1' in m['description']
+    # a duty alone is the upper part's share of the period: 12 V in, 12 / duty out
+    m2 = model_of(load_board(board), board, parser().parse_args([board, '--duty', '0.4']))
+    assert m2['parameters']['vin'] == 12.0 and m2['parameters']['vout'] == pytest.approx(30.0)
+    assert m2['drives']['pwm']['duty'] == pytest.approx(0.6)
+    # the buck examples are bucks still, and a bridge's leg (no one inductor on its node) is not made into one
+    buck = _example('05_buck_synchronous.kicad_pcb')
+    m3 = model_of(load_board(buck), buck, parser().parse_args([buck, '--vin-volts', '12', '--vout', '5']))
+    assert [p['nodes'] for p in m3['parts'] if p['type'] == 'inductor'] == [['sw', 'out']]
+    bridge = _example('09_half_bridge_resonant.kicad_pcb')
+    with pytest.raises(ValueError, match='only a buck or a boost'):
+        model_of(load_board(bridge), bridge, parser().parse_args([bridge, '--vin-volts', '24', '--vout', '12']))
+
+
+@ngspice
+def test_the_boost_made_from_its_board_runs_as_the_example_does(tmp_path):
+    pytest.importorskip('kicad2ems')
+    from pcbqs._cli import load_board
+    from pcbqs.circuit.engine import run
+    board = _example('06_boost.kicad_pcb')
+    a = parser().parse_args([board, '--vin-volts', '12', '--vout', '24', '--fsw', '200e3', '--current', '1'])
+    case = run(model_of(load_board(board), board, a), tmp_path / 'made', log=lambda s: None)['cases'][0]
+    with open(_example('06_boost.json'), encoding='utf-8') as fh:
+        ref = run(json.load(fh), tmp_path / 'example', log=lambda s: None)['cases'][0]
+    assert case['measures']['vout_avg'] == pytest.approx(24.0, rel=0.01)
+    assert case['knobs']['drives.pwm.duty'] == pytest.approx(ref['knobs']['drives.pwm.duty'], abs=0.01)
+    assert case['measures']['il_ripple'] == pytest.approx(ref['measures']['il_ripple'], rel=0.03)
+    assert case['measures']['vout_ripple'] == pytest.approx(ref['measures']['vout_ripple'], rel=0.3)   # (its ESR: 3 mOhm for 10)
+    assert case['measures']['iin_avg'] == pytest.approx(1.0, rel=0.06)        # the inductor's current: the settings' pulse
 
 
 # ---- what a circuit draws from its supply ----

@@ -106,10 +106,16 @@ over a plane.
 | L at 10 MHz | 15.2 nH | 14.4 nH: a 2D field solver's 487.4 nH/m over 29.5 mm |
 | L at 1 kHz | 17.3 nH | larger than at 10 MHz: the return spreads over the plane |
 | a 1 × 14 mm slot in the plane across the trace | +1.7 nH (+2.0 nH at 1 kHz) | the current goes round it |
-| \|S11\| at 100 MHz, with the charge | 0.064 | 0.058: the line of the field solver's L' and C' (R and L alone: 0.095) |
+| \|S11\| at 100 MHz, with the charge | 0.0585 | 0.0585: the line of the field solver's L' and C' (R and L alone: 0.095; the charge on plain cells: 0.064) |
 
 A mesh with the cell at the trace's width is within 2 % of one three times finer. One solve per port in turn,
 the ports solved together, and the compressed matrices give the same S.
+
+**The charge is solved on graded cells at the copper's edges** (six across half the narrowest port's width:
+`EDGE_RINGS`), where it crowds. On plain cells a trace's capacitance came out low, and a matched line's |S11|
+high by as much: 8.8 % on the thru above, 0.1 % with the rings, for 1.4 times the triangles. demo_transition
+against mom25d solved at each frequency: the largest |ΔS| 0.004 at 200 MHz and 0.019 at 1 GHz, where it was
+0.008 and 0.040. (The table against the full-wave solvers below was measured before the rings.)
 
 **Parts.** The thru cut at its middle and bridged by 0.5 Ω and 10 nH, with 100 pF from it to a ground pad: S is
 within 0.01 of the ladder those parts make with the trace's own resistance and inductance, from 1 kHz to 10 MHz.

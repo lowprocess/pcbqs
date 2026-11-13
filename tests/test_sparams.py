@@ -150,8 +150,14 @@ def test_with_the_charge_it_is_a_transmission_line():
     zc, g = np.sqrt(Lp / Cp), 2j * np.pi * f * np.sqrt(Lp * Cp)
     A, B, C = np.cosh(g * length), zc * np.sinh(g * length), np.sinh(g * length) / zc
     line = np.abs((B / z0 - C * z0) / (2 * A + B / z0 + C * z0))
-    assert np.abs(rlc['S'][:, 0, 0]) == pytest.approx(line, rel=0.15)
+    assert np.abs(rlc['S'][:, 0, 0]) == pytest.approx(line, rel=0.02)
     assert (np.abs(rl['S'][:, 0, 0]) > 1.4 * line).all()                       # without its capacitance: far off
+    # the charge crowds at the trace's edges: solved on graded cells there (sparams.EDGE_RINGS); on plain cells the
+    # trace's capacitance is low and the matched line's |S11| 9 % high
+    assert rlc['info']['edge_rings'] == SP.EDGE_RINGS == 6 and rl['info']['edge_rings'] == 1
+    plain = SP.solve(b, f, capacitance='on', edge_rings=1, **QUIET)
+    assert plain['info']['triangles'] < rlc['info']['triangles'] < 1.6 * plain['info']['triangles']
+    assert (np.abs(plain['S'][:, 0, 0]) > 1.06 * line).all()
     assert SP.solve(b, [1e5], **QUIET)['info']['capacitance'] is False         # a band below the limit: R and L
     q = rlc['q']                                                               # each frequency's factor, both drives
     assert not q._peec['factors'] and q.factor_cache_bytes == 64 * 1024 ** 2   # nothing kept, the budget as it was

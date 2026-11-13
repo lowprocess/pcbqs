@@ -9,7 +9,25 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+### Changed
+- **The charge is solved on graded edge cells** (`pcbqs.sparams`, whenever it solves the copper's charge:
+  `EDGE_RINGS` = 6 across half the narrowest port's width; `edge_rings=1` for plain cells). A constant charge per
+  triangle does not resolve the edge charge on plain cells, so a trace's capacitance was low: the thru's |S11|
+  with the charge was 8.8 % above the field solver's line and is within 0.1 %; demo_transition against mom25d
+  0.040 in |S| at 1 GHz, now 0.019; 1.4 times the triangles. The same rings on `MQS(capacitance=True)` (an
+  option there, as it was): two traces 0.1 mm apart −2.5 % self and −3.6 % mutual against FasterCap at 0.5 mm
+  cells (−10 % and −23 % on plain cells, −7 % and −16 % at 0.25 mm), a microstrip +0.8 % (−2.4 %):
+  `validation/README.md`.
+
 ### Added
+- **A boost found on a board is made into a circuit** (`pcbqs.mqs --circuit`, *Open ... as a circuit* on a near
+  field's result; `circuit/converter.py: boost_of`). Only a buck was: a cell with a diode up from its switch node
+  stopped with "only a buck is made into a circuit". The near field's capacitors are the boost's output's, the
+  net on the inductor's far side its input (a supply on its connector, the capacitors there), the lower switch
+  and the diode as the board names them (two switches: a synchronous boost, where `--vout` is above
+  `--vin-volts`), and `--current` is the inductor's current. From the boost example's board alone it settles
+  at the example's duty (0.516 for 0.514) and inductor ripple. The output capacitors are given their ESR only:
+  the model has no stray inductance to slow the commutation into them, and their ESL rang 27 V on a 24 V output.
 - **The low-frequency S-parameters take the board's lumped parts** (`pcbqs.sparams`, `--solvers pcbqs`): each a
   series R, L and C between patches of the copper at its two pads, so a filter of parts or a trace with a
   series capacitor has its low end (they were left out: a series part's gap was an open circuit). The fine

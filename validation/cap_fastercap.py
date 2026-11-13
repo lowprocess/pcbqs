@@ -82,8 +82,9 @@ def board_of(c):
                 vias=[], outline=mapping(c['extent'].buffer(5)), prims=dict(footprints=[]))
 
 
-def pcbqs_c(c, dmax):
-    """Maxwell C (conductors in the order of their nets' first appearance) from pcbqs, and the time."""
+def pcbqs_c(c, dmax, **mesh):
+    """Maxwell C (conductors in the order of their nets' first appearance) from pcbqs, and the time. mesh: MQS's
+    mesh options (edge_rings=6, edge_width=half a trace's width: the edge charge on graded cells)."""
     from pcbqs.mqs import MQS
     b = board_of(c)
     nets = [n for ps in c['copper'].values() for n, _ in ps]
@@ -96,7 +97,7 @@ def pcbqs_c(c, dmax):
             terms.setdefault(n, [(lay, Point(p.representative_point()).buffer(0.05, quad_segs=4))])
     t = time.perf_counter()
     kw = dict(er=c['er']) if c['er'] == 1.0 else dict(dielectric='stack')
-    q = MQS(b, set(nets), terminals=terms, dmax=dmax, capacitance=True, log=lambda *a: None, **kw)
+    q = MQS(b, set(nets), terminals=terms, dmax=dmax, capacitance=True, log=lambda *a: None, **kw, **mesh)
     C, node_labels, term_labels = q.capacitance_matrix()
     order = [term_labels[n] for n in nets]
     return dict(C=np.real(np.asarray(C)[np.ix_(order, order)]), names=nets, tris=len(q.tris), seconds=time.perf_counter() - t)

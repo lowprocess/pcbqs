@@ -205,7 +205,10 @@ has the same for a model that exists (`apply`: add parts, or bring their values 
 `python -m pcbqs.mqs board.kicad_pcb --converter U702 --vin-volts 5 --vout 3.3 --fsw 1e6 --current 2 --circuit`
 prints the converter the near-field tool selects as a model: its input capacitors, two switches on the
 regulator's footprint (`board.parts`), its inductor, the output capacitors nearby and a load, on the nodes `in`,
-`sw` and `out` with their nets in `board.nets`. A near-field run writes the same as `circuit-model.json`, which
+`sw` and `out` with their nets in `board.nets`. A boost built of discrete parts (a diode up from the switch node)
+is made into its own model the same way: `python -m pcbqs.mqs 06_boost.kicad_pcb --vin-volts 12 --vout 24 --fsw
+200e3 --current 1 --circuit` gives the boost example's circuit from its board alone, and it settles at the same
+duty and inductor ripple as the example. A near-field run writes the same as `circuit-model.json`, which
 the window opens from that result. What it assumes is in its description
 ([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next)).
 

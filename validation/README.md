@@ -107,8 +107,21 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   | Two traces, 0.1 mm apart, air: self / mutual / to ground | 0.666 / −0.152 / −0.505 | 0.696 / −0.171 / −0.516 (±3%) | −4 / −11 / −2% |
   | Microstrip, FR-4 / air ratio (effective permittivity) | 3.23 | Hammerstad–Jensen 3.26 | −1% |
 
-  - pcbqs is a little low on narrow traces, most where they face each other across a small gap. Its
-    constant charge per triangle can't fully resolve the edge charge within the dense solver's memory limits.
+  - pcbqs is a little low on narrow traces, most where they face each other across a small gap: a constant
+    charge per triangle does not resolve the edge charge on plain cells. **Graded edge rings do, at little cost**
+    (`MQS(edge_rings=6, edge_width=half a trace's width)`, 2026-11-13; `pcbqs_c(c, dmax, edge_rings=6,
+    edge_width=0.15)` here):
+
+    | Case | plain cells, dmax 0.25 | six edge rings, dmax 0.5 | six edge rings, dmax 0.25 | Reference |
+    |---|---|---|---|---|
+    | Microstrip, air | 0.623 pF (12,390 triangles) | 0.643 pF (3,944) | 0.646 pF (13,692) | FasterCap 0.638; Hammerstad-Jensen with the open ends' fringe 0.645 |
+    | Two traces 0.1 mm apart: self / mutual / to ground | 0.666 / −0.152 / −0.505 (12,740) | 0.700 / −0.174 / −0.517 (4,384) | 0.703 / −0.176 / −0.518 (14,538) | FasterCap 0.696 / −0.171 / −0.516 and, refined further, 0.717 / −0.180 / −0.528 |
+
+    With the rings the two traces are inside the spread of FasterCap's own two runs (−2.5 / −3.6 / −2.1 % from
+    the finer one at dmax 0.5, where plain cells were −10 / −23 / −6 %), and 0.5 mm cells with rings beat
+    0.25 mm cells without, on a third of the triangles. `pcbqs.sparams` uses them whenever it solves the charge.
+    Not yet looked at with rings: the copper's thickness (face sheets and side charge), where the comparison
+    with FasterCap's boxes was −5.5..−7.5 % self and −10..−13 % mutual.
   - Copper thickness is not small here. 35 µm boxes in FasterCap give the air microstrip 0.713 pF, +12% over the
     sheets, and that is capacitance pcbqs leaves out.
   - Gotchas:

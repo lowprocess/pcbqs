@@ -62,6 +62,9 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
      'none: no maps)', G_OUT),
     ('map_port', 'str', '', 'the port driven in the current maps (default: the first)', G_OUT),
 ]
+EDGE_RINGS = 6          # with the charge solved: cells across the copper's edges, graded (the edge charge: a matched
+                        # line's |S11| 8.8 % above the field solver's line with none, 0.1 % with these; two traces
+                        # 0.1 mm apart -23 % in mutual capacitance, then -3.6 %), over half the narrowest port's width
 DENSE_MAX = 9000        # triangles: above it the mesh is made coarser (auto), or the matrices compressed
 CHARGE_MAX = 5000       # the same with the charge solved too (a larger, dense system)
 COARSEN = 1.4           # a mesh over the limit: both cell sizes by this, up to four times
@@ -184,13 +187,14 @@ def limits(board, ports):
 
 
 def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto', capacitance='auto',
-          thickness=False, log=print):
+          thickness=False, log=print, edge_rings=None):
     """The S-parameters of a board's ports at freqs (Hz, all positive): dict(f, S (nf, n, n), names, zref, q, drive,
     info). board: a kicad2ems board dict (stack, copper, vias, ports, parts); ports: its own unless given, each
     dict(name, layer, ref_layer, c, axis, sgn, w, z0, net), single-ended, between a trace and the copper under it.
     Its parts are series R, L and C between their pads (part_elements).
     capacitance: 'on', 'off' or 'auto' (the charge solved too when freqs reach above where R and L alone hold).
     thickness: the copper as its two faces (MQS's conductor_loss='slab') instead of one sheet of its DC resistance.
+    edge_rings: with the charge, the graded cells across the copper's edges (default EDGE_RINGS; 1: none).
     drive[k]: the solve with port k driven (pcbqs.mqs.Result) and the current that entered the port, for the
     maps. A mesh left to the defaults is made coarser until the dense solve takes it."""
     from shapely.geometry import shape
@@ -236,6 +240,8 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
     limit = (CHARGE_MAX if charge else DENSE_MAX) * (2 if thickness else 1)     # a triangle on each face
     t0 = time.perf_counter()
     kw = dict(capacitance=True, dielectric='stack') if charge else {}
+    if charge and edge_rings != 1:                          # the charge crowds at the copper's edges: graded rings
+        kw.update(edge_rings=int(edge_rings or EDGE_RINGS), edge_width=max(0.5 * min(p['w'] for p in ports), 0.05))
     if thickness:
         kw['conductor_loss'] = 'slab'
     for attempt in range(5):
@@ -269,6 +275,7 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
         drive.append((r, 1.0 - r.i[:, part[pk['name'] + '.Z']]))                    # what went into the board
     info = dict(triangles=int(len(q.tris)), backend=q.matrix_backend, dmax_mm=dmax, fine_mm=min(fine, dmax),
                 seconds=round(time.perf_counter() - t0, 2), capacitance=bool(charge), thickness=bool(thickness),
+                edge_rings=int(kw.get('edge_rings', 1)),
                 valid_to_Hz=float(f_wave if charge else min(f_wave, f_cap)),
                 tenth_wavelength_Hz=float(f_wave), capacitance_limit_Hz=float(f_cap), capacitance_F=float(cap),
                 parts=[e['ref'] for e in parts], parts_left_out=[list(x) for x in left_out],

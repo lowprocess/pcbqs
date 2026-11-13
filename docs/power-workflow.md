@@ -112,7 +112,11 @@ question it is copied to is ticked, so Run includes it.
   `--cap-radius` and a load of `vout / iout`. The duty is adjusted until the output
   is `vout`. What a board cannot say is assumed and listed in the model's
   description: 50 mΩ switches, the inductor's DCR, the voltages when the settings
-  give a duty alone.
+  give a duty alone. A discrete cell whose upper part is a diode (or whose
+  `--vout` is above its `--vin-volts`) is made into a **boost**: the capacitors
+  the near field selected are its output's, the net on the inductor's far side
+  its input, and `--current` the inductor's current, of which the load gets
+  `vin / vout`. A bridge's leg and a resonant stage are not made into a circuit.
 - **What a circuit draws** (`supply` in each point of `circuit.json`, and
   `supply-<part>.csv` beside it): for each supply, every part on it but its
   capacitors, with its average current and 40 harmonics (peak A and phase).
