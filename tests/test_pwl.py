@@ -89,9 +89,10 @@ def test_a_constant_power_load_takes_its_power(tmp_path):
 
 def test_what_it_leaves_to_ngspice(tmp_path):
     wave = buck()
-    wave['parts'][0] = dict(ref='V1', type='source', nodes=['in', '0'], wave=dict(type='sine', amplitude_V=12, frequency_Hz=200e3))
+    wave['parts'][0] = dict(ref='V1', type='source', nodes=['in', '0'],
+                            wave=dict(type='pwl', points=[[0, 0], [1e-6, 12]], repeat=False))
     out = run(wave, tmp_path / 'w', **QUIET)
-    assert out['cases'] == [] and "a source with a wave is ngspice's" in out['failed'][0]['error']
+    assert out['cases'] == [] and "a source with a pwl wave is ngspice's" in out['failed'][0]['error']
     fet = buck()
     fet['parts'][1]['model'] = dict(type='mosfet')
     assert "a mosfet switch model is ngspice's" in run(fet, tmp_path / 'f', **QUIET)['failed'][0]['error']
@@ -121,8 +122,31 @@ def test_the_command_and_the_window_s_option(tmp_path, capsys):
     assert any(o['key'] == 'engine' and o['only'] == 'general' for o in Circuit().options())
 
 
+def test_a_sine_and_a_pulse_source(tmp_path):
+    """A sine source is two more states that turn at its frequency; a pulse a level that changes at its edges.
+    A resistor on a sine takes A^2 / 2R; an RC low-pass on a square wave swings as its time constant says."""
+    f, R, C = 1e3, 100.0, 1e-6
+    rc = lambda wave: dict(format=2, name='rc', parameters={}, parts=[
+        dict(ref='V1', type='source', nodes=['in', '0'], wave=wave),
+        dict(ref='R1', type='resistor', nodes=['in', 'out'], value=R),
+        dict(ref='C1', type='capacitor', nodes=['out', '0'], value=C),
+        dict(ref='R2', type='load', nodes=['in', '0'], resistance_ohm=50.0)],
+        probes=dict(vout=dict(voltage=['out', '0'])), measures=dict(pp=dict(pp='vout'), avg=dict(avg='vout')),
+        analysis=dict(engine='pwl'))
+    case = run(rc(dict(type='sine', amplitude_V=10.0, frequency_Hz=f, offset_V=1.0)), tmp_path / 's', **QUIET)['cases'][0]
+    gain = 1 / np.sqrt(1 + (2 * np.pi * f * R * C) ** 2)
+    assert case['measures']['pp'] == pytest.approx(2 * 10.0 * gain, rel=2e-3) and case['measures']['avg'] == pytest.approx(1.0, abs=1e-3)
+    assert case['parts']['R2']['power_W'] == pytest.approx((10.0 ** 2 / 2 + 1.0) / 50.0, rel=2e-3)
+    plant = pwl.Plant(M.resolve(rc(dict(type='sine', amplitude_V=10.0, frequency_Hz=f, phase_deg=90.0))))
+    assert plant.nx == 3 and list(plant.free) == [0] and plant.x0[1:] == pytest.approx([1.0, 0.0])    # starts at its crest
+    case = run(rc(dict(type='pulse', low_V=0.0, high_V=5.0, frequency_Hz=f, duty=0.5)), tmp_path / 'p', **QUIET)['cases'][0]
+    swing = 5.0 * np.tanh(1 / (4 * f * R * C))                          # a square wave through R C, settled
+    assert case['measures']['pp'] == pytest.approx(swing, rel=2e-3) and case['measures']['avg'] == pytest.approx(2.5, rel=2e-3)
+
+
 @ngspice
 @pytest.mark.parametrize('name, same, loose', [
+    ('03_bridge_rectifier', ('vdc_ripple',), ('vdc_avg', 'iac_rms')),   # (a sine, four diodes: the line for the curve)
     ('06_boost', ('vout_avg', 'vout_ripple', 'il_ripple'), ()),
     ('08_flyback', ('vout_avg',), ('vsw_peak', 'ip_peak')),         # (coupled inductors; a snubbed switch's peak)
     ('10_full_bridge_phase_shift', ('i1_rms', 'i2_rms'), ())])       # (two legs, a phase for its knob)
@@ -145,4 +169,5 @@ def test_the_examples_as_ngspice_has_them_and_much_sooner(tmp_path, name, same, 
         assert b['knobs'][k] == pytest.approx(v, rel=0.01), k
     assert b['efficiency'] == pytest.approx(a['efficiency'], abs=0.006)     # no edges, no capacitance: a little kinder
     assert b['load_power_W'] == pytest.approx(a['load_power_W'], rel=0.01)
-    assert seconds['pwl'] < 0.4 * seconds['ngspice']
+    if a['runs'] > 1:                                                   # (a rectifier's one run is quick either way)
+        assert seconds['pwl'] < 0.4 * seconds['ngspice']

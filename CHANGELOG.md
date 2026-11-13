@@ -31,9 +31,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   power and constant current loads, targets and sweeps as before; the result is the same signals and figures,
   so the report, the supply currents and the window read it as any run. The seven converter examples agree
   with ngspice (duty within 0.001, ripples within 0.2 %, efficiency within 0.7 point) in 0.3 to 0.8 s where
-  ngspice takes 4 to 40 s. Ideal switches and diodes only: no capacitance, no edges, no ESL; waves, MOSFET
-  models, a winding's parasitics and the board's copper are still ngspice's, and it says so
-  (docs/circuit.md).
+  ngspice takes 4 to 40 s. Ideal switches and diodes only: no capacitance, no edges, no ESL; MOSFET models, a
+  winding's parasitics and the board's copper are still ngspice's, and it says so (docs/circuit.md). Sine
+  and pulse sources are in it (a sine: two states that turn at its frequency), so all ten example circuits
+  run: the bridge rectifier's DC output 30.27 V for ngspice's 30.35 V.
 - **A boost found on a board is made into a circuit** (`pcbqs.mqs --circuit`, *Open ... as a circuit* on a near
   field's result; `circuit/converter.py: boost_of`). Only a buck was: a cell with a diode up from its switch node
   stopped with "only a buck is made into a circuit". The near field's capacitors are the boost's output's, the

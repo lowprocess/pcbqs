@@ -104,15 +104,19 @@ same: the targets' search, the parts' figures, the supply's currents, the report
 | Flyback (coupled inductors) | 11.3 s | 0.4 s | duty 0.3347 / 0.3355, switch peak 64.3 / 65.5 V, efficiency 82.1 / 81.7 % |
 | Resonant half bridge | 4.4 s | 0.8 s | tank current 1.971 / 1.971 A, efficiency 98.33 / 98.32 % |
 | Phase-shifted full bridge | 9.9 s | 0.8 s | phase 54.3 / 54.5°, currents within 0.1 %, efficiency 94.5 / 94.8 % |
+| Bridge rectifier on a sine | 0.4 s | 0.4 s | DC output 30.35 / 30.27 V, ripple 2.365 / 2.364 V, mains current 1.540 / 1.528 A |
+| Half-wave rectifier; RC filter on a pulse | 0.3 s; 0.6 s | 0.2 s | output and ripple within 0.4 % |
 
 What it is for is where the answer does not hang on a device: operating points, ripples, RMS currents, the
 conduction loss, a sweep of many points. What it leaves out is what makes the difference in the table: a switch
 is its on resistance or nothing (no capacitance, no gate charge, no edges: the synchronous buck's 12 mW of
 switching loss), a diode a threshold and a resistance (no junction capacitance, no recovery), a capacitor has
 no ESL (said in the result's notes). The spikes ngspice shows at hard-switched edges (the full bridge's 21 A in
-a switch, its bus ripple of 105 mV for 46 mV) are those capacitances' and are not in it. A source with a wave
-(a rectifier's mains), a MOSFET model, a winding's self-capacitance and core loss, and the board's copper in the
-circuit (`--copper`) stop it with a line saying they are ngspice's.
+a switch, its bus ripple of 105 mV for 46 mV) are those capacitances' and are not in it. A sine source is two
+more states that turn at its frequency and a pulse a level that changes at its edges, so a rectifier on the
+mains runs too (a diode's line against its curve: the bridge's diodes lose 4 % more). A source with a
+piecewise-linear wave, a MOSFET model, a winding's self-capacitance and core loss, and the board's copper in
+the circuit (`--copper`) stop it with a line saying they are ngspice's.
 
 ## Results
 

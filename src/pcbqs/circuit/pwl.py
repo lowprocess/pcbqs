@@ -19,7 +19,8 @@ What it models (the rest is ngspice's: analysis.engine = "ngspice", the default)
                 below; no junction capacitance, no recovery
     capacitor   value x bias_factor with its ESR and leakage (its ESL is left out: said in the result's notes)
     inductor    value with its DCR, and the model's couplings (a winding's self-capacitance and core loss: no)
-    source      dc_V with its series R and L, or dc_A; no waves
+    source      dc_V with its series R and L, or dc_A; a sine (two states that turn at its frequency) or a
+                pulse (two levels, its edges at their instants); no pwl wave
     load        resistance_ohm, current_A, or power_W (a resistance that takes that power at its mean voltage)
     resistor
 A diode's state follows the circuit: it turns on when its voltage reaches the threshold and off when its current
@@ -66,13 +67,16 @@ def diode_line(vf, i_f, n=1.0, rs=0.01):
 
 class Plant:
     """A resolved model as a switched linear system. States: every capacitor's own voltage, then every inductor's
-    current (a source's series inductance among them)."""
+    current (a source's series inductance among them), then a sine and a cosine for every sine source (they turn
+    at its frequency: the source is its amplitude times the sine, and the period's map leaves them where they
+    were, so the search for the steady state does not move them)."""
 
     def __init__(self, model):
         self.model, self.period, self.notes = model, period_of(model), []
         self.index = {}                                     # node name -> row (ground: -1)
         self.g, self.vs, self.cs = [], [], []               # (a, b, S); (ref, a, b, S, V); (ref, a, b, A a -> b)
         self.caps, self.inds, self.sw, self.di, self.pl = [], [], [], [], []
+        self.sines, self.pulses = [], []                    # sources with a wave (their entry of vs, and the wave)
         self.parts = []                                     # (ref, kind, a, b, how its current is found)
         drives = model.get('drives', {})
         for p in model['parts']:
@@ -122,8 +126,10 @@ class Plant:
                                     gate=m.get('gate_V', 10.0)))
                 self.parts.append((ref, kind, a, b, ('switch', len(self.sw) - 1)))
             elif kind == 'source':
-                if 'wave' in p:
-                    raise Unsupported(f"{ref}: a source with a wave is ngspice's (analysis.engine = \"ngspice\")")
+                wave = p.get('wave')
+                if wave and wave['type'] not in ('sine', 'pulse'):
+                    raise Unsupported(f"{ref}: a source with a {wave['type']} wave is ngspice's "
+                                      f"(analysis.engine = \"ngspice\")")
                 if 'dc_A' in p:
                     self.cs.append((ref, a, b, -p['dc_A']))            # out of its + node
                     self.parts.append((ref, kind, a, b, ('cs', -p['dc_A'])))
@@ -133,7 +139,18 @@ class Plant:
                     plus = self.node('L:' + ref)
                     self.inds.append(dict(ref=ref + ':L', a=a, b=plus, L=p['L_H'], r=0.0))
                 g = 1 / max(p.get('R_ohm', 0.0), R_MIN)
-                self.vs.append((ref, plus, b, g, p['dc_V']))
+                if not wave:
+                    self.vs.append((ref, plus, b, g, p['dc_V']))
+                elif wave['type'] == 'sine':                # offset + amplitude x (the first of its two states)
+                    self.vs.append((ref, plus, b, g, wave.get('offset_V', 0.0)))
+                    self.sines.append(dict(vs=len(self.vs) - 1, A=wave['amplitude_V'], w=2 * math.pi * wave['frequency_Hz'],
+                                           phase=math.radians(wave.get('phase_deg', 0.0))))
+                else:                                       # low or high: a level that changes at its edges
+                    T = 1 / wave['frequency_Hz']
+                    duty = wave.get('duty', 0.5)
+                    self.vs.append((ref, plus, b, g, wave.get('low_V', 0.0)))
+                    self.pulses.append(dict(vs=len(self.vs) - 1, high=wave['high_V'], T=T, span=duty * T,
+                                            on=(wave.get('delay_s', 0.0) + wave.get('rise_s', T / 1000) / 2) % T))
                 self.parts.append((ref, kind, a, b, ('vs', len(self.vs) - 1)))
             elif kind == 'load':
                 if 'resistance_ohm' in p:
@@ -147,8 +164,12 @@ class Plant:
                                         vmin=p.get('min_V', 0.1)))
                     self.parts.append((ref, kind, a, b, ('pload', len(self.pl) - 1)))
         self.n, self.nc, self.nl = len(self.index), len(self.caps), len(self.inds)
-        self.nx = self.nc + self.nl
-        if not self.nx:
+        self.nx = self.nc + self.nl + 2 * len(self.sines)
+        self.free = np.arange(self.nc + self.nl)            # the states the steady state is looked for in
+        self.x0 = np.zeros(self.nx)
+        for k, q in enumerate(self.sines):
+            self.x0[self.nc + self.nl + 2 * k:self.nc + self.nl + 2 * k + 2] = math.sin(q['phase']), math.cos(q['phase'])
+        if not self.nc + self.nl:
             raise Unsupported('a circuit with no capacitor and no inductor has no state: nothing for this engine')
         L = np.diag([q['L'] for q in self.inds]) if self.nl else np.zeros((0, 0))
         where = {q['ref']: i for i, q in enumerate(self.inds)}
@@ -162,6 +183,10 @@ class Plant:
             for m in range(int(round(self.period / s['T']))):
                 t_on = (s['on'] + m * s['T']) % self.period
                 self.edges += [(t_on, k, True), ((t_on + s['span']) % self.period, k, False)]
+        for k, q in enumerate(self.pulses):                 # a pulse's level: a gate after the switches'
+            for m in range(int(round(self.period / q['T']))):
+                t_on = (q['on'] + m * q['T']) % self.period
+                self.edges += [(t_on, len(self.sw) + k, True), ((t_on + q['span']) % self.period, len(self.sw) + k, False)]
         self.edges.sort(key=lambda e: e[0])
         self._mats, self._phi = {}, {}
 
@@ -171,11 +196,8 @@ class Plant:
         return self.index.setdefault(name, len(self.index))
 
     def gates_at(self, t):
-        """Each switch's gate just after time t of the period."""
-        out = []
-        for s in self.sw:
-            out.append(((t - s['on']) % s['T']) < s['span'])
-        return tuple(out)
+        """Each switch's gate just after time t of the period, then each pulse source's level (high: True)."""
+        return tuple(((t - s['on']) % s['T']) < s['span'] for s in (*self.sw, *self.pulses))
 
     # ---- one topology: the gates' and the diodes' states ----
     def matrices(self, gates, diodes):
@@ -213,9 +235,15 @@ class Plant:
             col = np.zeros(n)
             inject(col, q['a'], q['b'], 1.0)
             Jx[:, self.nc + k] += col
-        for ref, a, b, g, volts in self.vs:                 # i = g (v_a - v_b - V)
+        high = {q['vs']: q['high'] for k, q in enumerate(self.pulses) if gates[len(self.sw) + k]}
+        for k, (ref, a, b, g, volts) in enumerate(self.vs):   # i = g (v_a - v_b - V)
             stamp(a, b, g)
-            inject(j0, a, b, -g * volts)
+            inject(j0, a, b, -g * high.get(k, volts))
+        for k, q in enumerate(self.sines):                  # V = offset + A x (its sine state)
+            ref, a, b, g, volts = self.vs[q['vs']]
+            col = np.zeros(n)
+            inject(col, a, b, -g * q['A'])
+            Jx[:, self.nc + self.nl + 2 * k] += col
         for ref, a, b, amps in self.cs:
             inject(j0, a, b, amps)
         for k, s in enumerate(self.sw):
@@ -242,7 +270,10 @@ class Plant:
                 VL[k] = ra - rb
                 VL[k, self.nc + k] -= q['r']
                 v[k] = ca - cb
-            A[self.nc:], c[self.nc:] = self.Linv @ VL, self.Linv @ v
+            A[self.nc:self.nc + self.nl], c[self.nc:self.nc + self.nl] = self.Linv @ VL, self.Linv @ v
+        for k, q in enumerate(self.sines):                  # s' = w c, c' = -w s
+            i = self.nc + self.nl + 2 * k
+            A[i, i + 1], A[i + 1, i] = q['w'], -q['w']
         # each diode's own voltage, as a row over x and a constant: what its state is judged by
         Dx = np.array([row(d['a'])[0] - row(d['b'])[0] for d in self.di]).reshape(len(self.di), nx)
         d0 = np.array([row(d['a'])[1] - row(d['b'])[1] for d in self.di])
@@ -345,7 +376,8 @@ class Plant:
         voltage between whiles. The search steps through the period on `search` samples (a diode's state is
         looked at that often), the period kept on `samples`."""
         search = min(search, samples)
-        x = np.zeros(self.nx)
+        x = self.x0.copy()
+        free = self.free
         diodes, periods = None, 0
         for outer in range(12 if self.pl else 1):
             self._mats.clear()
@@ -353,16 +385,18 @@ class Plant:
             for it in range(80):
                 x1, P, diodes, _ = self.one_period(x, search, diodes)
                 periods += 1
-                size = max(np.abs(x1).max(), 1e-9)
-                err = np.abs(x1 - x).max() / size
+                size = max(np.abs(x1[free]).max(), 1e-9)
+                err = np.abs(x1 - x)[free].max() / size
                 if err < tol:
                     break
-                J = P[:-1, :-1]
+                J = P[:-1, :-1][np.ix_(free, free)]
                 try:                                        # the fixed point of x -> x1 + J (x' - x)
-                    dx = np.linalg.lstsq(np.eye(self.nx) - J, x1 - x, rcond=1e-12)[0]
+                    dx = np.linalg.lstsq(np.eye(len(free)) - J, (x1 - x)[free], rcond=1e-12)[0]
                 except np.linalg.LinAlgError:
-                    dx = x1 - x
-                x = x + dx if np.isfinite(dx).all() and np.abs(dx).max() < 1e3 * size + 1e3 else x1
+                    dx = (x1 - x)[free]
+                step = dx if np.isfinite(dx).all() and np.abs(dx).max() < 1e3 * size + 1e3 else (x1 - x)[free]
+                x = x.copy()
+                x[free] += step
             else:
                 raise RuntimeError(f"no periodic steady state in 80 periods (the state still moves by {err:.2g} of "
                                    f"itself a period): a circuit this engine cannot settle (analysis.engine = \"ngspice\")")
@@ -396,7 +430,7 @@ class Plant:
         t = np.array([s[0] for s in kept])
         X = np.array([s[1] for s in kept])
         V = np.zeros((n, self.n))
-        gates = np.array([s[2] for s in kept], bool).reshape(n, len(self.sw))
+        gates = np.array([s[2] for s in kept], bool).reshape(n, len(self.sw) + len(self.pulses))
         diodes = np.array([s[3] for s in kept], bool).reshape(n, len(self.di))
         for i, s in enumerate(kept):
             m = self.matrices(s[2], s[3])
@@ -432,7 +466,14 @@ class Plant:
                 i = np.full(n, how[1])
             elif how[0] == 'vs':
                 _, plus, minus, g, volts = self.vs[how[1]]
-                i = g * (at(plus) - at(minus) - volts)
+                emf = np.full(n, volts)
+                for k, q in enumerate(self.pulses):
+                    if q['vs'] == how[1]:
+                        emf = np.where(gates[:, len(self.sw) + k], q['high'], volts)
+                for k, q in enumerate(self.sines):
+                    if q['vs'] == how[1]:
+                        emf = volts + q['A'] * X[:, self.nc + self.nl + 2 * k]
+                i = g * (at(plus) - at(minus) - emf)
             else:
                 i = self.pl[how[1]]['g'] * v
             out[ref + '.I'] = i
