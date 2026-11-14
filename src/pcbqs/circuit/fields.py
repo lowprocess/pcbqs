@@ -96,6 +96,45 @@ def unit_fields(model, board, x, y, z, log=print):
     return {n: E[..., j] for j, n in enumerate(order)}, cap
 
 
+def _fields_key(copper, s, x, y, z):
+    """What the fields of a run depend on besides its circuit: the copper (its fingerprint: board, mesh, parts and
+    the extraction's code), the field settings and grid, and this module's and the field kernels' code."""
+    import hashlib
+    from .. import peec, mqs
+    h = hashlib.sha256(json.dumps(dict(copper=copper.get('fingerprint'), settings={k: list(v) if isinstance(v, tuple) else v
+                                                                                     for k, v in s.items()},
+                                       grid=[len(x), len(y), float(x[0]), float(y[0]), list(map(float, z))]),
+                                  sort_keys=True).encode())
+    for module in (peec, mqs):
+        h.update(Path(module.__file__).read_bytes())
+    h.update(Path(__file__).read_bytes())
+    return h.hexdigest()[:32]
+
+
+def _unit_fields_kept(path, key, make, log=print):
+    """unit_fields' answer kept beside the run under `key`: a rerun (a changed circuit on the same copper, or the
+    same run again) does not work out E for a volt on each net again (the boost board: 41 s)."""
+    try:
+        with np.load(path) as z:
+            if str(z['key']) == key:
+                nets = [str(n) for n in z['nets']]
+                log("Fields: E for a volt on each net, as worked out before")
+                return ({n: z['E'][..., j] for j, n in enumerate(nets)},
+                        {n: float(c) for n, c in zip(nets, z['capacitance_F'])})
+    except (OSError, KeyError, ValueError):
+        pass
+    unit, cap = make()
+    nets = sorted(unit)
+    try:
+        tmp = path.with_name(path.stem + '.tmp.npz')
+        np.savez(tmp, key=np.array(key), nets=np.array(nets), E=np.stack([unit[n] for n in nets], axis=-1),
+                 capacitance_F=np.array([cap[n] for n in nets]))
+        tmp.replace(path)
+    except OSError:
+        pass
+    return unit, cap
+
+
 def harmonics_of(result, labels, period, count):
     """The complex Fourier coefficients c_n (n = 0..count) of signals over the last period, from uniform samples:
     x(t) = c_0 + 2 Re sum c_n exp(2 pi i n t / period). (count + 1, signals)."""
@@ -140,7 +179,8 @@ def export(model, summary, copper, out, log=print):
     if [p['name'] for p in ports] != [p['name'] for p in copper['ports']]:
         raise ValueError("the copper's ports are not the ones the circuit ran with: run again")
     x, y, z = grid(q, s)
-    unit, capacitance = unit_fields(model, board, x, y, z, log)
+    fkey = _fields_key(copper, s, x, y, z)
+    unit, capacitance = _unit_fields_kept(Path(out) / 'fields-unit.npz', fkey, lambda: unit_fields(model, board, x, y, z, log), log)
     known = set(unit)
     node_net = {}
     for part in model['parts']:
@@ -154,6 +194,11 @@ def export(model, summary, copper, out, log=print):
     weights = np.r_[1.0, np.full(count, 2.0)]
     for case in summary['cases']:
         folder = Path(case['folder'])
+        before = case.get('fields') or {}
+        if (before.get('key') == fkey + ':' + str(case.get('fingerprint')) and Path(before.get('file', '')).is_file()
+                and (folder / 'exc_fields').is_dir()):              # the case and its copper as before: its fields too
+            log(f"{case['name']}: fields as before")
+            continue
         case['notes'] = [n for n in case.get('notes', []) if not n.startswith(('H keeps ', 'fields.png '))]   # a rerun's own
         with np.load(folder / 'transient.npz') as data:
             result = {k: data[k] for k in data.files}
@@ -205,7 +250,7 @@ def export(model, summary, copper, out, log=print):
             E_ac_rms_max_V_per_m=[float(ac(Et)[:, :, k].max()) for k in range(len(z))],
             E_rms_max_V_per_m=[float(rms(Et)[:, :, k].max()) for k in range(len(z))],
             E_peak_V_per_m=[float(mag(Et)[:, :, :, k].max()) for k in range(len(z))],
-            net_voltage_swing_V=swing, net_capacitance_F=capacitance, grid=info,
+            net_voltage_swing_V=swing, net_capacitance_F=capacitance, grid=info, key=fkey + ':' + str(case.get('fingerprint')),
             scope='copper and vias only, no part bodies; quasi-static, Coulomb E, the ground copper at zero volts; '
                   'H band-limited to the harmonics kept')
         np.savez_compressed(

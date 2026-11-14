@@ -559,7 +559,7 @@ def run_case(model, point, out, log=print, copper=None):
         if all(abs(e) <= (kn.tolerance or a['target_tolerance']) for kn, e in zip(knobs, errs)):
             if pending is not None:                                 # the circuit alone is settled: now on its board
                 with_copper, pending = pending, None
-                cycles = base_cycles = max(int(a['cycles']) // 4, 20)
+                cycles = base_cycles = max(int(a['cycles']) // 10, KNOB_MIN_CYCLES)
                 continue
             accepted = (folder, result, deck, stats, resolved)
             break

@@ -23,6 +23,28 @@ SOLVER_DEFAULTS = dict(
 
 
 
+def _series_modes(R, L):
+    """The copper's R + sL as modes each a resistor and an inductor in series: [(gain, R, L or None, False)], with
+    R = W W^T and L = W diag(lambda) W^T (R's Cholesky factor C, then C^-1 L C^-T's eigenvectors). None when R is
+    not positive definite enough to factor (a port with no resistance): then R and L are split each on its own."""
+    try:
+        e = np.linalg.eigvalsh(R)
+        if e.min() <= 1e-9 * e.max():
+            return None
+        C = np.linalg.cholesky(R)
+    except np.linalg.LinAlgError:
+        return None
+    Ci = np.linalg.inv(C)
+    lam, U = np.linalg.eigh(Ci @ L @ Ci.T)
+    W = C @ U
+    top = max(lam.max(), 0.0)
+    out = []
+    for j in range(len(lam)):
+        lj = lam[j] if lam[j] > max(top * 1e-8, 1e-20) else None   # (R's own mode where L has none)
+        out.append((W[:, j], 1.0, lj, False))
+    return out
+
+
 # A switch's capacitances when its model gives none (a vdmos, the default): a generic power MOSFET's
 VDMOS_C = dict(Cgs_F=1e-9, Cgd_F=50e-12, Cds_F=500e-12)
 
@@ -328,6 +350,7 @@ class Circuit:
         # Reciprocal modal transformations use native LINEAR F/G/E sources.
         # Behavioral expression trees make a large otherwise-linear model slow
         # and poorly conditioned inside nonlinear transient Newton iterations.
+        branches = []                                               # (gain over the ports, mode R, mode L or None)
         for kind, A, pole in matrices:
             if A.shape != (N, N) or not np.isfinite(A).all() or not np.allclose(A, A.T, rtol=1e-8, atol=1e-18):
                 raise ValueError('invalid copper matrix')
@@ -336,30 +359,47 @@ class Circuit:
                 raise ValueError('non-passive copper matrix')
             if pole is not None:
                 _positive(pole, 'Foster pole')
+        R, L = [(A + A.T) / 2 for _kind, A, _p in matrices[:2]]
+        both = _series_modes(R, L)
+        if both is not None:
+            # R and L in one modal basis: each mode a resistor and an inductor in series, so the copper has
+            # rank(R) modes for both, not rank(R) + rank(L). Every mode is coupled to every port, and that dense
+            # block is what KLU refactors at each Newton step (wpthb: 63 modes to 45, R + sL exactly)
+            branches += both
+            matrices = matrices[2:]
+        for kind, A, pole in matrices:
+            e, V = np.linalg.eigh((A + A.T) / 2)
             for j, val in enumerate(e):
                 if val <= max(e.max() * 1e-8, 1e-20):
                     continue
-                tag = str(len(modes))
-                n = self.node('MODE:' + tag)
                 reference = 1e-6 if kind == 'L' else 1.0
                 gain = V[:, j] * np.sqrt(val / reference)
-                for i, g in enumerate(gain):
-                    if abs(g) > 1e-14:
-                        self.lines.append(f'FMODE{tag}_{i} 0 {n} V_PCB{i} {g:.17g}')
-                if kind in ('R', 'RL'):
-                    self.lines.append(f'RMODE{tag} {n} 0 1')
-                if kind in ('L', 'RL'):
-                    L = reference if kind == 'L' else 1 / pole
-                    if initial_modes is not None and inductive < len(initial_modes):
-                        ic = f' IC={float(initial_modes[inductive]):.17g}'
-                    elif initial is not None:
-                        ic = f' IC={float(gain @ initial):.17g}'
-                    else:
-                        ic = ''
-                    self.lines.append(f'LMODE{tag} {n} 0 {L:.17g}' + ic)
-                    self.signals[f'MODE{inductive}.I'] = f'i(LMODE{tag})'
-                    inductive += 1
-                modes.append((n, gain))
+                branches.append((gain, None if kind == 'L' else 1.0,
+                                 reference if kind == 'L' else (1 / pole if kind == 'RL' else None), kind == 'RL'))
+        for gain, r, l, parallel in branches:
+            tag = str(len(modes))
+            n = self.node('MODE:' + tag)
+            for i, g in enumerate(gain):
+                if abs(g) > 1e-14:
+                    self.lines.append(f'FMODE{tag}_{i} 0 {n} V_PCB{i} {g:.17g}')
+            below = n                                               # in series (R then L), or side by side (Foster)
+            if r is not None:
+                if l is not None and not parallel:
+                    below = self.node('MODEL:' + tag)
+                    self.lines.append(f'RMODE{tag} {n} {below} {r:.17g}')
+                else:
+                    self.lines.append(f'RMODE{tag} {n} 0 {r:.17g}')
+            if l is not None:
+                if initial_modes is not None and inductive < len(initial_modes):
+                    ic = f' IC={float(initial_modes[inductive]):.17g}'
+                elif initial is not None:
+                    ic = f' IC={float(gain @ initial):.17g}'
+                else:
+                    ic = ''
+                self.lines.append(f'LMODE{tag} {below} 0 {l:.17g}' + ic)
+                self.signals[f'MODE{inductive}.I'] = f'i(LMODE{tag})'
+                inductive += 1
+            modes.append((n, gain))
         for i, name in enumerate(names):
             a, b = term_nodes[name]
             ref = 'PCB' + str(i)

@@ -22,7 +22,7 @@ gpu-cuda12 = ["cupy-cuda12x>=14"]
 gpu-cuda13 = ["cupy-cuda13x>=14"]
 gpu-rocm7 = ["cupy-rocm-7-0>=14"]
 kicad2ems = ["kicad2ems>=0.3.0"]            # the board importer, and the analysis plugins below (kicad2ems.api 2.6)
-test = ["pytest>=7"]
+test = ["pytest>=7", "pytest-xdist>=3"]   # the tests run in parallel (-n auto)
 
 # the tools as kicad2ems analyses: its --check, its configs' [analysis] tables and kicad2ems-gui's Study list them
 [project.entry-points."kicad2ems.solvers"]           # S-parameters at low frequency (sparams.py)
@@ -46,6 +46,9 @@ pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "data/*.toml", "circuit/exam
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# one worker a physical core: most of the time is ngspice and the copper, one thread each (8 min to under 2;
+# -p no:xdist or -n 0 runs them in one process)
+addopts = "-n auto"
 
 [tool.setuptools.exclude-package-data]
 pcbqs = ["*.so", "*.pyd"]

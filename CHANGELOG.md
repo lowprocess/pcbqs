@@ -10,6 +10,18 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **The copper's runs are faster.** ngspice spent 73 % of a copper run refactoring the dense block that couples
+  each of the copper's modes to every port (KLU at each Newton step). R and L now share one modal basis (R's
+  Cholesky factor, then L's eigenvectors in it): each mode is a resistor and an inductor in series, exactly R + sL,
+  so the wpthb bridge has 45 modes for 63. Its 50-period copper run took 36 s and takes 23 s; the reported run 21 s
+  and 13 s. The first run with the copper is also 20 periods, not 50: it starts from the settled run without it,
+  and one that does not settle lengthens as any run does. The wpthb case: 79 s to 45 s, its copper loss 7.347 to
+  7.326 mW (ngspice's own steps; the regression value is updated).
+- **A run's fields are kept.** E for a volt on each net (the costly part: 41 s on the boost board) is kept beside
+  the run under the copper's fingerprint, the field settings and the code, so a rerun or a changed circuit on the
+  same copper does not work it out again; a case reused unchanged keeps its fields as they are.
+- **The tests run in parallel** (`-n auto`, pytest-xdist in the `test` extra; two BLAS threads a worker): 445 tests
+  in 1 min 43 s, from 8 min 19 s.
 - **A switch is a vdmos by default (R-A18).** A switch's model without a `type`, the circuits made from a board
   (`circuit/converter.py`), the parts read from KiCad and the seven switching examples are ngspice's VDMOS with
   a generic power MOSFET's capacitances where the model gives none: Cgs 1 nF, Cgd 50 pF, Cds 500 pF. The switching
