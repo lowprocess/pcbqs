@@ -207,12 +207,19 @@ def run(a):
         from .cavity import capacitance
         say('PDN: plane pairs, parts, mesh')
         t = time.time()
-        pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps, log=say)
+        try:
+            pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps,
+                          log=say)
+        except ValueError as e:                         # (no plane pair: the DC drop solved above had been lost too)
+            out['notes'].append(f"PDN impedance not computed: {e}")
+            say(f"PDN: not computed: {e}")
+            pdn = None
+    if not a.no_pdn and pdn is not None:
         t_b = time.time() - t
         f = np.logspace(np.log10(a.fmin), np.log10(a.fmax), a.points)
         say(f'PDN: {len(f)} frequencies')
         t = time.time()
-        obs = [r for r in loads if pdn.dof(r) is not None]
+        obs = [r for r in loads if pdn.dof(r) is not None and r not in pdn.isolated]
         Z = pdn.z(f, observe=obs)
         Z0 = pdn.z(f, observe=obs, bare=True)
         t_z = time.time() - t
@@ -228,7 +235,8 @@ def run(a):
                                      over=bands(f, Z[r], targets[r]) if targets[r] else []) for r in obs},
                           cavities=[dict(rail=c.rail_layer, ground=c.ground_layer, d=c.d, er=c.er, area=c.geom.area,
                                          C=capacitance(c.geom.area, c.d, c.er)) for c in pdn.cavities],
-                          parts={n: dict(role=i['role'], mount_nH=i['mount'] * 1e9, node=i['rail'].node,
+                          parts={n: dict(role=i['role'], mount_nH=i['mount'] * 1e9,
+                                         mount_mohm=i.get('mount_R', 0.0) * 1e3, node=i['rail'].node,
                                          rail=i['rail'].why, gnd=i['gnd'].why,
                                          element={k: v for k, v in (i['el'] or {}).items() if k != 'defaulted'},
                                          defaulted=bool((i['el'] or {}).get('defaulted')))

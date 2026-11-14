@@ -208,6 +208,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 
 ### Fixed
+- **The PDN's low end and its domains** (the review of 2026-11-14, R-A14, A15, B10, B11). A part's mount had only
+  the inductance of its pad's path to its vias: their resistance and the barrels' are in it now (the cavity
+  model's Re Z at 1 kHz had been 22-38 % under the DC network on the Jetson). A load on a plane island no source
+  reaches has no impedance and is said (the Jetson's TP98 had read 838 MOhm). A rail with no plane pair keeps its
+  DC drop, the impedance's absence said (the run had stopped, exit 2, no pdn.json). A failed pad-to-via solve is
+  said, not read as a via in its pad; another net's plane between a cavity's two is said.
 - **The losses thermal takes from a circuit** (the stack review of 2026-11-14, R-A2 and R-A3). A coupled winding's
   `power_W` is the power it passes to the other windings as well as its loss, and thermal took it as heat: wpthb's
   primary on a footprint of its own got 10.47 W for the pair's 0.45 W. A coupled winding now has its own loss,

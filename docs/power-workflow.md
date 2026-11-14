@@ -43,7 +43,10 @@ impedance seen by each load.
 - **Impedance** below the target (V × ripple ÷ load step) holds the rail through
   that step. Peaks are resonances between stages; above the crossing frequency
   only the package and die help. The parts table's **mount (nH)** column shows
-  which capacitors are poorly connected.
+  which capacitors are poorly connected; a mount's resistance (its pad to its vias,
+  the barrels) is in the impedance too (`mount_mohm` in pdn.json). A load on a plane
+  island no source reaches gets no impedance, and the notes say so; a rail with no
+  plane pair keeps its DC drop and says why it has no impedance.
 - Small rails: lower `--plane-min` (mm²). Input filters: `--through L3 --dcr L3=0.03`
   keeps the inductor's L and DCR. Bulk polymers/electrolytics: `--cap CA1=47e-6,0.02,1e-9`.
 - **Loads kept with the design.** A part's `pdn.load` field (a symbol field in KiCad, which

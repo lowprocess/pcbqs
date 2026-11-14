@@ -76,6 +76,7 @@ class Conn:
     vias: list = field(default_factory=list)        # [(x, y, r)]
     node: str = None
     L_path: float = 0.0                               # H, its pad to its vias
+    R_path: float = 0.0                               # ohm, its pad to its vias and their barrels to the planes
     h: float = 0.0                                    # mm, its pad's layer to the planes
     why: str = ''
 
@@ -114,6 +115,12 @@ class RailPDN:
                 between = [l for l in self.layers if (zt[l][0] - zr) * side > 0 and abs(zt[l][0] - zr) < abs(zt[gl][0] - zr)]
                 if any(l in rail_planes for l in between):
                     continue                            # another rail plane is nearer that way: its own pair
+                other = sorted({c.get('net') for l in between for c in b['copper'].get(l, [])
+                                if c.get('net') not in set(nets) | set(g) and c.get('net')
+                                and shape(c['polygon']).intersection(rg).area > plane_min})
+                if other:                               # its field ends on that plane, AC-tied to ground by its decaps
+                    self.notes.append(f"{rl} over {gl}: a plane of {', '.join(other)} lies between them, taken as "
+                                      f"not there (the cavity's height overstated, its capacitance understated)")
                 geom = fill_holes(rg, hole_fill, gcover).intersection(fill_holes(gnd_planes[gl], hole_fill, rcover)).buffer(0)
                 if geom.is_empty or geom.area < 0.05 * plane_min:
                     continue
@@ -149,7 +156,9 @@ class RailPDN:
                             esl=ESL_PKG.get(package(s.part.lib), 0.5e-9)) for s in rail.series]
         for info in self.parts.values():
             info['mount'] = self._mount(info['rail'], info['gnd'])
-        self._assemble(dmax)
+            info['mount_R'] = info['rail'].R_path + info['gnd'].R_path      # (Re Z at the low end had been short
+        self._assemble(dmax)                                               # of the DC network by 22-38 %)
+        self.isolated = self._isolated()
 
     # ---- a part's copper ----------------------------------------------------------------------------------------
     def _connect(self, pads, nets, vias, window):
@@ -187,6 +196,13 @@ class RailPDN:
         if not reach:
             return Conn(why=f'no via to a plane within {window} mm of its pad')
         h = min(abs(zl - z) for z in planes)
+        from .dc import _barrel_g
+        barrels = sum(_barrel_g(v['r'], max(min(abs(zl - z) for z in planes if v['z0'] - 1e-6 <= z <= v['z1'] + 1e-6),
+                                            1e-3), 0.025, SIGMA_CU) for v in reach)
+        r_barrel = 1.0 / barrels                        # the vias in parallel, the pad's layer to the nearest plane
+        if any(pg.intersects(Point(v['x'], v['y']).buffer(v['r'], quad_segs=4)) for v in reach):
+            return Conn(vias=[(v['x'], v['y'], v['r']) for v in reach], R_path=r_barrel, h=h,
+                        why=f'{len(reach)} via(s) in its pad over {h:.2f} mm')
         # the squares from the pad to its vias: a conduction solve of that copper alone
         from .dc import Network
         terms = {'pad': [(lay, pg.intersection(isl))]}
@@ -196,11 +212,35 @@ class RailPDN:
         try:
             nw = Network(bd, '_isl', terms, dmax=max(0.15, min(0.5, isl.area ** 0.5 / 20)), log=lambda *a: None)
             r = nw.solve({'pad': 1.0, **{f'v{k}': 0.0 for k in range(len(reach))}}, {})
-            squares = (1.0 / max(r.loss, 1e-12)) * SIGMA_CU * self.zt[lay][1] * 1e-3
-        except Exception:                               # a pad on its via (via in pad): no path
-            squares = 0.0
-        return Conn(vias=[(v['x'], v['y'], v['r']) for v in reach], L_path=MU0 * h * 1e-3 * squares, h=h,
-                    why=f'{len(reach)} via(s), {squares:.2f} squares over {h:.2f} mm')
+        except (ValueError, RuntimeError, MemoryError) as e:   # (any failure had read as a via in its pad: no path)
+            self.notes.append(f"{pads[0].ref if hasattr(pads[0], 'ref') else 'a part'}: its pad to its vias was not "
+                              f"solved ({type(e).__name__}: {e}): that path's inductance and resistance left out")
+            return Conn(vias=[(v['x'], v['y'], v['r']) for v in reach], R_path=r_barrel, h=h,
+                        why=f'{len(reach)} via(s) over {h:.2f} mm, its path to them not solved')
+        r_pad = 1.0 / max(r.loss, 1e-12)                # 1 V across it: loss = 1 / R
+        squares = r_pad * SIGMA_CU * self.zt[lay][1] * 1e-3
+        return Conn(vias=[(v['x'], v['y'], v['r']) for v in reach], L_path=MU0 * h * 1e-3 * squares,
+                    R_path=r_pad + r_barrel, h=h,
+                    why=f'{len(reach)} via(s), {squares:.2f} squares over {h:.2f} mm, {(r_pad + r_barrel) * 1e3:.2f} mOhm')
+
+    def _isolated(self):
+        """The loads whose plane domain no source reaches (through the planes, their ties and the series parts): their
+        impedance is a floating domain's (838 MOhm on the Jetson), not the rail's. Each is said; none when the rail
+        has no source part at all."""
+        from scipy.sparse.csgraph import connected_components
+        sources = [self.dof(n) for n, i in self.parts.items() if i['role'] == 'source' and self.dof(n) is not None]
+        if not sources or self.n == 0:
+            return set()
+        A = self.matrix(1e6, bare=True)
+        A = (abs(A) > 1e-9 * abs(A).max()).astype(np.int8)
+        _, label = connected_components(A, directed=False)
+        fed = {label[d] for d in sources}
+        out = {n for n, i in self.parts.items() if i['role'] == 'load' and self.dof(n) is not None
+               and label[self.dof(n)] not in fed}
+        for n in sorted(out):
+            self.notes.append(f"{n}: its plane domain has no source (no plane, tie or series part reaches one): no "
+                              f"impedance for it")
+        return out
 
     def _mount(self, rc, gc):
         """The series inductance between a part's pads and the plane pair: its two paths and its via pair."""
@@ -327,7 +367,7 @@ class RailPDN:
                 if d is None or el is None:
                     continue
                 m = info['mount'] + (0.5e-9 if info['rail'].node else 0.0)     # a lumped node's part: a nominal 0.5 nH
-                y[d] += 1 / element_z(el, w, m)
+                y[d] += 1 / (element_z(el, w, m) + info.get('mount_R', 0.0))
         for k, sr in enumerate(self.series):                    # the series parts join their two sides
             da = self.node_dof[sr['a'].node] if sr['a'].node else self.port_dof.get(f'~{k}a')
             db = self.node_dof[sr['b'].node] if sr['b'].node else self.port_dof.get(f'~{k}b')
@@ -353,7 +393,8 @@ class RailPDN:
             X = splu(self.matrix(fi, bare=bare)).solve(E.astype(complex))
             for k, n in enumerate(names):
                 info = self.parts[n]
-                extra = 1j * 2 * np.pi * fi * (info['mount'] if info['rail'].vias else 0.0)   # its own pads to the planes
+                extra = ((1j * 2 * np.pi * fi * info['mount'] + info.get('mount_R', 0.0))      # its own pads to the
+                         if info['rail'].vias else 0.0)                                            # planes
                 out[n][i] = X[self.dof(n), k] + extra
         return out
 
@@ -371,7 +412,8 @@ class RailPDN:
             for j, k in enumerate(sources):
                 for m in observe:
                     info = self.parts[m]
-                    own = 1j * 2 * np.pi * fi * (info['mount'] if pads and m == k and info['rail'].vias else 0.0)
+                    own = ((1j * 2 * np.pi * fi * info['mount'] + info.get('mount_R', 0.0))
+                           if pads and m == k and info['rail'].vias else 0.0)
                     out[(m, k)][i] = X[self.dof(m), j] + own
         return out
 

@@ -330,3 +330,42 @@ def test_loads_from_the_parts_fields(tmp_path):
     assert list(r['loads']) == ['U1'] and r['field_loads'] == []
     with pytest.raises(SystemExit, match='a pdn.load field on the parts'):
         main(common + ['--no-part-loads', '--out', str(tmp_path / 'd')])
+
+
+def test_a_mount_s_resistance_is_in_the_low_end():
+    """A part's pad to its vias and their barrels have resistance as well as inductance: C2's 8.5 squares of 35 um
+    copper are ~4 mOhm (only their inductance was kept, so the cavity model's Re Z at the low end fell short of the
+    DC network); a via in its pad has its barrel's alone."""
+    r = Rail(board(), 'P', loads={'U1': 2.0, 'U2': 0.5})
+    pdn = RailPDN(r, dmax=1.0, log=lambda *a: None)
+    c2 = pdn.parts['C2']
+    sq = c2['rail'].L_path / (MU0 * c2['rail'].h * 1e-3)
+    sheet = 1 / (5.8e7 * 35e-6)
+    assert c2['rail'].R_path == pytest.approx(sq * sheet, rel=0.3) and c2['mount_R'] > c2['rail'].R_path
+    r = Rail(board(via_in_pad=True), 'P', loads={'U1': 2.0, 'U2': 0.5})
+    u1 = RailPDN(r, dmax=1.0, log=lambda *a: None).parts['U1']['rail']
+    assert u1.L_path == 0.0 and 0 < u1.R_path < 1e-3 and 'in its pad' in u1.why
+
+
+def test_a_load_whose_domain_no_source_reaches_has_no_impedance():
+    """A load on a plane island the source does not reach (no plane, tie or series part between): no impedance,
+    and said (the Jetson's TP98 read 838 MOhm as a result)."""
+    b = board()
+    b['copper']['In2.Cu'] = [dict(net='P', polygon=mapping(box(1, 1, 27, H - 1))),     # the plane cut in two:
+                             dict(net='P', polygon=mapping(box(28, 1, W - 1, H - 1)))]    # U1 alone on the right
+    r = Rail(b, 'P', loads={'U1': 2.0, 'U2': 0.5})
+    pdn = RailPDN(r, dmax=1.0, log=lambda *a: None)
+    assert pdn.isolated == {'U1'} and any(n.startswith('U1: its plane domain has no source') for n in pdn.notes)
+
+
+def test_a_rail_with_no_plane_pair_keeps_its_dc_answer(tmp_path):
+    """No plane pair (a two-layer board, a routed rail): the impedance is not computed and said, the DC drop solved
+    before it written all the same (the run had stopped with exit 2 and no pdn.json)."""
+    import json
+    from pcbqs.pdn.cli import main
+    (tmp_path / 'b_board.json').write_text(json.dumps(board()))
+    rc = main([str(tmp_path / 'b_board.json'), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--dmax', '1',
+               '--points', '7', '--plane-min', '1e6', '--out', str(tmp_path / 'out')])     # (no copper is a plane)
+    res = json.loads((tmp_path / 'out' / 'pdn.json').read_text())
+    assert rc == 0 and res['loads']['U1']['drop'] > 0 and 'pdn' not in res
+    assert any(n.startswith('PDN impedance not computed') for n in res['notes'])
