@@ -228,7 +228,7 @@ def sweep(board, grid, points=31, tol=2e-3, log=print, **kw):
         from emsdev.afs import adaptive_sweep
     except ImportError as e:                                # an emsdev from before it had the sweep
         raise RuntimeError(f"pcbqs's sweep needs emsdev.afs ({e}): reinstall emsdev (pip install --force-reinstall "
-                           f"https://github.com/lowprocess/emsdev/archive/refs/heads/main.zip)") from None
+                           f"https://github.com/lowprocess/emsdev/archive/refs/tags/v0.3.0.zip)") from None
     m = model(board, grid.max(), log=log, **kw)
     log(f"sparams: {len(m['ports'])} port(s) driven in turn, at most {points} of {len(grid)} frequencies, where a "
         f"rational model is least sure; " + ('currents and charge (R, L, C)' if m['charge'] else 'currents (R, L)'))
