@@ -61,5 +61,15 @@ remain supported. Static-fill plugins use the `pcbqs.static_backends` entry grou
   hierarchical current/charge operators and iterative solving.
 
 Private `_numerics` functions are independently maintained snapshots, not a
-shared library or a runtime link to MoM. `emsdev` supplies only existing hardware
-and native-build services. RF/full-wave solvers remain in `mom25d`.
+shared library or a runtime link to MoM. `emsdev` supplies only hardware and
+native-build services and the adaptive sweep's fit (`emsdev.afs`). RF/full-wave
+solvers remain in `mom25d`.
+
+## Licence
+
+GPL-3.0-or-later (see [LICENSE](LICENSE)). The mesher is the `triangle` package
+(LGPL-3.0, by Dzhelil Rufat), which compiles in Jonathan Shewchuk's Triangle. It
+is installed as a separate package; none of its code is in this repository.
+Triangle keeps its own terms, which are not the GPL's: it "may not be sold or
+included in commercial products without a license" from its author
+([Triangle's page](https://www.cs.cmu.edu/~quake/triangle.html)).

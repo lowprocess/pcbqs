@@ -9,6 +9,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+## 2026-11-14 (0.3.0)
+
+### Changed
+- **Semantic versions.** pcbqs is 0.3.0, as the whole stack (it was `261112.post23`), and its `kicad2ems`
+  extra asks for `kicad2ems>=0.3.0`; `authors` is Claude and lowprocess, and the README says that Triangle,
+  which the `triangle` mesher compiles in, keeps its own terms.
+
 ### Removed
 - **The piecewise-linear circuit engine** (`circuit/pwl.py`, `--engine pwl`, `analysis.engine`). The circuit run is
   there for its parts' losses (the thermal analysis) and its copper's currents (the fields), and on the wpthb
