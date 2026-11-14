@@ -40,7 +40,10 @@ The board is a stack of sheets, one per copper layer (`problem.py`):
   the demo boards (17 to 62 mm across) they carry 6 to 15 % of the heat and lower every rise by 4 to 13 %.
 - **Heat comes in** over the pads of the parts that dissipate: each part's loss, shared over its pads by area.
 - **A part's temperature** is the mean temperature of the copper under its pads, plus its loss times its
-  `--theta` (K/W from its pads to the part itself), when one is given.
+  theta (K/W from its pads to the part itself: its junction, with a datasheet's junction-to-board figure), when one
+  is given: `--theta REF=K/W`, or the footprint's field `thermal.theta`. Without one the report says the figure is
+  its pads'. **A limit**, `--tmax REF=C` or the field `thermal.tmax` (its junction's maximum), gives each part its
+  margin, and a part over it is in the report's headline.
 
 It is the DC drop's equation with thermal conductivities and a sink over the whole face, and it is linear: one
 sparse solve.

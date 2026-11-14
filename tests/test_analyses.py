@@ -252,8 +252,8 @@ def test_temperature_report_and_its_maps_for_the_viewer(tmp_path, method):
     t = cells(rep)
     cols, rows = t['Parts']
     assert cols == ['part', 'loss (W)', *(['board °C (grid)', 'board °C (mesh)'] if method == 'both' else ['board °C (grid)']),
-                    'part °C', 'rise (K)']
-    assert rows[0][0] == 'Q1' and rows[0][-2] == pytest.approx(one['parts']['Q1']['board_C'] + 5.0)
+                    'part °C', 'from', 'rise (K)']
+    assert rows[0][0] == 'Q1' and rows[0][-3] == pytest.approx(one['parts']['Q1']['board_C'] + 5.0)
     assert [r[0] for r in t['Layers'][1]] == ['B.Cu', 'F.Cu'] and rep['title'].startswith('Hottest copper')
     assert ('Mesh against grid' in {s['title'] for s in rep['sections']}) == (method == 'both') and rep['images'] == []
     v = one['viewer']

@@ -211,6 +211,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Added
+- **A part's thermal limit and its theta from its footprint** (the review of 2026-11-14, R-E7): `thermal.theta` and
+  `thermal.tmax` fields (or `--theta`, `--tmax`) give each part its temperature above its pads and its margin; a
+  part over its limit is in the headline, and a part with no theta is said to be its pads' temperature (it had been
+  called the part's with no word, and nothing had a limit).
 - **The near field's compressed solve** (R-D14): `--backend hierarchical` (GMRES in the loop basis), which `MQS` had
   and `pcbqs.mqs` could not choose; the same field as the dense solve to 1e-3, for a crop too large to factorise.
 - **A coupling named by its inductors** in a path: `couplings.L1+L2.k` (`--set`, a proposal), whatever its place in

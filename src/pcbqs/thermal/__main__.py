@@ -24,7 +24,10 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
     ('circuit', 'str', '', "A circuit run's results folder (python -m pcbqs.circuit): its board and its parts' "
      'losses', 'Heat'),
     ('case', 'str', '', "The circuit run's case, by name; empty: the one with the most loss", 'Heat'),
-    ('theta', 'list', [], "From a part's pads to the part itself, REF=K/W (repeatable)", 'Parts'),
+    ('theta', 'list', [], "From a part's pads to the part itself, REF=K/W (repeatable); a footprint's field "
+     "thermal.theta gives it too", 'Parts'),
+    ('tmax', 'list', [], "The most a part may reach, REF=C (repeatable: its junction's limit); a footprint's field "
+     "thermal.tmax gives it too", 'Parts'),
     ('ambient', 'float', AMBIENT, 'The air, C', 'Air'),
     ('film', 'float', FILM, 'Convection and radiation from the faces, W/m2/K (the top face, with film-bottom)', 'Air'),
     ('film_bottom', 'float', None, 'The bottom face, W/m2/K, when it differs', 'Air'),
@@ -37,6 +40,20 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
 def describe():
     from .._cli import describe as describe_options
     return describe_options(OPTIONS)
+
+
+def part_fields(board):
+    """({ref: K/W}, {ref: C}) from the footprints' fields thermal.theta and thermal.tmax (as pdn.load gives a part's
+    current): what the design holds of its parts' thermal limits."""
+    from ..pdn.rail import field_value
+    theta, tmax = {}, {}
+    for fp in (board.get('prims') or {}).get('footprints', []):
+        t, m = field_value(fp, 'thermal.theta'), field_value(fp, 'thermal.tmax')
+        if t is not None:
+            theta[fp['ref']] = t
+        if m is not None:
+            tmax[fp['ref']] = m
+    return theta, tmax
 
 
 def _pairs(items, what, ap):
@@ -94,8 +111,12 @@ def main(argv=None):
         board = load_board(board_file)
     except (OSError, RuntimeError, ValueError) as e:
         ap.error(str(e))
+    theta, tmax = part_fields(board)                                # the footprints' own, the options over them
+    theta.update(_pairs(a.theta, '--theta', ap))
+    tmax.update(_pairs(a.tmax, '--tmax', ap))
     p = Problem.of(board, losses, film=(a.film if a.film_bottom is None else a.film_bottom, a.film),
-                   ambient=a.ambient, theta=_pairs(a.theta, '--theta', ap), edge_film=a.film_edge)
+                   ambient=a.ambient, theta=theta, edge_film=a.film_edge)
+    p.tmax = tmax
     p.notes += left
     if not p.sources:
         for n in p.notes:

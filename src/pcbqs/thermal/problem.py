@@ -59,6 +59,7 @@ class Problem:
     sources: list = field(default_factory=list)
     powers: dict = field(default_factory=dict)      # {part: W}
     theta: dict = field(default_factory=dict)       # {part: K/W, its pads to the part}
+    tmax: dict = field(default_factory=dict)        # {part: C, the most it may reach (its junction's limit)}
     film: tuple = (FILM, FILM)              # W/m2/K: bottom face, top face
     edge_film: float = FILM                 # W/m2/K: the board's edges (0: insulated)
     ambient: float = AMBIENT
@@ -296,6 +297,9 @@ def part_temperatures(problem, board_of):
     out = {}
     for name, (tw, w) in acc.items():
         tb = tw / w
-        out[name] = dict(power_W=problem.powers[name], board_C=float(tb),
-                         part_C=float(tb + problem.powers[name] * problem.theta.get(name, 0.0)))
+        part = float(tb + problem.powers[name] * problem.theta.get(name, 0.0))
+        out[name] = dict(power_W=problem.powers[name], board_C=float(tb), part_C=part,
+                         theta_K_W=problem.theta.get(name))     # None: part_C is its pads' (no theta given)
+        if name in problem.tmax:
+            out[name].update(tmax_C=float(problem.tmax[name]), margin_K=float(problem.tmax[name] - part))
     return out

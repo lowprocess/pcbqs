@@ -305,3 +305,21 @@ def test_the_options_describe_themselves_for_the_window(capsys, tmp_path):
     with pytest.raises(SystemExit):
         main([str(EXAMPLES / '05_buck_synchronous.kicad_pcb'), '--loss', 'L1=0.4', '--method', 'cubes',
               '--out', str(out)])
+
+
+def test_a_part_s_limit_and_its_theta_from_its_footprint(tmp_path):
+    """thermal.theta and thermal.tmax fields of a footprint (or --theta, --tmax): the part's temperature, its margin,
+    and a part over its limit in the headline (part °C had been its pads' with no word, and no limit existed)."""
+    from pcbqs.thermal.__main__ import part_fields
+    from pcbqs.reports import thermal_report
+    board = dict(prims=dict(footprints=[dict(ref='Q1', props={'thermal.theta': '20', 'thermal.tmax': '125'}),
+                                        dict(ref='C1', props={})]))
+    theta, tmax = part_fields(board)
+    assert theta == {'Q1': 20.0} and tmax == {'Q1': 125.0}
+    p = disc_problem(side=20.0, a=2.0, film=10.0)
+    p.theta, p.tmax = {'disc': 300.0}, {'disc': 60.0}
+    r = solve(p, 'grid', 1.0, log=quiet)
+    u = r.parts['disc']
+    assert u['theta_K_W'] == 300.0 and u['margin_K'] == pytest.approx(60.0 - u['part_C']) and u['margin_K'] < 0
+    rep = thermal_report(dict(grid=dict(r.summary(), board='b', circuit='', case=None, figure='thermal.png')))
+    assert 'OVER ITS LIMIT: disc' in rep['summary']

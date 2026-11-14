@@ -299,15 +299,28 @@ def thermal_report(res, folder=''):
         f"{first['film_W_m2K'][1]:g} / {first['film_W_m2K'][0]:g} W/m²K top / bottom, "
         f"{first.get('edge_film_W_m2K', 0):g} at the edges.")
     parts = sorted(first['parts'].items(), key=lambda kv: -kv[1]['part_C'])
+    limits = any('tmax_C' in p for _, p in parts)
     rows = [[ref, p['power_W'], *[ms[n]['parts'].get(ref, {}).get('board_C', '') for n in names], p['part_C'],
-             p['part_C'] - first['ambient_C']] for ref, p in parts]
+             'pads' if p.get('theta_K_W') is None else f"{p['theta_K_W']:g} K/W", p['part_C'] - first['ambient_C'],
+             *([p.get('tmax_C', ''), p.get('margin_K', '')] if limits else [])] for ref, p in parts]
+    over = [(r, p) for r, p in parts if p.get('margin_K') is not None and p['margin_K'] < 0]
+    head = ''
+    if over:                                                        # (a limit is in the headline: none had been)
+        worst = ', '.join('%s %.0f °C for %.0f' % (r, p['part_C'], p['tmax_C']) for r, p in over)
+        head = ', OVER ITS LIMIT: ' + worst
+    hottest = parts[0] if parts else None
     out = dict(title=f"Hottest copper {hot:.1f} °C", sections=[dict(title='', text=text)], images=[],
                show=dict(field='T'),                            # a viewer starts on the hottest layer
                summary=f"Thermal: hottest copper {hot:.1f} °C" + (
-                   f", hottest part {parts[0][0]} at {parts[0][1]['part_C']:.1f} °C" if parts else ''))
-    out['sections'].append(dict(title='Parts', table=_table(
-        ['part', 'loss (W)', *[f"board °C ({n})" for n in names], 'part °C', 'rise (K)'], rows,
-        [None, '.3g', *['.1f'] * len(names), '.1f', '.1f'])))
+                   f", hottest part {hottest[0]} at {hottest[1]['part_C']:.1f} °C"
+                   + (' (its pads: no theta)' if hottest[1].get('theta_K_W') is None else '') if hottest else '')
+               + head)
+    out['sections'].append(dict(title='Parts', text=("part °C: the copper under its pads plus its loss times its "
+                                                     "theta (pads: no theta given: --theta, or the footprint's field "
+                                                     "thermal.theta)."), table=_table(
+        ['part', 'loss (W)', *[f"board °C ({n})" for n in names], 'part °C', 'from', 'rise (K)',
+         *(['limit °C', 'margin (K)'] if limits else [])], rows,
+        [None, '.3g', *['.1f'] * len(names), '.1f', None, '.1f', *(['.0f', '.1f'] if limits else [])])))
     out['sections'].append(dict(title='Layers', table=_table(
         ['layer', 'hottest °C', 'mean °C'],
         [[lay, v['hottest_C'], v['mean_C']] for lay, v in first['layers'].items()], [None, '.1f', '.1f'])))
