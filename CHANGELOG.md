@@ -208,6 +208,8 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 
 ### Fixed
+- **Touchstone of ports with different references** (R-A20): v1 holds one reference, and the header had the first
+  port's alone: such a board's file is v2.0 with [Reference].
 - **Two-face copper** (R-A16). `conductor_faces` was ignored with the face sheets the slab defaults to, so faces 1
   and 2 gave one model and every comparison of the two (the PEEC trial, four tools, the Jetson scripts) computed
   it twice: `conductor_faces=1` is the one-sheet slab again (with face sheets asked for too: refused). Kernels

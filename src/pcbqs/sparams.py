@@ -332,11 +332,21 @@ def apart_note(p):
 
 
 def write_touchstone(path, f, S, zref, names, comment=''):
-    """A Touchstone v1 file (Hz, S, real and imaginary, one reference), its ports named as kicad2ems names them."""
+    """A Touchstone file (Hz, S, real and imaginary), its ports named as kicad2ems names them: v1 when every port has
+    the one reference, v2.0 with [Reference] when they differ (v1 holds one: a board whose ports had different
+    references got a file right only for its first)."""
     n = S.shape[1]
+    zref = np.broadcast_to(np.asarray(zref, float), (n,))
+    v2 = not np.allclose(zref, zref[0])
     with open(path, 'w', encoding='utf-8') as fh:
         fh.write(f"! pcbqs {comment}\n! ports: " + ', '.join(f"{i + 1}={nm}" for i, nm in enumerate(names)) + '\n')
+        if v2:
+            fh.write("[Version] 2.0\n")
         fh.write(f"# Hz S RI R {zref[0]:.6g}\n")
+        if v2:
+            fh.write(f"[Number of Ports] {n}\n" + ("[Two-Port Data Order] 21_12\n" if n == 2 else '') +
+                     f"[Number of Frequencies] {len(f)}\n[Reference] " + ' '.join(f"{z:.6g}" for z in zref) +
+                     "\n[Network Data]\n")
         for fi, s in zip(f, S):
             rows = [[s[0, 0], s[1, 0], s[0, 1], s[1, 1]]] if n == 2 else [list(r) for r in s]
             first = True
@@ -345,6 +355,8 @@ def write_touchstone(path, f, S, zref, names, comment=''):
                     fh.write((f"{fi:.9e}" if first else ' ' * 15) + ' ' +
                              ' '.join(f"{v.real:.9e} {v.imag:.9e}" for v in row[k:k + 4]) + '\n')
                     first = False
+        if v2:
+            fh.write("[End]\n")
 
 
 def write_maps(out, board, r, port, freqs, name='sparams', log=print):

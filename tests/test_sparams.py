@@ -304,3 +304,18 @@ def test_it_is_a_kicad2ems_solver(tmp_path):
     info = run['solved']['pcbqs']
     assert info['capacitance'] is False and info['triangles'] > 100 and 'quasi-static' in info['about']
     assert (out / 'pcbqs' / 'exc_P1' / 'dump_info.json').exists() and (out / 'pcbqs_board.json').exists()
+
+
+def test_ports_of_several_references_are_written_as_touchstone_v2(tmp_path):
+    """v1 holds one reference: a board whose ports have different ones gets v2.0 with [Reference] (the header had
+    the first port's alone, so the file was wrong for the others)."""
+    from pcbqs.sparams import write_touchstone
+    S = np.array([[[0.1 + 0.2j, 0.5], [0.4, -0.3j]]] * 2)
+    write_touchstone(str(tmp_path / 'a.s2p'), [1e6, 2e6], S, [50, 75], ['A', 'B'])
+    text = (tmp_path / 'a.s2p').read_text()
+    assert '[Version] 2.0' in text and '[Reference] 50 75' in text and text.rstrip().endswith('[End]')
+    write_touchstone(str(tmp_path / 'b.s2p'), [1e6, 2e6], S, [50, 50], ['A', 'B'])
+    assert '[Version]' not in (tmp_path / 'b.s2p').read_text()
+    kt = pytest.importorskip('kicad2ems.touchstone')
+    f, back, zr = kt.read_touchstone(str(tmp_path / 'a.s2p'), with_zref=True)
+    assert np.allclose(back, S) and list(zr) == [50, 75]
