@@ -41,7 +41,7 @@ model: `parameters.vin`, `drives.pwm.duty`, `R1.resistance_ohm`, `Q1.model.Ron_o
 |---|---|---|
 | `resistor` | a, b | `value` |
 | `capacitor` | a, b | `value`, `ESR_ohm`, `ESL_H`, `leakage_ohm`, `bias_factor` |
-| `inductor` | a, b | `value`, `DCR_ohm`; with `SRF_Hz` / `Cp_F` / `core_R_ohm`, a winding with self-capacitance and core loss |
+| `inductor` | a, b | `value`, `DCR_ohm`; with `SRF_Hz` / `Cp_F` / `core_R_ohm`, a winding with self-capacitance and core loss (`pcbqs.wpt.fit_core_resistance` gives a `core_R_ohm` from a measured AC resistance at a frequency) |
 | `diode` | anode, cathode | `model`: `Vf_V` at `If_A` (0.7 V at 1 A), `n`, `R_ohm`, `Cj_F`, `TT_s` |
 | `switch` | drain, source | `drive`, `invert`; `model`: `type` (`vdmos`, the default; `switch`, `ideal`, `mosfet`, `subcircuit`), `Ron_ohm`, `Cgs_F`, `Cgd_F`, `Cds_F` (a vdmos without them: 1 nF, 50 pF, 500 pF), `body_diode`, `diode_TT_s`, ... |
 | `source` | +, − | `dc_V`, or `wave` (`pulse`, `sine`, `pwl`), or `dc_A`; `R_ohm`, `L_H` in series |

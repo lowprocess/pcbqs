@@ -9,3 +9,4 @@ dist/
 *.pyd
 tools/*.npy
 tools/perf/results/
+src/pcbqs/circuit/examples/out/

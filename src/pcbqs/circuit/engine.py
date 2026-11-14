@@ -437,7 +437,7 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
         deck.measure_lead = 1e-6 * period
         try:
             result = deck.run(folder, f, cycles=n, samples_per_cycle=spc,
-                              ramp_s=0.0, timeout=a['timeout_s'], linear_solver=a['linear_solver'], threads=int(a['threads']),
+                              timeout=a['timeout_s'], linear_solver=a['linear_solver'], threads=int(a['threads']),
                               options=opts)
             break
         except RuntimeError as exc:

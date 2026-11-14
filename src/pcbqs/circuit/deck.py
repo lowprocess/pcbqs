@@ -83,8 +83,7 @@ class Deck(Circuit):
             if kind == 'capacitor':                                 # the capacitance's own voltage: the state it
                 self.voltage(ref + '.cap_V', inner or a, b)         # holds, without its ESR's and ESL's drops
         elif kind == 'inductor':
-            if any(part.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm', 'loss_model')):    # (as pwl's and
-                                                                                            # model.signal_names)
+            if any(part.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm')):     # a winding (as model.signal_names)
                 coil = dict(part, L_H=part['value'], R_ohm=part.get('DCR_ohm', part.get('R_ohm', 0.0)), **saved)
                 self.coil(ref, a, b, coil)
             else:
@@ -131,7 +130,6 @@ class Deck(Circuit):
             f".model DM_{ref} D(IS={sat:.17g} N={n:.17g} RS={rs:.17g} CJO={model.get('Cj_F', 0.0):.17g} "
             f"TT={model.get('TT_s', 0.0):.17g})",
             f"D_{ref} {d} {k} DM_{ref}" + ('' if initial_V is None else f" IC={initial_V:.17g}")])
-        self.power_refs.append(ref)
         self.voltage(ref + '.V', anode, cathode)
 
     def source(self, ref, plus, minus, part, saved=None):
@@ -140,7 +138,6 @@ class Deck(Circuit):
         n = self.sense(ref, plus)
         end = self.node(minus)
         self.voltage(ref + '.V', plus, minus)
-        self.power_refs.append(ref)
         if 'dc_A' in part:
             self.lines.append(f"I_{ref} {end} {n} DC {part['dc_A']:.17g}")
             return
@@ -187,7 +184,6 @@ class Deck(Circuit):
         n = self.sense(ref, a)
         end = self.node(b)
         self.voltage(ref + '.V', a, b)
-        self.power_refs.append(ref)
         if 'resistance_ohm' in part:
             _positive(part['resistance_ohm'], ref + '.resistance_ohm')
             self.lines.append(f"R_{ref} {n} {end} {part['resistance_ohm']:.17g}")

@@ -179,5 +179,6 @@ inductor's ripple current in the output loop, which the input-loop model leaves 
   Copper AC resistance above ~3 MHz reads 11–34% low; treat loss figures there as
   lower bounds.
 
-Known gaps and planned work: [power-tools-review.md](power-tools-review.md) and the
-[roadmap](https://github.com/lowprocess/kicad2ems/blob/main/ROADMAP.md#power-tools-pcbqs); what was done is in [CHANGELOG.md](../CHANGELOG.md).
+Planned work: the [roadmap](https://github.com/lowprocess/kicad2ems/blob/main/ROADMAP.md#power-tools-pcbqs); what was
+done is in [CHANGELOG.md](../CHANGELOG.md); the review of 2026-11-09, as it was written, is
+[power-tools-review.md](power-tools-review.md).

@@ -306,9 +306,7 @@
    "value": 2.4e-05,
    "DCR_ohm": 0.11,
    "SRF_Hz": 7700000.0,
-   "Rac_ref_ohm": 0.12161003820347586,
-   "loss_model": "parallel_core",
-   "loss_reference_Hz": 125000
+   "core_R_ohm": 30773.183367301404
   },
   {
    "ref": "SECONDARY",
@@ -320,9 +318,7 @@
    "value": 2.4e-05,
    "DCR_ohm": 0.11,
    "SRF_Hz": 7700000.0,
-   "Rac_ref_ohm": 0.12161003820347586,
-   "loss_model": "parallel_core",
-   "loss_reference_Hz": 125000
+   "core_R_ohm": 30773.183367301404
   },
   {
    "ref": "CSECONDARY",
@@ -460,7 +456,5 @@
    "fit_tolerance": 0.03
   }
  },
- "analysis": {
-  "engine": "ngspice"
- }
+ "analysis": {}
 }

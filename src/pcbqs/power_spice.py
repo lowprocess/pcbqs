@@ -108,7 +108,6 @@ class Circuit:
         self.measures = {}
         self.resistances = {}               # {ref: [(signal, ohm)]}: the resistances inside a part, whose V²/R is
                                             # its own loss (a coupled winding's V·I is the power it passes on too)
-        self.power_refs = []
         self.uic = False
         self.refs = set()
 
@@ -159,7 +158,6 @@ class Circuit:
         input_node = n
         end = self.node(b)
         self.voltage(ref + '.V', a, b)
-        self.power_refs.append(ref)
         R = part.get('ESR_ohm', 0) if kind == 'capacitor' else part.get('DCR_ohm', 0)
         L = part.get('ESL_H', 0)
         for key, val in [('R', R), ('L', L)]:
@@ -212,7 +210,6 @@ class Circuit:
             self.lines.append(f'R_{ref}_core {mid} {end} {rc:.17g}')
             self.resistance(ref, ref + '.core_V', mid, end, rc)
         self.resistance(ref, ref + '.R_V', n, mid, max(R, 1e-12))
-        self.power_refs.append(ref)
         self.signals[ref + '.winding_I'] = f'i(L_{ref})'
         self.voltage(ref + '.V', a, b)
 
@@ -332,7 +329,6 @@ class Circuit:
                     f'D_{ref} {s} {d} DD_{ref}',
                 ]
             )
-        self.power_refs.append(ref)
         self.voltage(ref + '.V', a, b)
         self.signals[ref + '.gate_I'] = f'i(VG_{ref})'
         self.voltage(ref + '.gate_V', 'DRIVE:' + ref, b)
@@ -404,7 +400,6 @@ class Circuit:
             a, b = term_nodes[name]
             ref = 'PCB' + str(i)
             self.voltage(ref + '.V', a, b)
-            self.power_refs.append(ref)
             n = self.sense(ref, a)
             summed = self.node('SUM:' + name)
             self.lines.append(f'RSUM{i} {summed} 0 1')
@@ -419,7 +414,6 @@ class Circuit:
         f,
         cycles=250,
         samples_per_cycle=128,
-        ramp_s=100e-6,
         timeout=600,
         linear_solver='klu',
         threads=1,
@@ -435,7 +429,7 @@ class Circuit:
             raise RuntimeError('ngspice is required for transient circuit simulation')
         out = Path(out).resolve()
         out.mkdir(parents=True, exist_ok=True)
-        stop = cycles / f if self.uic else max(cycles / f, ramp_s + 20 / f)
+        stop = cycles / f if self.uic else max(cycles, 20) / f
         labels = list(self.signals)
         vectors = list(self.signals.values())
         output_names = [f'out{i}' for i in range(len(vectors))]

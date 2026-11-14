@@ -11,12 +11,10 @@ from pcbqs.circuit.deck import gate_timing
 from pcbqs.mqs_ports import CopperPorts, rl_equivalent, rl_error
 
 
-def test_srf_and_ac_total_resistance_not_double_counted():
-    from pcbqs.wpt import coil_capacitance,winding_resistance
-    c=dict(L_H=24e-6,R_ohm=.11,SRF_Hz=7.7e6,Rac_ref_ohm=.1216)
-    assert coil_capacitance(c)==pytest.approx(17.80113e-12)
-    assert winding_resistance(c)==.1216
-    assert winding_resistance(dict(c,Rac_ref_ohm=.09))==.11
+def test_srf_gives_the_winding_s_capacitance():
+    from pcbqs.wpt import coil_capacitance, series_resistance
+    c=dict(L_H=24e-6,R_ohm=.11,SRF_Hz=7.7e6)
+    assert coil_capacitance(c)==pytest.approx(17.80113e-12) and series_resistance(c)==.11
 
 
 def test_copper_port_signs_reciprocity_and_passivity():
@@ -69,12 +67,14 @@ def test_foster_fit_passivity_and_independent_frequency_interpolation():
 
 
 def test_parallel_core_loss_matches_q_and_damps_srf():
-    from pcbqs.wpt import core_resistance,coil_capacitance
-    c=dict(L_H=24e-6,R_ohm=.11,SRF_Hz=7.7e6,Rac_ref_ohm=.1216100382,loss_model='parallel_core')
-    rc=core_resistance(c);w=2*np.pi*125e3;zz=.11+1/(1/(1j*w*c['L_H'])+1/rc)
-    z=zz/(1+1j*w*coil_capacitance(c)*zz)
-    assert z.real==pytest.approx(c['Rac_ref_ohm'],rel=1e-9)
-    assert 3e4<rc<3.2e4
+    """fit_core_resistance gives the core_R_ohm that makes the winding's AC resistance the measured one (wpthb's
+    coils: 30.77 kohm, now written into their model rather than fitted at each deck build)."""
+    from pcbqs.wpt import fit_core_resistance,coil_capacitance
+    rc=fit_core_resistance(24e-6,.11,.1216100382,125e3,SRF_Hz=7.7e6);w=2*np.pi*125e3;zz=.11+1/(1/(1j*w*24e-6)+1/rc)
+    z=zz/(1+1j*w*coil_capacitance(dict(L_H=24e-6,SRF_Hz=7.7e6))*zz)
+    assert z.real==pytest.approx(.1216100382,rel=1e-9)
+    assert rc==pytest.approx(30773.183367301404,rel=1e-9)
+    assert fit_core_resistance(24e-6,.11,.10,125e3) is None                      # DCR alone is lossier already
 
 
 @pytest.mark.skipif(not shutil.which('ngspice'),reason='ngspice not installed')

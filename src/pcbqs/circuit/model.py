@@ -50,7 +50,7 @@ PART_TYPES = ('resistor', 'capacitor', 'inductor', 'diode', 'switch', 'source', 
 STATS = ('avg', 'rms', 'pp', 'max', 'min')
 WAVES = ('pulse', 'sine', 'pwl')
 TEXT_KEYS = {'ref', 'type', 'nodes', 'drive', 'name', 'description', 'library', 'subcircuit', 'pin_order', 'adjust',
-             'measure', 'notes', 'method', 'loss_model', 'initialization', 'ignore', 'inductors', 'enabled', 'invert',
+             'measure', 'notes', 'method', 'ignore', 'inductors', 'enabled', 'invert',
              'body_diode', 'external_capacitance', 'linear_solver', 'strict', 'engine'}
 SUFFIX = dict(f=1e-15, p=1e-12, n=1e-9, u=1e-6, m=1e-3, k=1e3, K=1e3, M=1e6, G=1e9)
 FUNCTIONS = dict(sqrt=math.sqrt, abs=abs, min=min, max=max, exp=math.exp, log=math.log)
@@ -274,7 +274,7 @@ def signal_names(model):
         if isinstance(p, dict) and isinstance(p.get('ref'), str):
             out |= {p['ref'] + '.V', p['ref'] + '.I'}
             out |= {'node.' + n for n in p.get('nodes', []) if isinstance(n, str)}
-            if p.get('type') == 'inductor' and any(p.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm', 'loss_model')):
+            if p.get('type') == 'inductor' and any(p.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm')):
                 out.add(p['ref'] + '.winding_I')
             if p.get('type') == 'capacitor':
                 out.add(p['ref'] + '.cap_V')

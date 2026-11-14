@@ -10,6 +10,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **The circuit tool's leftovers (R-F1).** wpthb's coils carry their fitted core-loss resistance (`core_R_ohm`,
+  30.77 kohm) in place of `loss_model`, `Rac_ref_ohm` and `loss_reference_Hz`, which a fit at every deck build
+  turned into it for them alone; `pcbqs.wpt.fit_core_resistance` makes such a value from a measured AC resistance.
+  The model's `engine` key, the unused `initialization` and `loss_model` text keys, the deck's unread `power_refs`,
+  `run`'s `ramp_s` (always 0 from the engine), the benchmark's Xyce arms and the example outputs tracked inside the
+  package (276 KB) are gone. Same answers: the wpthb regression unchanged.
 - **Dense solves in single precision, refined (R-D13).** A complex system of 4,000 unknowns or more is factored
   in complex64 (LAPACK's cgetrf, about 2.1 times as fast) and each solve corrected by its residual in double
   until it is a double solve's (1e-12 of the right-hand side: three or four steps); one that will not get there
