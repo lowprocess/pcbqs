@@ -145,3 +145,36 @@ def test_loop_space_impedance_equals_branch_voltage_kvl():
             column = m['C'][:, c].toarray().ravel()
             assert r.z[name][i] == pytest.approx((column @ v - m['C'][k, c]*v[k]) / amps[name], rel=1e-10)
             assert r.zc[name][i] == pytest.approx((column*copper) @ v / amps[name], rel=1e-10)
+
+
+def _strip_model(**kw):
+    from shapely.geometry import box, mapping
+    board = dict(stack=dict(layers=[], copper=[dict(name='F', z=0, t=.035)]),
+                 copper={'F': [dict(net='N', polygon=mapping(box(0, 0, 5, 2)))]}, vias=[])
+    terms = {'a': [('F', box(0, 0, 1, 2))], 'b': [('F', box(4, 0, 5, 2))]}
+    q = MQS(board, 'N', terminals=terms, dmax=.7, conductor_loss='slab', log=lambda *_: None, **kw)
+    q.source('I', 'a', 'b', part_h=0)
+    return q
+
+
+def test_conductor_faces_is_the_one_sheet_slab_s():
+    """conductor_faces=1: the one-sheet slab, its current on one face (it had been ignored for the face sheets,
+    so 1 and 2 gave the same Z and every comparison of the two computed one model twice); with face sheets asked
+    for too: refused."""
+    one, two = _strip_model(conductor_faces=1), _strip_model()
+    assert one.thickness_sheets == 1 and two.thickness_sheets == 2
+    r1, r2 = (q.solve([30e6]).z['I'].real[0] for q in (one, two))
+    assert r1 > 1.5 * r2                                            # one face carries it all: more resistance
+    with pytest.raises(ValueError, match="one-sheet slab"):
+        _strip_model(conductor_faces=1, thickness_sheets=2)
+
+
+def test_shared_kernels_keep_the_faces_skin_loss():
+    """A model that takes another's kernels (share_kernels) gives its answer: copying them one by one had left the
+    face sheets' terms behind (R at 30 MHz 0.898 mOhm for 1.195). Another mesh: refused."""
+    q = _strip_model()
+    z = q.solve([1e3, 30e6]).z['I']
+    other = _strip_model().share_kernels(q)
+    assert np.allclose(other.solve([1e3, 30e6]).z['I'], z, rtol=1e-9)
+    with pytest.raises(ValueError, match='another mesh'):
+        _strip_model(conductor_faces=1).share_kernels(q)

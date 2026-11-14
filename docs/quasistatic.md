@@ -180,35 +180,31 @@ q = MQS(board, nets=nets, terminals=terminals,
         conductor_loss='slab', conductor_faces=1)
 ```
 
-The default remains `conductor_loss='dc'`. The slab option uses the complex
-finite-thickness impedance `u*coth(u)/(sigma*t)`, with
-`u=sqrt(j*w*mu0*sigma)*t/conductor_faces`. It includes internal inductance and
-the skin-resistance increase, tending to `1/(sigma*t)` at DC. One face assumes
-current enters from one side; two faces assume equal currents on both sides.
-These are selectable approximations, not a resolved thickness/proximity
-solution. Via barrel resistance remains DC. Both MQS and PEEC use this option.
+The default remains `conductor_loss='dc'`. With `conductor_loss='slab'` the copper is two face sheets (below)
+unless `conductor_faces=1`, which is one sheet with the complex finite-thickness impedance `u*coth(u)/(sigma*t)`,
+`u=sqrt(j*w*mu0*sigma)*t`: the current on one face, its internal inductance and skin resistance, tending to
+`1/(sigma*t)` at DC. (`conductor_faces` is that one sheet's: with face sheets it had been ignored, so `1` and `2`
+gave one model.) Via barrel resistance remains DC. Both MQS and PEEC use this option. `share_kernels(other)` gives a
+model another's kernels of the same mesh, all of them (copying them one by one had left the faces' loss terms out).
 
-### Two face sheets (experimental)
+### Two face sheets (the slab's default)
 
 ```python
-q = MQS(board, nets=nets, terminals=terminals, conductor_loss='slab', thickness_sheets=2,
-        matrix_backend='hierarchical')
+q = MQS(board, nets=nets, terminals=terminals, conductor_loss='slab', matrix_backend='hierarchical')
 ```
 
 Each layer's copper becomes two sheets, at its faces (z ∓ t/2). The copies of a
 triangle share one node and each RWG edge carries two parallel currents. The
 faces are coupled through the copper by the slab's exact 1D two-port,
 `Zs*[[coth kt, csch kt], [csch kt, coth kt]]` with `k = sqrt(j*w*mu0*sigma)` and
-`Zs = k/sigma` (`conductor.face_impedance(..., vacuum=False)`). The partial
-inductance's own share of the field between the faces is removed per edge
-pair: `(L_ee + L_gg - 2 L_eg)/4 * [[1, -1], [-1, 1]]`.
-
-That share is only 67–79% of the analytic `mu0*t/2`. Triangles of a few times t
-don't confine the field between the sheets. So subtracting the analytic value
-over-subtracted: the opposite mode then took too much current, giving +30% loss
-over a plane at 100 MHz. The external field decides how the current divides
-between the faces, which is the proximity effect a single sheet's slab cannot
-give. DC resistance and low-frequency inductance are unchanged.
+`Zs = k/sigma` (`conductor.face_impedance(..., vacuum=False)`), uncorrected: the
+partial inductance's own share of the field between the faces is left as filled.
+(A per-pair subtraction of it, removed on 2026-11-10, was right only far from a
+plane: +200% R at 100 MHz with a plane 0.1 mm away, while the uncorrected faces
+are within about 10% everywhere tested.) The external field decides how the
+current divides between the faces, which is the proximity effect a single
+sheet's slab cannot give. DC resistance and low-frequency inductance are
+unchanged.
 
 AC resistance against FastHenry (`validation/mqs_fasthenry.py`, review C14),
 10 / 100 MHz:
@@ -220,9 +216,10 @@ AC resistance against FastHenry (`validation/mqs_fasthenry.py`, review C14),
 
 Inductance is 2–3% low with two sheets, against under 1% with one. The rest of
 the plane case is current on the copper's edges and side walls, which the faces
-don't carry. It doubles the unknowns, so use the compressed backend. Not yet
-supported with `dielectric='stack'`. Capacitance splits each node's charge
-evenly between the faces, which has not been validated.
+don't carry. It doubles the unknowns, so use the compressed backend. With
+`dielectric='stack'` the faces sit on their layer's interfaces (`from_board_thick`).
+With capacitance a node's charge sits on the face that faces the other conductor
+(`peec.node_potential`), validated against FasterCap (validation/README.md).
 
 ### Compressed backend without capacitance
 

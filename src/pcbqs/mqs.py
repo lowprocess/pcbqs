@@ -139,8 +139,14 @@ class MQS:
         # thickness_sheets: default two face sheets with conductor_loss='slab' (validated against FastHenry for
         # inductance and FasterCap for capacitance, validation/README.md; with capacitance a node's two faces share
         # its charge, peec.node_potential), else one sheet
+        # conductor_faces is the one-sheet slab's (its current on one face or both): with conductor_faces=1 the slab
+        # is that one sheet (it had been ignored for the face sheets, so one model was computed twice by every
+        # comparison of the two)
         if thickness_sheets is None:
-            thickness_sheets = 2 if conductor_loss == 'slab' else 1
+            thickness_sheets = 2 if conductor_loss == 'slab' and conductor_faces == 2 else 1
+        elif conductor_faces == 1 and conductor_loss == 'slab' and thickness_sheets == 2:
+            raise ValueError("conductor_faces=1 is the one-sheet slab's: the face sheets (thickness_sheets=2) carry "
+                             "both faces")
         # thickness_sheets=N with conductor_loss='dc' (experimental, the reference): N sheets at the centres of N
         # slices of the copper (cosine-graded: thinner at the faces, where the skin is), each at its slice's DC
         # sheet resistance, a triangle's copies one node. Skin
@@ -606,6 +612,26 @@ class MQS:
             n = self.n_rwg
             out[:n] += self._thick_correction() @ currents[:n]
         return out
+
+    def share_kernels(self, other):
+        """Take another model's kernels of the same mesh (its partial inductances and potentials, and, of the same
+        conductor model, its sheets' and faces' loss terms), so neither is filled twice. Copying them one by one had
+        left the face sheets' terms behind: the copy had no skin loss (R at 30 MHz 0.898 mOhm for 1.195). A model of
+        another mesh: ValueError."""
+        if len(self.tris) != len(other.tris) or self.ne != other.ne or self.nv != other.nv or \
+                not np.array_equal(np.asarray(self.tris), np.asarray(other.tris)):
+            raise ValueError(f"share_kernels: another mesh ({len(other.tris)} triangles, {other.ne} edges; this one "
+                             f"{len(self.tris)}, {self.ne}): its kernels do not fit")
+        self._potential = other._potential
+        self.fill_info = dict(getattr(other, 'fill_info', {}) or {})
+        same = (self.conductor_loss, self.thickness_sheets, self.conductor_faces) == \
+               (other.conductor_loss, other.thickness_sheets, other.conductor_faces)
+        if same and other._copper is not None:              # (another conductor model: its loss terms are made
+            self._copper = other._copper                     # with its copper's matrices, so those are made again)
+            for name in ('_sheet_terms', '_face_terms', '_face_pairs'):
+                if hasattr(other, name):
+                    setattr(self, name, getattr(other, name))
+        return self
 
     def solve(self, freqs, amps=None):
         """The currents at each frequency (Hz) for the sources' currents (amps: {source: A}, default 1 A each).

@@ -23,7 +23,8 @@ for margin in [.3,.6]:
    if shared is not None:
     for attr in ['nodes','tris','node_of','z_of','t_of']:
      if not np.array_equal(getattr(q,attr),getattr(shared,attr)):raise RuntimeError('mesh differs')
-    q._copper,q._potential,q._sheet_terms=shared._copper,shared._potential,shared._sheet_terms
+    if len(q.tris) == len(shared.tris):      # (one sheet and two faces: two meshes)
+        q.share_kernels(shared)
    q.source('I','load_p','load_g',part_h=0)
    q.element('C90','cap_p','cap_g',C=part_value(cap),ESR=.005,ESL=.35e-9,part_h=0)
    q._loops(allow_open=False) # Intended local decap loop must survive the crop.

@@ -102,11 +102,10 @@ class PEECPDN:
         for ref in names:
             amps = {'load:'+r:float(r==ref) for r in self.rail.loads}
             out[ref] = q.solve(frequencies, amps=amps).z['load:'+ref]
-        # Subsequent bare/loaded models reuse only geometry-dependent kernels.
-        self.q._copper, self.q._potential = q._copper, q._potential
-        self.q._sheet_terms, self.q.fill_info = q._sheet_terms, q.fill_info
+        # Subsequent bare/loaded models reuse only geometry-dependent kernels (all of them: share_kernels).
+        if self.q is not q:
+            self.q.share_kernels(q)
         for other in self._models.values():
-            if other._copper is None:
-                other._copper, other._potential = q._copper, q._potential
-                other._sheet_terms = q._sheet_terms
+            if other is not q and other._copper is None:
+                other.share_kernels(q)
         return out

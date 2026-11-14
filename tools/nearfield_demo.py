@@ -84,9 +84,8 @@ def build_model(case, args, mode, shared=None):
         for name in ['nodes','tris','z_of','t_of','node_of']:
             if not np.array_equal(getattr(q,name),getattr(shared,name)):
                 raise ValueError('Cannot reuse kernels for a different mesh')
-        q._copper = shared._copper
-        q._potential = shared._potential
-        q._sheet_terms = shared._sheet_terms
+        if len(q.tris) == len(shared.tris):      # (one sheet and two faces: two meshes)
+            q.share_kernels(shared)
         q.fill_info = copy.deepcopy(shared.fill_info)
     q.source('U1', 'U1.VIN', 'U1.PGND', part_h=.4)
     q.element('C1', 'C1.1', 'C1.2', C=10e-6, ESR=3e-3, ESL=.4e-9, part_h=.6)

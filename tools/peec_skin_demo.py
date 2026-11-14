@@ -111,13 +111,8 @@ def model(b, terms, coupon, dmax, backend, workers, capacitance, loss, faces=2, 
             capacitance=capacitance, dielectric='stack', conductor_loss=loss,
             conductor_faces=faces, fill_backend=backend, fill_workers=workers,
             factor_cache_bytes=0, log=lambda *_: None)
-    if shared is not None:
-        for name in ('nodes', 'tris', 'node_of', 'z_of', 't_of'):
-            if not np.array_equal(getattr(q, name), getattr(shared, name)):
-                raise RuntimeError('Cannot reuse kernels between different meshes')
-        q._copper = shared._copper
-        q._potential = shared._potential
-        q._sheet_terms = shared._sheet_terms
+    if shared is not None and len(q.tris) == len(shared.tris):     # (one sheet and two faces: two meshes)
+        q.share_kernels(shared)
         q.fill_info = copy.deepcopy(shared.fill_info)
     q.source('port', *names, part_h=0)
     return q

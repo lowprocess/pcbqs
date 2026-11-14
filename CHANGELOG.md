@@ -208,6 +208,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 
 ### Fixed
+- **Two-face copper** (R-A16). `conductor_faces` was ignored with the face sheets the slab defaults to, so faces 1
+  and 2 gave one model and every comparison of the two (the PEEC trial, four tools, the Jetson scripts) computed
+  it twice: `conductor_faces=1` is the one-sheet slab again (with face sheets asked for too: refused). Kernels
+  copied between models one by one left the faces' loss terms out (R at 30 MHz 0.898 mOhm for 1.195: the PEEC
+  PDN's bare curve had no skin loss): `MQS.share_kernels(other)` takes them all, for the same mesh and conductor
+  model only. docs/quasistatic.md's section said three things the code no longer does.
 - **The PDN's low end and its domains** (the review of 2026-11-14, R-A14, A15, B10, B11). A part's mount had only
   the inductance of its pad's path to its vias: their resistance and the barrels' are in it now (the cavity
   model's Re Z at 1 kHz had been 22-38 % under the DC network on the Jetson). A load on a plane island no source

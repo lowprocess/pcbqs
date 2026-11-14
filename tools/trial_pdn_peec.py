@@ -148,8 +148,8 @@ def evaluate(b,dmax,f,workers,landmarks=False):
             for attr in ('nodes','tris','node_of','z_of','t_of'):
                 if not np.array_equal(getattr(new.q,attr),getattr(shared.q,attr)):
                     raise RuntimeError('Trial kernel reuse requires identical meshes')
-            new.q._copper,new.q._potential=shared.q._copper,shared.q._potential
-            new.q._sheet_terms=shared.q._sheet_terms
+            if len(new.q.tris) == len(shared.q.tris):      # (one sheet and two faces: two meshes)
+                new.q.share_kernels(shared.q)
         z=new.z(f)['U1']
         if landmarks:resonances[name]=resonance(lambda ff:new.z(ff)['U1'],f,z)
         if not np.isfinite(z).all() or z.real.min()<-1e-9:
