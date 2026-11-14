@@ -364,10 +364,7 @@ def circuit_report(res, folder=''):
                          [[r, *[_num(p.get(k)) for k in ('avg_A', 'rms_A', 'peak_A', 'peak_V', 'avg_V', 'ripple_V',
                                                          'ripple_A')]] for r, p in stress], [None] + ['.4g'] * 7),
             notes=list(c.get('notes') or []),
-            text=(f"The periodic steady state itself, from the piecewise-linear engine (ideal switches and diodes, "
-                  f"each interval between two switching instants solved exactly): {c.get('runs', '–')} of them for "
-                  f"the targets." if c.get('engine') == 'pwl' else
-                  f"Settled to {100 * c.get('periodic_error', 0):.2g} % period to period; solver tolerance "
+            text=(f"Settled to {100 * c.get('periodic_error', 0):.2g} % period to period; solver tolerance "
                   f"{c.get('reltol', '–')}; {c.get('periods', '–')} periods simulated.")))
         if c.get('copper') and c['copper'].get('ports'):
             out['sections'].append(dict(title=f"{c['name']}: board copper", table=_table(

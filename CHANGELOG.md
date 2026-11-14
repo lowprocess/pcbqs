@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Removed
+- **The piecewise-linear circuit engine** (`circuit/pwl.py`, `--engine pwl`, `analysis.engine`). The circuit run is
+  there for its parts' losses (the thermal analysis) and its copper's currents (the fields), and on the wpthb
+  bridge's copper the piecewise-linear engine was either barely faster than ngspice and wrong on its switches'
+  losses (46 mW for 96: no gate charge, no square law, a constant Cds), or right and hours a run (its gates and
+  junctions as states). ngspice is the one engine; a model that asks for `pwl` runs on it, and its notes say so.
+  The review's fixes that are not the engine's stay (the supply rows, thermal's `board.parts`, `<ref>.cap_V`, a
+  measure's `samples`, the case cache's fingerprint).
 - **The full-bridge tool** (`pcbqs.power_circuit`, `power_bridge`, `power_report`; format 1 models;
   `data/wpthb-power.json`, `data/simple-bridge.json`, `examples/wpthb`). It was a second circuit tool beside
   `pcbqs.circuit`, for one circuit. The wpthb bridge is a circuit model now, `data/wpthb_bridge.json` (and
@@ -24,23 +31,6 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `tools/benchmark_ports.py` runs on the new model.
 
 ### Changed
-- **The piecewise-linear engine takes the board's copper** (`--engine pwl --copper`). Every part on its pads, the
-  copper's ports as states with their coupled inductance and resistance, and each Foster section's every mode a
-  state of its own. A pad held only by inductance (a winding's, a capacitor's between two pads, a current load's)
-  is an island: its potential is what keeps the current into it at zero, and the open switches and diodes are
-  open where they join islands (their leakage was a nanoamp state on a 1e-17 s time constant). On the nine
-  examples' boards against ngspice: efficiency within 0.2 points (the flyback 0.6), averages and RMS within about
-  1 %, 0.3 to 6 s a point for 0.5 to 50 s; the copper's loss within 4 % where ngspice's diodes recover through
-  it and 6 to 21 % below it where they do (the buck, the boost, the buck-boost, the full bridge). The copper's loss
-  is its own dissipation (I^T R I and its Foster sections'), not its ports' V x I; `port-spectrum.npz` is written
-  for the fields.
-- **A switch's capacitance in the piecewise-linear engine.** `Cds_F` (type switch, as ngspice's deck has it) is a
-  state, discharged through the switch as it turns on; the reported run is sampled after every switching instant
-  as finely as its fastest transient, and as finely as the circuit rings, so that energy is in the averages. The
-  synchronous buck alone: 98.24 % for ngspice's 98.17 % (98.9 % before). A diode's `Cj_F` stays out (a constant
-  one put a bridge rectifier's floating AC side on the junctions' charge), said in the notes, as are a switch's gate
-  capacitances; ESL, a winding's self-capacitance and core loss, switch package inductances and a vdmos switch (as a
-  switch) are taken now. The targets are searched on the period's own samples, the reported run fine.
 - **A supply behind an input filter** (`circuit/supply.py`): where all a DC source feeds is a lone inductor or
   resistor in series, the supply row is the node behind it, with `through` (its inductors) and `dcr`, as the
   bridge tool's own rows were; the reports' proposal of the rail then has them.
@@ -81,27 +71,6 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   and its inductance there the field solver's line's within 0.5 %.
 
 ### Added
-- **A diode's reverse recovery in the piecewise-linear engine.** A diode's transit time (`TT_s`; a switch's body
-  diode's `diode_TT_s`) is its stored charge, as SPICE's: TT times its junction's current, a state while it
-  conducts (a capacitance TT g across its line), so it turns off only once the charge is out, a current reversed
-  through it flowing on until then. Where the circuit sets how fast the current reverses (a buck's high side
-  turning on through 100 nH against 50 ns), the recovery current, the switch's peak, a snubber's loss and the
-  efficiency are ngspice's (-7.50 A for -7.60, 11.64 A for 11.75, 348 mW for 366, 95.644 % for 95.641 %). Where
-  the switch's own edge sets it, the ideal gate closes at once and the recovery's loss goes to the loop's
-  inductance and the diode's snap off: the wpthb bridge's hard-switched switches lose 52 mW for ngspice's 96 (38
-  without the charge), its efficiency 93.76 % for 93.18 % (94.20 % without); the gates' edges are what is left.
-- **A piecewise-linear engine for the circuit tool** (`circuit/pwl.py`; `python -m pcbqs.circuit --engine pwl`,
-  `analysis.engine` in a model, *Engine* in the window). No transient: between switching instants the circuit
-  is linear and solved exactly (a matrix exponential), and the periodic steady state is found by Newton's
-  method on the period's map in a few periods. Diodes change state when the circuit says so (discontinuous
-  conduction, commutation, the dead time through a body diode). Coupled inductors, several drives, constant
-  power and constant current loads, targets and sweeps as before; the result is the same signals and figures,
-  so the report, the supply currents and the window read it as any run. The seven converter examples agree
-  with ngspice (duty within 0.001, ripples within 0.2 %, efficiency within 0.7 point) in 0.3 to 0.8 s where
-  ngspice takes 4 to 40 s. Ideal switches and diodes only: no capacitance, no edges, no ESL; MOSFET models, a
-  winding's parasitics and the board's copper are still ngspice's, and it says so (docs/circuit.md). Sine
-  and pulse sources are in it (a sine: two states that turn at its frequency), so all ten example circuits
-  run: the bridge rectifier's DC output 30.27 V for ngspice's 30.35 V.
 - **A boost found on a board is made into a circuit** (`pcbqs.mqs --circuit`, *Open ... as a circuit* on a near
   field's result; `circuit/converter.py: boost_of`). Only a buck was: a cell with a diode up from its switch node
   stopped with "only a buck is made into a circuit". The near field's capacitors are the boost's output's, the
@@ -235,31 +204,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Fixed
-- **Review of the full-bridge removal and the piecewise-linear engine on copper (2026-11-14).** What a code review of
-  that change found, each with a test:
-  - **A cut current is the opening switch's, whatever the island hold.** A switch opening on an inductance's current
-    with no capacitance across it (its package's, the copper's) let that current flow on for a period over HOLD,
-    the input's voltage times it booked as loss: the buck's Q1 at 68.7 mW with HOLD 2000 against 55.8 at 32000.
-    The edge now cuts it: a diode the cut forward-biases takes the current, what none takes jumps to the currents
-    Kirchhoff's law allows (the flux kept), and the energy of an inductance outside the switch (the copper's) is put
-    in it. The examples on their copper balance to a few parts in a million (0.1 to 0.4 % before, on the diode
-    converters); the buck, boost and buck-boost are within 0.05 points of ngspice's efficiency, the flyback 0.4.
-  - **An edge on the period's start** (a phase that puts a switch's off edge at t = 0) was dropped, and the switch
-    left on all period (a buck at 270 degrees with dead time: 11.6 V for 2.6 V).
-  - **A current source into a node only open parts are on** lost its current (a current-fed boost gave 0 V for 5 V).
-  - **The reported run wrote 492 MB a point**, four periods of 2^18 samples (the bridge's 1.2 GHz receiver mode and
-    0.9 GHz package modes): `transient.npz` keeps `samples_per_cycle` (8192) of each period, every so many of the
-    computed ones, at 1.7 GB of memory less; the reported run starts from the accepted run's state, and the
-    search's runs each from the last's: the bridge at 90 kHz, 10 W in 7 s for 29 s. `final_samples_per_cycle`
-    sets the reported run's sampling, which the ringing no longer overrides; the ringing is that of the topologies
-    the period goes through.
-  - **The body diodes' reverse recovery** (`diode_TT_s`) was left out without a note: the bridge's switches lose
-    16 % less than ngspice's for it (its point of efficiency); the notes now say so.
-  - **A board with no copper ports** put every on-board pin on a node of its own (the buck's output at 0 V); a part
-    named `PCB...` broke every board run's port spectrum; a probe on a node no enabled part is on stopped the run.
-  - **`<ref>.cap_V` of a capacitor with no ESR or ESL** stopped the run: ngspice had no such vector and the
-    piecewise-linear engine raised a NameError. Both have it; a measure that is not an expression of the run's
-    signals fails its point.
+- **Review of the full-bridge removal (2026-11-14).** What a code review of that change found, each with a test:
+  - **A board with no copper ports** put every on-board pin on a node of its own; a part named `PCB...` broke the
+    port spectrum; a probe on a node no enabled part is on stopped the run.
+  - **`<ref>.cap_V` of a capacitor with no ESR or ESL** failed: ngspice had no such vector. Every capacitor has it.
   - **Thermal on the wpthb bridge** stopped at `board.parts`' null and per-pin entries: a part off the board, or on
     two footprints (a winding on two test points), is left out and said; one with a pin off the board is its
     footprint's.
@@ -270,8 +218,7 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   - **The bridge's `bus_ripple_V`** was the peak to peak with the edges' spikes (3.17 V at 90 kHz, 10 W), the old
     tool's `bus_spike_pp_V`: it is the settled ripple again (VHB at 256 instants a period), `bus_spike_pp_V` the
     spikes. A measure takes `samples` for that: its statistic at so many evenly spaced instants of the period.
-  - The case cache's fingerprint has the piecewise-linear engine's and the supply rows' code; a reported
-    piecewise-linear run that fails leaves the search's run reported, with a note.
+  - The case cache's fingerprint has the supply rows' code.
   - Removed with the full-bridge tool and now gone too: `wpt.match_receiver`, `link`, `impedance`,
     `power_spice.periodic_samples`, its step export and the switch's phase/high timing. The tests of the copper's
     ports, Foster fits and the decks' switch models that were in `tests/test_power_circuit.py` are back, in

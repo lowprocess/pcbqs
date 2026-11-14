@@ -14,10 +14,6 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
     ('board', 'str', None, 'the board (.kicad_pcb), when the model names none or another', 'Board'),
     ('set', 'list', [], "PATH=VALUE: a value of the model set before running, e.g. drives.pwm.duty=0.4 "
      "(repeatable)", 'Model'),
-    ('engine', 'str', None, "what solves the circuit: ngspice (its transient, until the circuit repeats: the "
-     "default, or the model's analysis.engine), or pwl (the piecewise-linear steady state: instant edges, switches "
-     "with their Cds and packages, diodes with no junction capacitance or recovery; 5 to 25 times faster)", 'Run',
-     ('ngspice', 'pwl')),
     ('jobs', 'int', 1, 'sweep points run at once', 'Run'),
 ]
 
@@ -77,8 +73,6 @@ def main(argv=None):
         for item in a.set:
             path, _, value = item.partition('=')
             M.put(model, path.strip(), M.number(value) if not value.strip().startswith('[') else json.loads(value))
-        if a.engine:
-            model.setdefault('analysis', {})['engine'] = a.engine
         if a.board:
             model.setdefault('board', {})['file'] = a.board
         M.validate(model)

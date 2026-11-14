@@ -365,12 +365,12 @@ def test_a_rail_behind_an_input_filter_is_the_one_its_loads_are_on():
     assert row['node'] == row['net'] == 'VIN' and row['through'] == []
 
 
+@ngspice
 def test_the_bridge_proposes_its_rail(tmp_path):
-    """The wpthb bridge, as a general model, run (the piecewise-linear engine: seconds) at 90 kHz and 30 W: its
-    rail for the power-integrity analysis, through L3, the switches' input currents as spectra."""
+    """The wpthb bridge, as a general model, run at 90 kHz and 30 W: its rail for the power-integrity analysis,
+    through L3, the switches' input currents as spectra."""
     w = wpthb()
     w['sweep'] = {'parameters.f': [90000.0], 'parameters.P': [30.0]}
-    w['analysis'] = dict(engine='pwl')
     out = run(w, tmp_path, log=lambda *a: None)
     assert not out['failed'], out['failed']
     case, = out['cases']
@@ -391,13 +391,13 @@ def test_the_bridge_proposes_its_rail(tmp_path):
     assert fields[0]['values']['capacitors'] == 'C19,C20,C21,C22,C23,C24'
 
 
+@ngspice
 def test_a_boost_s_inductor_is_its_load_not_a_filter(tmp_path):
     """The source feeds a lone inductor, but to the switch's node, which no capacitor holds: the rail is the
     source's node and the inductor its load (an input filter would be followed to the node behind it)."""
     import pcbqs.circuit
     with open(os.path.join(os.path.dirname(pcbqs.circuit.__file__), 'examples', '06_boost.json'), encoding='utf-8') as fh:
         m = json.load(fh)
-    m['analysis'] = dict(engine='pwl')
     m.pop('board', None)
     case = run(m, tmp_path, log=lambda *a: None)['cases'][0]
     row, = case['supply']

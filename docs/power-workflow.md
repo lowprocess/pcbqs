@@ -82,11 +82,7 @@ its JSON.
 - Switch, package and capacitor parasitics in the model are placeholders;
   use datasheet or vendor models before trusting overshoot or loss.
 
-Run time: ngspice runs each point until it repeats (40 s alone at 90 kHz, 10 W); `--engine pwl` finds the steady
-state itself (20 s, most of it the reported run sampled as finely as the packages ring). Its body diodes recover,
-but its gates are ideal: the switch that turns on against a recovering diode loses less than ngspice's, half a
-point of efficiency on this bridge, and its instant edges ring VHB, so take the bus's ripple from ngspice
-([the piecewise-linear engine](circuit.md#the-piecewise-linear-engine)).
+Run time: ngspice runs each point until it repeats (40 s alone at 90 kHz, 10 W, 1 min 47 s with its copper).
 
 ## 4. From one tool to the next
 

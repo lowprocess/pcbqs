@@ -42,8 +42,7 @@ from ..power_spice import cancel_active_runs, reset_runs
 from . import model as M
 from .deck import build
 
-ENGINES = ('ngspice', 'pwl')                # analysis.engine: ngspice's transient, or the piecewise-linear steady state
-DEFAULTS = dict(engine='ngspice', cycles=200, final_cycles=8, max_cycles=20000, max_trials=40, periodic_tolerance=0.003,
+DEFAULTS = dict(cycles=200, final_cycles=8, max_cycles=20000, max_trials=40, periodic_tolerance=0.003,
                 energy_tolerance=0.002,
                 target_tolerance=0.005, search_reltol=1e-3, strict=True, samples_per_cycle=None,
                 final_samples_per_cycle=None, linear_solver='klu', threads=1, timeout_s=600)
@@ -440,11 +439,7 @@ def fingerprint(model, copper=None):
     h.update((copper or {}).get('fingerprint', 'no copper').encode())
     from .. import power_spice
     from . import deck as D, supply
-    modules = [power_spice, D, M, supply, __import__(__name__, fromlist=['x'])]
-    if settings(model)['engine'] == 'pwl':                          # (its answers are its own code's)
-        from . import pwl
-        modules.append(pwl)
-    for module in modules:
+    for module in (power_spice, D, M, supply, __import__(__name__, fromlist=['x'])):
         h.update(Path(module.__file__).read_bytes())
     return h.hexdigest()
 
@@ -465,16 +460,12 @@ def run_case(model, point, out, log=print, copper=None):
             log(f"{M.case_name(point)}: unchanged, reusing its results")
             return row
     a = settings(base)
-    if a['engine'] not in ENGINES:
-        raise M.ModelError(f"analysis.engine: {a['engine']!r} is not one of {', '.join(ENGINES)}")
-    pwl = a['engine'] == 'pwl'                  # (pwl.py: the steady state itself, no transient to settle)
-    if pwl:
-        from .pwl import simulate as run_once
-    else:
-        run_once = simulate
+    run_once = simulate
     knobs = [Knob(t) for t in base.get('targets', [])]
     label = (M.case_name(point) + ': ') if point else ''
     state, history, notes, total = None, [], [], 0
+    if a.get('engine', 'ngspice') != 'ngspice':                     # (a model of the piecewise-linear engine's days)
+        notes.append(f"analysis.engine {a['engine']!r} is no longer: ngspice ran it")
     cycles = base_cycles = int(a['cycles'])
     accepted = None
     # with a board: the search is done on the circuit alone, which is quick, and the copper is put in where that
@@ -491,15 +482,13 @@ def run_case(model, point, out, log=print, copper=None):
             M.put(current, kn.path, kn.x)
         resolved = M.resolve(current)
         folder = trials / f"{trial:02d}"
-        log(label + f"run {trial + 1}: " + ('the steady state' if pwl else f"{cycles} periods")
+        log(label + f"run {trial + 1}: {cycles} periods"
             + (''.join(f", {kn.path} = {kn.x:.6g}" for kn in knobs))
-            + ('' if state is None or pwl else ' (continuing)') + (" with the board's copper" if with_copper else ''))
+            + ('' if state is None else ' (continuing)') + (" with the board's copper" if with_copper else ''))
         result, deck, stats, retries = run_once(resolved, state, cycles, folder, a, a['search_reltol'], log, label,
                                                 copper=with_copper)
         total += cycles
         state = end_state(result, resolved, deck)
-        if pwl:                                     # (its own state: where the next run's search starts)
-            state['pwl'] = getattr(deck, 'pwl_state', None)
         errors = periodic_error(result, deck, deck.period, a.get('ignore', ()))
         worst = max(errors.values(), default=0.0)
         drifting, _ = unsteadiness(result, resolved, deck, stats)
@@ -509,8 +498,7 @@ def run_case(model, point, out, log=print, copper=None):
                      measures=stats['measures'])
         history.append(entry)
         if worst > a['periodic_tolerance'] or drifting > a['energy_tolerance']:
-            state = dict(end_state(result, resolved, deck, deck.period), pwl=state.get('pwl'))   # ringing: start the
-                                                                                            # next run from its middle
+            state = end_state(result, resolved, deck, deck.period)  # ringing: start the next run from its middle
             cycles = min(cycles * 2, 8 * int(a['cycles']))          # slow to settle: longer runs, fewer of them
             if total >= a['max_cycles']:
                 slow = max(errors, key=errors.get)
@@ -541,18 +529,7 @@ def run_case(model, point, out, log=print, copper=None):
     folder, result, deck, stats, resolved = accepted
     strict = a['solver'].get('reltol', 1e-4)
     reported = a['search_reltol']
-    if pwl:
-        reported = None                         # no tolerance: each interval's solution is exact
-        log(label + "reported run: the steady state, sampled as finely as the circuit rings")
-        try:                                    # (from the accepted run's state: it is a few periods from there)
-            result, deck, stats, _ = run_once(resolved, dict(pwl=getattr(deck, 'pwl_state', None)), 0, trials / 'final',
-                                              a, None, log, label, final=True, copper=with_copper)
-            folder = trials / 'final'
-        except RuntimeError as exc:
-            notes.append(f"the reported run, sampled as finely as the circuit rings, failed ({exc}): reported from "
-                         f"the search's run, on samples_per_cycle")
-        notes += getattr(deck, 'engine_notes', [])
-    elif a['strict'] and strict < a['search_reltol']:
+    if a['strict'] and strict < a['search_reltol']:
         final = trials / 'final'
         try:
             n = int(a['final_cycles'])
@@ -595,7 +572,7 @@ def run_case(model, point, out, log=print, copper=None):
         knobs={kn.path: kn.x for kn in knobs},
         targets=[dict(adjust=kn.path, measure=kn.measure, value=kn.value, reached=measured_value(kn.measure, stats))
                  for kn in knobs],
-        **stats, reltol=reported, engine=a['engine'], settled=True,
+        **stats, reltol=reported, settled=True,
         periodic_error=max(periodic_error(result, deck, deck.period, a.get('ignore', ())).values(), default=0.0),
         energy_drift_relative=unsteadiness(result, resolved, deck, stats)[1],
         runs=len(history), periods=total, notes=notes, history=history, runtime_s=time.perf_counter() - started)

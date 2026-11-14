@@ -166,3 +166,21 @@ def test_an_unchanged_point_is_read_back_and_a_target_out_of_reach_says_so(tmp_p
     model['targets'][0]['value'] = 15                              # above the input: no duty gets there
     out = run(model, tmp_path / 'high', log=lambda s: None)
     assert not out['cases'] and 'vout_avg cannot reach 15 with drives.pwm.duty in [0.05, 0.95]' in out['failed'][0]['error']
+
+
+def test_a_capacitor_s_own_voltage_and_a_sampled_measure(tmp_path):
+    """<ref>.cap_V of a capacitor with no ESR or ESL (its voltage), and a measure taken at so many instants a period
+    (samples: a scope's settled value): the RC filter's ripple at 64 instants is its peak to peak, to the step."""
+    import copy
+    m = M.template('rc_filter')
+    m['measures'].update(c_pp=dict(pp='C1.cap_V'), sampled=dict(pp='vout', samples=64), sampled_avg=dict(avg='vout', samples=64))
+    out = run(m, tmp_path, log=lambda s: None)
+    assert not out['failed'], out['failed']
+    ms = out['cases'][0]['measures']
+    assert ms['c_pp'] == pytest.approx(ms['vout_ripple'], rel=1e-6)
+    assert ms['sampled'] == pytest.approx(ms['vout_ripple'], rel=0.02) and ms['sampled'] <= ms['vout_ripple'] * (1 + 1e-9)
+    assert ms['sampled_avg'] == pytest.approx(ms['vout_avg'], rel=0.01)
+    bad = copy.deepcopy(m)
+    bad['measures']['sampled']['samples'] = 2
+    with pytest.raises(M.ModelError, match='samples'):
+        M.validate(bad)

@@ -47,5 +47,5 @@ In bold: what was pcbqs's own, and is now in the core or gone (docs/static-backe
 15.7 s, `ports1` 12.6 s). Not taken up: the LU itself, which is LAPACK's and now 90 % of `sparams_faces` (the
 systems are complex symmetric, but LAPACK's symmetric factorization was no faster than its LU here: 1.6 s for
 1.2 s at 6,000 unknowns); ngspice's text output (`wrdata`, read with `np.loadtxt`: a binary raw file would
-read much faster, and the piecewise-linear engine needs neither); the compression of field dumps; shapely's
+read much faster); the compression of field dumps; shapely's
 unions in the near field's mesh.
