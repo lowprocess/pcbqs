@@ -65,9 +65,12 @@ the power it absorbs.
 - **targets**: adjust one number of the model, inside a range, until a measure (or `load_power_W`,
   `source_power_W`, `efficiency`, `loss_W`) has a value. Several targets, each with its own knob.
 - **sweep**: paths and the values each takes; every combination is a point, in its own folder.
-- **analysis**: `cycles` (200 periods a run), `periodic_tolerance` (0.003), `energy_tolerance` (0.002),
-  `target_tolerance` (0.005), `max_cycles`, `samples_per_cycle`, `final_samples_per_cycle` (the reported run's),
-  `period_s`, `ignore`, `solver` (ngspice's `reltol`, `method`, ...).
+- **analysis**: `cycles` (200 periods a run; a knob's run after one has settled takes a quarter, at least 20),
+  `periodic_tolerance` (0.003), `energy_tolerance` (0.002), `target_tolerance` (0.005), `max_cycles` (20000),
+  `max_trials` (40 runs to meet the targets), `final_cycles` (8: the reported run's), `search_reltol` (1e-3: the
+  search's ngspice tolerance; the reported run is at `solver.reltol` when `strict`, the default), `strict`,
+  `samples_per_cycle`, `final_samples_per_cycle` (the reported run's), `linear_solver` (`klu`), `threads` (1),
+  `timeout_s` (600 a run), `period_s`, `ignore`, `solver` (ngspice's `reltol`, `method`, ...).
 
 ## A run
 
@@ -266,5 +269,5 @@ board; the hard-switched ones ring to twice their bus and more.
 
 ## Not here yet
 
-Parts' own fields (an inductor's stray field, a part body's E), the fields in kicad2ems's viewer, and the
-temperature sweep.
+Parts' own fields (an inductor's stray field, a part body's E) and the temperature sweep. (The copper's fields
+open in kicad2ems's Viewer: `--fields` writes its dumps.)
