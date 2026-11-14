@@ -4,6 +4,8 @@ answers is seen (C4-C6 were drift of this kind). Skipped where the board is not 
     CM5 U702 near field (python -m pcbqs.mqs)     /usr/share/kicad/demos/cm5_minima (KiCad's demos)
     wpthb DC drop and PDN (python -m pcbqs.pdn)   ~/Desktop/wpthb (the as-built 24 V bridge)
     wpthb circuit, 90 kHz 10 W, with copper        pcbqs's data/wpthb_bridge.json (python -m pcbqs.circuit)
+    buck DC drop and PDN, buck near field,         the circuit examples' boards (in the repository: these run
+    boost circuit with its copper                  anywhere, CI included, R-C10)
 
 A deliberate change to these answers: python tests/test_regression_boards.py --update, then review the diff of
 tests/data/regression_boards.json.
@@ -59,8 +61,42 @@ def wpthb_circuit(out):
                 phase_deg=c['knobs']['drives.legb.phase_deg'], primary_rms_A=c['measures']['primary_rms_A'],
                 copper_loss_W=c['copper']['loss_W'])
 
+EXAMPLES = Path(__file__).resolve().parents[1] / 'src' / 'pcbqs' / 'circuit' / 'examples'
+BUCK = EXAMPLES / '04_buck.kicad_pcb'
+
+
+def buck_pdn(out):
+    pytest.importorskip('kicad2ems')
+    from pcbqs.pdn.cli import main
+    assert main([str(BUCK), '--rail', 'out', '--volts', '5', '--source', 'L1', '--load', 'J2=2', '--dmax', '0.8',
+                 '--points', '15', '--out', str(out)]) in (0, None)
+    r = json.loads((Path(out) / 'pdn.json').read_text())
+    return dict(drop_V={k: v['drop'] for k, v in sorted(r['loads'].items())}, loss_W=r['loss_W'],
+                f_Hz=r['pdn']['f'], z_mag_J2=r['pdn']['z']['J2']['mag'])
+
+
+def buck_near_field(out):
+    pytest.importorskip('kicad2ems')
+    from pcbqs.mqs_cli import main
+    assert main([str(BUCK), '--converter', 'Q1', '--vin', 'in', '--harmonics', '1,2', '--heights', '1',
+                 '--scan-points', '9', '--out', str(out)]) in (0, None)
+    r = json.loads((Path(out) / 'mqs.json').read_text())
+    return dict(triangles=r['triangles'], copper_R_ohm=r['copper_R_ohm'], copper_L_H=r['copper_L_H'],
+                peak_H_Am=r['peak_H_Am'])
+
+
+def boost_circuit(out):
+    pytest.importorskip('triangle')
+    from pcbqs.circuit import model as M
+    from pcbqs.circuit.engine import run
+    c, = run(M.template('boost'), Path(out), log=lambda *a: None, copper=True)['cases']
+    return dict(load_power_W=c['load_power_W'], efficiency=c['efficiency'], duty=c['knobs']['drives.pwm.duty'],
+                copper_loss_W=c['copper']['loss_W'])
+
+
 CASES = {'cm5_near_field': (CM5, cm5_near_field), 'wpthb_pdn': (WPTHB, wpthb_pdn),
-         'wpthb_circuit': (WPTHB, wpthb_circuit)}
+         'wpthb_circuit': (WPTHB, wpthb_circuit), 'buck_pdn': (BUCK, buck_pdn),
+         'buck_near_field': (BUCK, buck_near_field), 'boost_circuit': (BUCK, boost_circuit)}
 
 
 def _close(got, want, path=''):
@@ -85,11 +121,12 @@ def test_real_board_answers_unchanged(name, tmp_path):
     _close(run(tmp_path), want, name)
 
 
-if __name__ == '__main__' and '--update' in sys.argv:
+if __name__ == '__main__' and '--update' in sys.argv:          # --update [case ...]: those, or every one installed
     import tempfile
     stored = json.loads(DATA.read_text()) if DATA.is_file() else {}
+    only = [a for a in sys.argv[1:] if a != '--update']
     for name, (board, run) in CASES.items():
-        if board.is_file():
+        if board.is_file() and (not only or name in only):
             with tempfile.TemporaryDirectory(dir=Path.home()) as d:
                 stored[name] = run(d)
             print(f'{name}: updated')

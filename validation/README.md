@@ -136,10 +136,11 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   falls from −20% to −12%. Mesh limits remain.
   - The face correction removed each pair's own opposite-mode inductance but not the coupling between
     neighbouring pairs. On CM5 the opposite modes were then nearly free and coupled, and GMRES stalled at 1–10 MHz
-    (residual 1e-3 after 500 iterations). `face_correction='overlap'` (experimental) also removes the coupling of
-    pairs whose edges share a triangle, as the slab's Gram terms do. CM5 then converges at every frequency
-    (220–325 iterations). The plane return's 100 MHz resistance goes from −12.9% to −7.2% against FastHenry; the
-    strip loop is unchanged.
+    (residual 1e-3 after 500 iterations). An overlap correction (`face_correction='overlap'`, since removed with the
+    face correction itself on 2026-11-10, when `conductor_loss='slab'` became two face sheets by default) also
+    removed the coupling of pairs whose edges share a triangle, as the slab's Gram terms do. CM5 then converged at
+    every frequency (220–325 iterations); the plane return's 100 MHz resistance went from −12.9% to −7.2% against
+    FastHenry, the strip loop unchanged.
 - **A real converter loop: CM5 MINIMA's U702 input loop** (`mqs_cm5.py`, `images/mqs_cm5.png`). Six layers of
   +5V and GND copper inside 9.4 x 13.7 mm, 17 vias. Each capacitor is a copper bridge across its pads, and the
   port is across the 0.2 mm gap between U702's VIN pad and the GND pad beside it, so all three tools see the same
@@ -191,6 +192,19 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
     is the two faces' coupling through the copper, which the stacked sheets have. `pcbqs.sparams` uses six
     rings whenever it solves the charge or the two faces; the circuit's copper and the near field do not yet.
 
+## Edge rings
+
+Graded cells along the copper's edges (`edge_rings`, `edge_width`), which resolve the edge charge and the edge
+current. The scripts behind the CHANGELOG's figures, against stored answers (`results/fastercap`, FasterCap;
+`results/face_study`, FastHenry) or a solver beside it; figures as they run on 2026-11-14:
+
+| Script | Case | Plain cells | With rings |
+|---|---|---|---|
+| `edge_rings_gap.py traces_air` | two traces 0.1 mm apart, capacitance against FasterCap, 0.5 mm cells | self −10.1%, mutual −22.9% | 6 rings 0.5 mm wide −3.6% / −6.3%; 0.25 mm wide −2.8% / −4.3%; 10 rings −2.5% / −3.3% (the CHANGELOG's −2.5% / −3.6%) |
+| `edge_rings_thru.py` | the thru with the charge, \|S11\| against the 2D field solver's line | +8.8% (the CHANGELOG's) | within 0.1% (6 rings) |
+| `edge_rings_demo.py` | demo_transition against mom25d, max \|dS\| at 1 GHz | 0.040 | 0.019 (`sparams`'s default) |
+| `edge_rings_faces.py 1.6,0.035` | a 1 mm trace 1.6 mm over a plane, R at 1 / 10 / 100 MHz against FastHenry, one sheet | −4.8 / −28 / −37% | 6 rings −0.5 / −15 / −22%; 10 rings −0.2 / −14 / −18% |
+
 ## Not done yet
 
 - **Measurement.** VNA shunt-through on a PDN, and a near-field probe at 1–3 mm, on wpthb.
@@ -206,6 +220,7 @@ python validation/mqs_fasthenry.py [loop plane_return]                          
 python validation/mqs_cm5.py geometry|pcbqs DMAX [SHEETS] [hier] [overlap]|palace H...|fasthenry P...|figure|report
 python validation/thermal_elmer.py [05_buck_synchronous ...] | --wpthb          # + ../kicad2ems-fem/src
 python validation/dc_elmer.py --plot        # redraw from saved results (also mqs_palace.py --plot)
+python validation/edge_rings_gap.py traces_air 0.5: 0.5:edge_rings=6    # the edge-ring scripts (no other solver)
 ```
 
 FastHenry 3.0 (MIT, FastFieldSolvers' Linux fixes) is K&R C that GCC 15+ rejects by default (C23: `f()` means no

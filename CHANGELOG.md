@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **Regressions that run anywhere (R-C10).** The buck example's DC drop and PDN, its near field and the boost
+  example on its own copper are stored answers too (tests/test_regression_boards.py), on the circuit examples'
+  boards in the repository: CI checks real-board answers now, where the CM5 and wpthb cases skip. The edge-ring
+  scripts behind this CHANGELOG's figures are in `validation/` (`edge_rings_*.py`) with the FasterCap and FastHenry
+  answers they compare against (`validation/results`), and the README gives their figures as they run today (two
+  traces 0.1 mm apart: 6 rings −3.6 % / −6.3 %; the −2.5 % / −3.6 % above takes 10). The validation README no longer
+  offers `face_correction`, removed on 2026-11-10.
 - **The circuit tool's leftovers (R-F1).** wpthb's coils carry their fitted core-loss resistance (`core_R_ohm`,
   30.77 kohm) in place of `loss_model`, `Rac_ref_ohm` and `loss_reference_Hz`, which a fit at every deck build
   turned into it for them alone; `pcbqs.wpt.fit_core_resistance` makes such a value from a measured AC resistance.
