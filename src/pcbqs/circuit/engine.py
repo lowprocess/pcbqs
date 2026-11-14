@@ -68,8 +68,12 @@ def settings(model):
 
 def add_measures(deck, model):
     """The deck's measures: each part's power and the statistics of its type, then the model's own."""
+    wound = {r for g in deck.coupled for r in g}
     for ref, kind in deck.kinds.items():
         deck.measures[f"part.{ref}.power_W"] = ('AVG', f"@{ref}.V@*@{ref}.I@")
+        own = deck.own_loss(ref) if ref in wound else None          # a coupled winding: its V·I is also the power
+        if own:                                                     # it passes on; its own loss is its resistances'
+            deck.measures[f"part.{ref}.loss_W"] = ('AVG', own)
         for name, (stat, expr) in PART_STATS[kind].items():
             deck.measures[f"part.{ref}.{name}"] = (stat, expr.replace('{r}', ref))
     for i in range(len(deck.ports)):                                # the board's copper, port by port

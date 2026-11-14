@@ -91,7 +91,9 @@ and `waveforms.png`:
 
 - `knobs`, `targets` (what each reached), `measures` (the model's own)
 - `source_power_W`, `load_power_W`, `loss_W`, `efficiency`, `gate_drive_power_W`
-- `parts`: for every part its `power_W`; a switch and a diode: `avg_A`, `rms_A`, `peak_A`, `peak_V`; a capacitor:
+- `parts`: for every part its `power_W`; a coupled winding also its own loss `loss_W` (its resistances': its
+  `power_W` includes the power it passes on); a switch `gate_power_W` (its drive's, dissipated in its gate
+  resistance); a switch and a diode: `avg_A`, `rms_A`, `peak_A`, `peak_V`; a capacitor:
   `avg_V`, `ripple_V`, `rms_A`; an inductor: `avg_A`, `ripple_A`, `peak_A`, `rms_A`; a source and a load: `avg_V`,
   `avg_A`
 - `coupled`: each set of coupled inductors with the power the set loses (one winding alone passes power to the

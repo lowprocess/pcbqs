@@ -352,7 +352,7 @@ def circuit_report(res, folder=''):
         if c.get('copper'):
             loss.append((f"board copper ({c['copper'].get('board', '')})", c['copper']['loss_W']))
         if c.get('gate_drive_power_W'):
-            loss.append(('gate drives', -c['gate_drive_power_W']))
+            loss.append(('gate drives', c['gate_drive_power_W']))     # what the drives put in: their resistors'
         total = max(c.get('loss_W') or 0.0, 1e-30)
         out['sections'].append(dict(title=f"{c['name']}: where the {c.get('loss_W', 0):.4g} W goes", table=_table(
             ['part', 'loss (W)', '%'], [[r, w, 100 * w / total] for r, w in sorted(loss, key=lambda x: -x[1])

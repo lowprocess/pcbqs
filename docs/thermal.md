@@ -46,8 +46,10 @@ It is the DC drop's equation with thermal conductivities and a sink over the who
 sparse solve.
 
 `--circuit FOLDER` takes the board and the losses from a circuit run (`python -m pcbqs.circuit`): every part's
-average power, summed per footprint (a transformer's windings net to its loss). A source and a load are not on
-the board, nor is a part bound to a connector, and each is said.
+average power, summed per footprint. A coupled winding gives its own loss (`loss_W`: its resistances', the DCR and
+the core's), not its V·I, which is the power it passes to the other windings too; a switch's gate drive is counted
+on the switch (its gate resistance). A source and a load are not on the board, nor is a part bound to a connector,
+and each is said.
 
 In code:
 

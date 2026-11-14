@@ -204,6 +204,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Fixed
+- **The losses thermal takes from a circuit** (the stack review of 2026-11-14, R-A2 and R-A3). A coupled winding's
+  `power_W` is the power it passes to the other windings as well as its loss, and thermal took it as heat: wpthb's
+  primary on a footprint of its own got 10.47 W for the pair's 0.45 W. A coupled winding now has its own loss,
+  `loss_W` (its resistances' V²/R: the DCR, the core's), and thermal takes that; a run from before it is left out
+  with a note unless its windings share a footprint. The report's loss table subtracted the gate drives the loss
+  counts (wpthb: its rows 97.6 % of the loss); it adds them, and thermal counts a switch's `gate_power_W` on the
+  switch. Tested on the synchronous buck, the flyback and the phase-shifted bridge.
 - **Review of the full-bridge removal (2026-11-14).** What a code review of that change found, each with a test:
   - **A board with no copper ports** put every on-board pin on a node of its own; a part named `PCB...` broke the
     port spectrum; a probe on a node no enabled part is on stopped the run.

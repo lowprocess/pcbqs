@@ -181,14 +181,29 @@ def losses_of(case, model):
     `case` is one case of circuit.json, `model` the circuit model it ran. A source and a load are not on the board;
     nor is a part bound to a connector (a transformer on flying leads), one board.parts puts off it (null), or one
     whose pins are on two footprints (a winding between two test points: its loss is its own, not either's). Parts
-    bound to one footprint (the windings of a transformer; a part with one pin off the board) are summed."""
+    bound to one footprint (the windings of a transformer; a part with one pin off the board) are summed.
+
+    A coupled winding's V·I is the power it passes to the others as well as its loss: its own loss is its
+    resistances' (loss_W, which the run measures). A switch's gate drive is dissipated in its gate resistance:
+    counted on the switch."""
     bound = (model.get('board') or {}).get('parts', {})
     kinds = {p['ref']: p.get('type') for p in model.get('parts', [])}
-    out, left = {}, []
-    for ref, st in case.get('parts', {}).items():
-        w = float(st.get('power_W', 0.0))
+    parts = case.get('parts', {})
+
+    def footprints(ref):
         given = bound.get(ref, ref)
-        names = sorted({f for f in (given if isinstance(given, list) else [given]) if f})
+        return sorted({f for f in (given if isinstance(given, list) else [given]) if f})
+    out, left = {}, []
+    for ref, st in parts.items():
+        w = float(st.get('power_W', 0.0)) + float(st.get('gate_power_W', 0.0))
+        names = footprints(ref)
+        if st.get('coupled_with'):
+            if 'loss_W' in st:
+                w = float(st['loss_W'])
+            elif any(footprints(r) != names for r in st['coupled_with']):     # (a run before loss_W: only a group
+                left.append(f"{ref}: a coupled winding whose own loss the run did not measure (its V·I is the "  # on
+                            "power it passes on too): run the circuit again")       # one footprint sums to its loss)
+                continue
         if kinds.get(ref) in ('source', 'load'):
             left.append(f'{ref}: a {kinds[ref]}, not on the board')
         elif not names:

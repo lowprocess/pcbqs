@@ -80,6 +80,8 @@ class Circuit:
         self.signals = {}
         self.signal_signs = {}
         self.measures = {}
+        self.resistances = {}               # {ref: [(signal, ohm)]}: the resistances inside a part, whose V²/R is
+                                            # its own loss (a coupled winding's V·I is the power it passes on too)
         self.power_refs = []
         self.uic = False
         self.refs = set()
@@ -88,6 +90,19 @@ class Circuit:
         if name not in self.nodes:
             self.nodes[name] = f'n{len(self.nodes)}'
         return self.nodes[name]
+
+    def resistance(self, ref, label, n1, n2, ohm):
+        """A resistance of ref's between netlist nodes n1 and n2, its V²/R part of ref's own loss: kept as
+        (signal label, its vector, ohm), the signal made only where a measure asks for it (own_loss)."""
+        self.resistances.setdefault(ref, []).append((label, f'v({n1},{n2})' if n2 != '0' else f'v({n1})', ohm))
+
+    def own_loss(self, ref):
+        """The expression of ref's own loss, the sum of its resistances' V²/R (their signals made here); None
+        when it has none."""
+        terms = self.resistances.get(ref, [])
+        for label, vector, _ in terms:
+            self.signals[label] = vector
+        return '+'.join(f"@{label}@*@{label}@/{ohm:.17g}" for label, _, ohm in terms) or None
 
     def voltage(self, label, a, b='0'):
         na, nb = self.node(a), self.node(b)
@@ -126,6 +141,7 @@ class Circuit:
         if R:
             nxt = self.node('R:' + ref)
             self.lines.append(f'R_{ref}_series {n} {nxt} {R:.17g}')
+            self.resistance(ref, ref + '.R_V', n, nxt, R)
             n = nxt
         if L:  # series ESL carries the branch current
             branch = part.get('initial_I', part.get('initial_A') if kind == 'inductor' else None)
@@ -144,6 +160,7 @@ class Circuit:
         if part.get('leakage_ohm'):
             _positive(part['leakage_ohm'], ref + '.leakage_ohm')
             self.lines.append(f'R_{ref}_leak {input_node} {end} {part["leakage_ohm"]:.17g}')
+            self.resistance(ref, ref + '.leak_V', input_node, end, part['leakage_ohm'])
 
     def coil(self, ref, a, b, coil):
         L = coil['L_H']
@@ -167,6 +184,8 @@ class Circuit:
         rc = core_resistance(coil)
         if rc:
             self.lines.append(f'R_{ref}_core {mid} {end} {rc:.17g}')
+            self.resistance(ref, ref + '.core_V', mid, end, rc)
+        self.resistance(ref, ref + '.R_V', n, mid, max(R, 1e-12))
         self.power_refs.append(ref)
         self.signals[ref + '.winding_I'] = f'i(L_{ref})'
         self.voltage(ref + '.V', a, b)

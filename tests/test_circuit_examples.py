@@ -184,3 +184,29 @@ def test_a_capacitor_s_own_voltage_and_a_sampled_measure(tmp_path):
     bad['measures']['sampled']['samples'] = 2
     with pytest.raises(M.ModelError, match='samples'):
         M.validate(bad)
+
+
+@pytest.mark.parametrize('name', ['buck_synchronous', 'flyback', 'full_bridge_phase_shift'])
+def test_the_losses_thermal_and_the_report_take(solved, name):
+    """The report's loss table adds up to the loss, gate drives and all (they were taken away from it); thermal
+    takes a coupled winding's own loss (its resistances'), not its V·I, which is the power it passes on as well, and
+    a switch's gate drive with the switch."""
+    from pcbqs.reports import circuit_report
+    from pcbqs.thermal import losses_of
+    model, cases = solved(name)
+    for c in cases:
+        rep = circuit_report(dict(cases=[c], name=name))
+        (table,) = [s['table'] for s in rep['sections'] if 'goes' in s['title']]
+        assert sum(r[1] for r in table['rows']) == pytest.approx(c['loss_W'], rel=1e-3, abs=1e-9)
+        wound = [r for g in c['coupled'] for r in g['inductors']]
+        for g in c['coupled']:                                    # the windings' own losses: the group's loss
+            own = sum(c['parts'][r]['loss_W'] for r in g['inductors'])
+            assert all(c['parts'][r]['loss_W'] >= 0 for r in g['inductors'])
+            assert own == pytest.approx(g['power_W'], abs=2.5e-3 * c['source_power_W'])
+        each = dict(model, board=dict(parts={r: f"T{i}" for i, r in enumerate(wound)}))     # each on a footprint
+        heat, _ = losses_of(c, each)
+        for i, r in enumerate(wound):
+            assert heat.get(f"T{i}", 0.0) == pytest.approx(max(c['parts'][r]['loss_W'], 0), abs=1e-12)
+        for ref, p in c['parts'].items():
+            if p['type'] == 'switch':
+                assert heat[ref] == pytest.approx(p['power_W'] + p['gate_power_W'])
