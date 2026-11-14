@@ -132,11 +132,11 @@ def export(model, summary, copper, out, log=print):
     largest values, the files). The copper's solver model is made once, its response once for each period."""
     from .._cli import load_board
     from ..mqs_ports import CopperPorts
-    from .copper import board_file, geometry, net_name
+    from .copper import board_file, model_of, net_name
     s = settings(model)
     board = load_board(str(board_file(model)))
     log("Fields: the copper's currents and charges")
-    q, ports, _ = geometry(model, board, log)
+    q, ports, _ = model_of(copper, model, board, log)            # (prepare's, in the same run: not meshed again)
     if [p['name'] for p in ports] != [p['name'] for p in copper['ports']]:
         raise ValueError("the copper's ports are not the ones the circuit ran with: run again")
     x, y, z = grid(q, s)

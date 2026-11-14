@@ -31,6 +31,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `tools/benchmark_ports.py` runs on the new model.
 
 ### Changed
+- **The field export takes the copper's model the run made** (R-D3, its first part): the same copper had been meshed
+  and filled again (the buck with copper and fields: 49.0 s for 54.5). Its charges' model (with capacitance) and the
+  extraction at each harmonic are still the export's own.
 - **The PDN's sweep factorises once a frequency** (R-D12): the bare network, the parts added by Woodbury's identity
   (`RailPDN.sweep`), where the loaded and the bare impedance had each factorised (320 factorisations, 5.9 s of the
   CM5 +5V rail's 22.3 s); 3.7 times faster on the rail tests' board, to 7e-9.

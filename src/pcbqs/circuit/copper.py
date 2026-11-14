@@ -183,6 +183,16 @@ def fingerprint(model, path, fs):
     return h.hexdigest()
 
 
+_MODELS = {}                    # {fingerprint: (MQS, ports, same)}: the copper's model as prepare made it, kept for the
+                                # field export of the same run (it had meshed and filled the same copper again)
+
+
+def model_of(copper, model, board, log=print):
+    """The copper's (MQS, ports, same) for a prepared copper dict: the one prepare made in this process, else made."""
+    got = _MODELS.get(copper.get('fingerprint'))
+    return got if got is not None else geometry(model, board, log)
+
+
 def prepare(model, out, log=print):
     """The copper of the model's board, ready for the deck: {file, ports, model (R_ohm, L_H, foster: the passive
     fit), pins {(ref, k): terminal}, same, absent, fit_error, fingerprint}. Extracted once for a model and
@@ -199,6 +209,8 @@ def prepare(model, out, log=print):
     if saved.get('fingerprint') != key:
         log(f"Extracting the copper of {path.name}: {len(terminals)} pads on {len({n for _, n in terminals.values()})} nets")
         q, ports, same = geometry(model, board, log)
+        _MODELS.clear()                                             # (one board's at a time: its kernels are large)
+        _MODELS[key] = (q, ports, same)
         if ports:
             response = CopperPorts(q).extract(fs, log=log)
             fitted = reduce_copper(foster_equivalent(response), response,
