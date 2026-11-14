@@ -1,4 +1,5 @@
-"""KiCad connectivity and simulation-model editing, without Qt or RF dependencies.
+"""KiCad connectivity, without Qt or RF dependencies: what a schematic or a netlist has (circuit/kicad.py takes it
+into a circuit model).
 
 KiCad sources are read-only. XML netlists can be read without KiCad installed;
 .kicad_sch files are exported by the installed kicad-cli to a temporary file.
@@ -17,7 +18,6 @@ import xml.etree.ElementTree as ET
 from .pdn.rail import parse_value
 
 PASSIVES=('resistor','capacitor','inductor')
-RESERVED={'PRIMARY','SECONDARY','CSECONDARY','LOAD','RSOURCE','LSOURCE'}
 
 
 def engineering_value(value):
@@ -31,55 +31,6 @@ def engineering_value(value):
         except ValueError:number=parse_value(text)
     if number is None or not math.isfinite(number):raise ValueError('Expected a finite number or SI value, such as 33n or 5m')
     return number
-
-
-def terminal_net(config,terminal):
-    if terminal=='0':return 'GND'
-    if terminal.startswith('NET:'):
-        if not terminal[4:]:raise ValueError('NET: needs a net name')
-        return terminal[4:]
-    if terminal in config.get('terminals',{}):return config['terminals'][terminal]
-    if terminal.startswith('SEC:'):return terminal
-    raise ValueError('Unknown terminal '+terminal+'; choose a terminal or use NET:name')
-
-
-def validate_edit(config):
-    """Catch invalid references/connections before an edited model reaches ngspice."""
-    seen=set(RESERVED)
-    for part in [*config.get('components',[]),*config.get('switches',[])]:
-        ref=part.get('ref','')
-        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',ref):raise ValueError('Invalid component reference: '+ref)
-        if ref.upper() in seen:raise ValueError('Duplicate or reserved component reference: '+ref)
-        seen.add(ref.upper())
-        for pin in ['a','b']:
-            terminal=part.get(pin,'');terminal_net(config,terminal)
-            if terminal.startswith('SEC:'):raise ValueError('Internal receiver nodes use the receiver controls; choose a PCB terminal or NET:name')
-        if part in config.get('components',[]):
-            if part.get('type') not in PASSIVES:raise ValueError(ref+': unsupported passive type')
-            if part.get('enabled',True) and engineering_value(part.get('value',''))<=0:raise ValueError(ref+': value must be positive; specify a finite resistance for a zero-ohm link')
-            for key in ['ESR_ohm','ESL_H','DCR_ohm']:
-                if key in part and engineering_value(part[key])<0:raise ValueError(ref+': '+key+' must be nonnegative')
-            if 'bias_factor' in part and engineering_value(part['bias_factor'])<=0:raise ValueError(ref+': bias factor must be positive')
-            if part.get('leakage_ohm',0)<0:raise ValueError(ref+': leakage resistance must be nonnegative')
-        else:
-            model={**config.get('switch_model',{}),**part.get('model',{})}
-            if model.get('type','switch') not in ('ideal','switch','mosfet','vdmos','subcircuit'):raise ValueError(ref+': unknown switch model')
-            for key in ['Ron_ohm','Roff_ohm','gate_V','rise_s','fall_s']:
-                if key in model and engineering_value(model[key])<=0:raise ValueError(ref+': '+key+' must be positive')
-            for key in ['gate_R_ohm','dead_time_s','Cds_F','Cgd_F','Cgs_F','diode_TT_s','package_L_H','source_L_H']:
-                if key in model and engineering_value(model[key])<0:raise ValueError(ref+': '+key+' must be nonnegative')
-    for key in ['secondary_C_F','load_ohm']:
-        if key in config and engineering_value(config[key])<=0:raise ValueError(key+' must be positive, or blank for automatic tuning')
-    metadata=config.get('schematic',{})
-    if not isinstance(metadata,dict):raise ValueError('schematic metadata must be an object')
-    source=metadata.get('source',{})
-    if not isinstance(source,dict) or not isinstance(source.get('components',[]),list):raise ValueError('Invalid schematic source metadata')
-    if any(not isinstance(c,dict) or not {'ref','value','kind','pins'}<=set(c) or not isinstance(c['pins'],list) or any(not isinstance(p,dict) or not {'number','net'}<=set(p) for p in c['pins']) for c in source.get('components',[])):raise ValueError('Invalid schematic component metadata')
-    positions=metadata.get('positions',{})
-    if not isinstance(positions,dict) or any(not isinstance(p,(list,tuple)) or len(p)!=2 or any(not isinstance(v,(int,float)) or not math.isfinite(v) for v in p) for p in positions.values()):raise ValueError('Schematic positions must be finite [x, y] coordinates')
-    from .power_bridge import validate
-    validate(config)
-    return config
 
 
 def _pin_sort(pin):
@@ -153,19 +104,6 @@ def read_schematic(path,timeout=120):
     doc.update(path=str(path),kind='kicad_sch',sha256=hashlib.sha256(path.read_bytes()).hexdigest());return doc
 
 
-def import_status(component,config):
-    ref=component['ref'];existing=next((p for p in config.get('components',[]) if p['ref']==ref),None)
-    switch=next((p for p in config.get('switches',[]) if p['ref']==ref),None)
-    if component['dnp']:return 'DNP — imported disabled',False
-    if component['exclude_from_sim']:return 'Excluded from simulation',False
-    if existing and component['supported_passive']:
-        if existing['type']!=component['kind']:return 'Type differs — review before applying',False
-        return 'Update configured passive',True
-    if switch and component['kind']=='mosfet':return 'Configured switch — optional pin mapping; gate drive stays configured',False
-    if component['supported_passive']:return 'Available passive — select to add',False
-    return 'Not modeled automatically — inspect pins/fields',False
-
-
 def _parasitics(component):
     out={};fields={k.lower():v for k,v in component['fields'].items()}
     for key,names in [('ESR_ohm',['esr','esr_ohm','sim.esr']),('ESL_H',['esl','esl_h','sim.esl']),('DCR_ohm',['dcr','dcr_ohm','sim.dcr'])]:
@@ -175,55 +113,3 @@ def _parasitics(component):
             if value<0:raise ValueError(component['ref']+': negative '+key)
             out[key]=value;break
     return out
-
-
-def primary_bank(config):
-    try:
-        a=terminal_net(config,config['bridge_terminals'][0]);b=terminal_net(config,config['primary_terminals'][0])
-        return [p for p in config['components'] if p.get('enabled',True) and p.get('type')=='capacitor' and {terminal_net(config,p['a']),terminal_net(config,p['b'])}=={a,b}]
-    except (KeyError,ValueError):return []
-
-
-def sync_primary_bank(before,after):
-    old=sum(p['value']*p.get('bias_factor',1) for p in primary_bank(before));new=sum(p['value']*p.get('bias_factor',1) for p in primary_bank(after))
-    if old>0 and new>0 and not math.isclose(old,new,rel_tol=1e-12) and math.isclose(before.get('primary_C_F',0),old,rel_tol=1e-8):after['primary_C_F']=new
-
-
-def apply_import(config,document,references,update_connections=False):
-    result=copy.deepcopy(config);byref={p['ref']:p for p in result['components']};switches={p['ref']:p for p in result.get('switches',[])};source={p['ref']:p for p in document['components']}
-    for ref in references:
-        if ref not in source:raise ValueError('Unknown imported reference '+ref)
-        part=source[ref]
-        if part['supported_passive']:
-            existing=byref.get(ref)
-            if ref in switches:raise ValueError(ref+' is already configured as a switch')
-            if existing is None:
-                existing=dict(ref=ref,type=part['kind'],value=part['value_si']);result['components'].append(existing);byref[ref]=existing
-                reconnect=True
-            else:reconnect=update_connections
-            value=part['value_si']
-            if isinstance(existing.get('value'),(int,float)) and math.isclose(existing['value'],value,rel_tol=1e-14):value=existing['value']
-            existing.update(type=part['kind'],value=value)
-            if part['dnp'] or part['exclude_from_sim'] or 'enabled' in existing:existing['enabled']=not(part['dnp'] or part['exclude_from_sim'])
-            existing.update(_parasitics(part))
-            if reconnect:
-                pins=part['pins'];old_a=terminal_net(config,existing['a']) if 'a' in existing else None
-                if old_a==pins[1]['net']:pins=list(reversed(pins))
-                for key,pin in zip(['a','b'],pins):
-                    terminal=ref+':'+pin['net'];result.setdefault('terminals',{})[terminal]=pin['net'];existing[key]=terminal
-        elif ref in switches and part['kind']=='mosfet':
-            if update_connections:
-                for role in ['D','S']:
-                    if len({p['net'] for p in part['pins'] if p['name'].upper()==role})!=1:raise ValueError(ref+': ambiguous '+role+' pin nets; map connections manually')
-                pins={p['name'].upper():p for p in part['pins']}
-                for key,name in [('a','D'),('b','S')]:
-                    if not pins[name]['net']:raise ValueError(ref+': unconnected '+name)
-                    terminal=ref+':'+pins[name]['net'];result.setdefault('terminals',{})[terminal]=pins[name]['net'];switches[ref][key]=terminal
-        else:raise ValueError(ref+': assign a supported simulation model manually')
-    result.setdefault('schematic',dict(format=1))['source']=copy.deepcopy(document)
-    sync_primary_bank(config,result);validate_edit(result);return result
-
-
-if __name__=='__main__':
-    import argparse
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('source');args=parser.parse_args();print(json.dumps(read_schematic(args.source),indent=2))

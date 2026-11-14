@@ -495,6 +495,10 @@ def run_case(model, point, out, log=print, copper=None):
     reported = a['search_reltol']
     if pwl:
         reported = None                         # no tolerance: each interval's solution is exact
+        log(label + "reported run: the steady state, sampled as finely as the circuit rings")
+        result, deck, stats, _ = run_once(resolved, None, 0, trials / 'final', a, None, log, label, final=True,
+                                          copper=with_copper)
+        folder = trials / 'final'
         notes += getattr(deck, 'engine_notes', [])
     elif a['strict'] and strict < a['search_reltol']:
         final = trials / 'final'

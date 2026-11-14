@@ -405,9 +405,8 @@ openEMS simulation at the same frequency.
 
 ## Nonlinear operational circuits
 
-`python -m pcbqs.power_circuit` supplies selectable switches/MOSFET/vendor
-subcircuits, component parasitics, the wpthb input filter, coupled receiver
-matching and actual electrical transient simulation through ngspice. A passive
-broadband copper-terminal equivalent feeds the circuit; its periodic terminal
-currents drive the original MQS copper field response. See
-[component models, matching and time-domain inference](power-circuit.md).
+`python -m pcbqs.circuit` simulates any circuit of parts, nodes and drives (switches, MOSFET or vendor subcircuits
+in ngspice, component parasitics, coupled windings), with the board's copper between its parts' pads as a
+passive broadband multi-port model (`--copper`) whose periodic terminal currents drive the MQS copper field
+response (`--fields`). See [circuits](circuit.md); the wpthb bridge and its coupled receiver are
+`data/wpthb_bridge.json`.

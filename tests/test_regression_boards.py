@@ -3,7 +3,7 @@ answers is seen (C4-C6 were drift of this kind). Skipped where the board is not 
 
     CM5 U702 near field (python -m pcbqs.mqs)     /usr/share/kicad/demos/cm5_minima (KiCad's demos)
     wpthb DC drop and PDN (python -m pcbqs.pdn)   ~/Desktop/wpthb (the as-built 24 V bridge)
-    wpthb circuit, 90 kHz 10 W, with copper        tests/data/wpthb_circuit.json (python -m pcbqs.power_circuit)
+    wpthb circuit, 90 kHz 10 W, with copper        pcbqs's data/wpthb_bridge.json (python -m pcbqs.circuit)
 
 A deliberate change to these answers: python tests/test_regression_boards.py --update, then review the diff of
 tests/data/regression_boards.json.
@@ -46,14 +46,18 @@ def wpthb_pdn(out):
 
 def wpthb_circuit(out):
     pytest.importorskip('kicad2ems')
-    from pcbqs.power_circuit import main
-    main([str(Path(__file__).parent / 'data' / 'wpthb_circuit.json'), '--board', str(WPTHB), '--copper',
-          '--frequencies', '90000', '--powers', '10', '--out', str(out)])
-    r = json.loads((Path(out) / 'power-circuit.json').read_text())
-    c, = r['cases']
-    return {k: c[k] for k in ('load_power_W', 'input_power_W', 'efficiency', 'phase_deg', 'primary_rms_A',
-                              'bus_ripple_V')}
-
+    import pcbqs
+    from pcbqs.circuit.__main__ import main
+    model = json.loads((Path(pcbqs.__file__).parent / 'data' / 'wpthb_bridge.json').read_text())
+    model['sweep'] = {'parameters.f': [90000], 'parameters.P': [10]}
+    path = Path(out) / 'wpthb_bridge.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(model))
+    main([str(path), '--board', str(WPTHB), '--copper', '--out', str(Path(out) / 'run')])
+    c, = json.loads((Path(out) / 'run' / 'circuit.json').read_text())['cases']
+    return dict(load_power_W=c['load_power_W'], input_power_W=c['source_power_W'], efficiency=c['efficiency'],
+                phase_deg=c['knobs']['drives.legb.phase_deg'], primary_rms_A=c['measures']['primary_rms_A'],
+                copper_loss_W=c['copper']['loss_W'])
 
 CASES = {'cm5_near_field': (CM5, cm5_near_field), 'wpthb_pdn': (WPTHB, wpthb_pdn),
          'wpthb_circuit': (WPTHB, wpthb_circuit)}

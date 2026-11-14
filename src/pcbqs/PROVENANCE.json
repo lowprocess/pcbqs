@@ -46,20 +46,8 @@
       "sha256": "a146602d2cfd0dee76ee48a4b43a9d68150b41529a3a09221aa8f8476c6fd5d1",
       "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
     },
-    "mom25d/src/mom25d/power_circuit.py": {
-      "sha256": "b94b138329ba84b30d54a25f06d3262038d364b0a58fa6658093f99b56e325ca",
-      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
-    },
-    "mom25d/src/mom25d/power_bridge.py": {
-      "sha256": "9f94b1588186444730437c48129ba345164b790cb98329571588b69a4917cec1",
-      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
-    },
     "mom25d/src/mom25d/power_spice.py": {
       "sha256": "06cd2ecc779072cbe3fc84c82d396d21fae9508faed9b28eeebd95eba73cfe62",
-      "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
-    },
-    "mom25d/src/mom25d/power_report.py": {
-      "sha256": "a85d40be7ca67112c8cc306f93ddf4d975ec5b2803a90527cc7db79a52abf0bb",
       "revision": "bc5449350f529050e6897158e451db6f56b6ae96"
     },
     "mom25d/src/mom25d/power_waveforms.py": {

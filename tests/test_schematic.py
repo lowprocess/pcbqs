@@ -1,12 +1,10 @@
-"""Connectivity import, selective model updates and input preservation."""
+"""KiCad connectivity: a netlist's parts, pins, fields and exclusions, read without changing the source."""
 import copy
 import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import pytest
-from pcbqs.power_circuit import template
-from pcbqs.schematic import (engineering_value,read_netlist,apply_import,import_status,
-    validate_edit,sync_primary_bank,read_schematic)
+from pcbqs.schematic import engineering_value,read_netlist,read_schematic
 
 
 def netlist(tmp_path):
@@ -53,37 +51,6 @@ def test_netlist_preserves_pins_hierarchy_fields_and_exclusions(tmp_path):
     assert c['RNEW']['supported_passive'] and not c['RNC']['supported_passive'] and not c['RZERO']['supported_passive']
 
 
-def test_selective_update_preserves_parasitics_and_does_not_mutate_inputs(tmp_path):
-    doc=read_netlist(netlist(tmp_path));original=template();snapshot=copy.deepcopy(original);old=next(p for p in original['components'] if p['ref']=='C25')
-    updated=apply_import(original,doc,['C25']);part=next(p for p in updated['components'] if p['ref']=='C25')
-    assert original==snapshot and part['a']==old['a'] and part['b']==old['b']
-    assert part['value']==pytest.approx(47e-9) and part['ESR_ohm']==.012 and part['ESL_H']==old['ESL_H']
-    assert updated['primary_C_F']==pytest.approx(113e-9)
-    assert 'RNEW' not in {p['ref'] for p in updated['components']}
-    assert updated['switch_model']==original['switch_model']
-    assert import_status(next(p for p in doc['components'] if p['ref']=='C17'),original)[1] is False
-
-
-def test_add_passive_and_explicit_connection_update(tmp_path):
-    doc=read_netlist(netlist(tmp_path));cfg=template();updated=apply_import(cfg,doc,['RNEW','C17','Q1'],update_connections=True)
-    parts={p['ref']:p for p in updated['components']}
-    assert parts['RNEW']['value']==4700 and updated['terminals'][parts['RNEW']['a']]=='/receiver/VOUT'
-    assert parts['C17']['enabled'] is False
-    sw=next(p for p in updated['switches'] if p['ref']=='Q1')
-    assert updated['terminals'][sw['a']]=='VHB' and updated['terminals'][sw['b']]=='/HR_SW'
-    assert updated['switch_model']==cfg['switch_model']
-    with pytest.raises(ValueError,match='manually'):apply_import(cfg,doc,['U1'])
-
-
-def test_reference_override_and_optional_metadata_are_respected(tmp_path):
-    cfg=template();cfg['primary_C_F']=100e-9;after=apply_import(cfg,read_netlist(netlist(tmp_path)),['C25']);assert after['primary_C_F']==100e-9
-    before=template();after=copy.deepcopy(before);after['primary_C_F']=120e-9;sync_primary_bank(before,after);assert after['primary_C_F']==120e-9
-    bad=copy.deepcopy(cfg);bad['components'].append(dict(ref='LOAD',type='resistor',value=1,a='0',b='NET:VIN'))
-    with pytest.raises(ValueError,match='reserved'):validate_edit(bad)
-    bad=copy.deepcopy(cfg);bad['components'][0]['a']='missing'
-    with pytest.raises(ValueError,match='Unknown terminal'):validate_edit(bad)
-
-
 def test_reject_entities_and_wrong_xml(tmp_path):
     path=tmp_path/'bad.xml';path.write_text('<!DOCTYPE export [<!ENTITY x "a">]><export/>')
     with pytest.raises(ValueError,match='DTD'):read_netlist(path)
@@ -104,20 +71,3 @@ def test_schematic_export_uses_temporary_output_and_preserves_original(tmp_path,
     monkeypatch.setattr(schematic.subprocess,'run',export);doc=read_schematic(source)
     assert source.read_text()=='(kicad_sch original)' and doc['kind']=='kicad_sch'
     assert doc['path']==str(source.resolve()) and calls[0][-1]==str(source.resolve())
-
-
-def test_unchanged_value_import_preserves_physics_exactly(tmp_path):
-    cfg=template();doc=read_netlist(netlist(tmp_path));c=next(p for p in doc['components'] if p['ref']=='C25');part=next(p for p in cfg['components'] if p['ref']=='C25');c['value_si']=part['value']*(1+2e-16);c['fields']={}
-    imported=apply_import(cfg,doc,['C25']);imported.pop('schematic');assert imported==cfg
-
-
-@pytest.mark.parametrize('change',[
-    lambda c:c['components'][0].update(bias_factor=0),
-    lambda c:c['switches'][0].setdefault('model',{}).update(Ron_ohm=0),
-    lambda c:c.update(secondary_C_F=0),
-    lambda c:c.update(schematic={'positions':{'part:C1':[float('nan'),1]}}),
-    lambda c:c.update(schematic=None),
-])
-def test_invalid_editor_parameters_are_rejected(change):
-    cfg=template();change(cfg)
-    with pytest.raises(ValueError):validate_edit(cfg)

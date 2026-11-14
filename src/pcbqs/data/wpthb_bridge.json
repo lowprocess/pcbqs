@@ -1,0 +1,462 @@
+{
+ "format": 2,
+ "name": "wpthb: a phase-shifted full bridge driving a wireless-power link",
+ "description": "The 24 V full bridge of the wpthb board (Q1 to Q4 on VHB, its tank C25/C27/C30 and the primary coil on TP15/TP14), the input filter (R9, CA1 to CA4, L3) and a receiver: a coil like the primary, a series capacitor and a load. Leg B's phase is set so the load takes P. Secondary is assumed identical to the primary, not supplied receiver hardware. Target receiver power is obtained by adjusting phase at 24 V, not by imposing a fixed power sink. Switch and passive parasitics are editable engineering placeholders, not extracted manufacturer values. Coil core conductance is fitted to small-signal Q=155 at 125 kHz and held constant; broadband/large-signal/temperature behavior is not measured. Input filter is electrical; upstream copper, coil geometry, gate circuitry and environment coupling are not field-modeled. The receiver's capacitor and load are fixed: tuned and matched at 90 kHz.",
+ "parameters": {
+  "vin": 24,
+  "f": 90000.0,
+  "P": 10.0,
+  "c2": 1.3e-07,
+  "rload": 5.65
+ },
+ "parts": [
+  {
+   "ref": "VSUP",
+   "type": "source",
+   "nodes": [
+    "VIN",
+    "0"
+   ],
+   "dc_V": "vin",
+   "R_ohm": 0.05,
+   "L_H": 1e-07
+  },
+  {
+   "ref": "C19",
+   "type": "capacitor",
+   "value": 1e-06,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C20",
+   "type": "capacitor",
+   "value": 1e-05,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C21",
+   "type": "capacitor",
+   "value": 1e-05,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C22",
+   "type": "capacitor",
+   "value": 1e-05,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C23",
+   "type": "capacitor",
+   "value": 1e-05,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C24",
+   "type": "capacitor",
+   "value": 1e-06,
+   "ESR_ohm": 0.005,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "0",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "C25",
+   "type": "capacitor",
+   "value": 3.3e-08,
+   "ESR_ohm": 0.015,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "HL_AC",
+    "HL_SW"
+   ]
+  },
+  {
+   "ref": "C27",
+   "type": "capacitor",
+   "value": 3.3e-08,
+   "ESR_ohm": 0.015,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "HL_AC",
+    "HL_SW"
+   ]
+  },
+  {
+   "ref": "C30",
+   "type": "capacitor",
+   "value": 3.3e-08,
+   "ESR_ohm": 0.015,
+   "ESL_H": 8e-10,
+   "nodes": [
+    "HL_AC",
+    "HL_SW"
+   ]
+  },
+  {
+   "ref": "R9",
+   "type": "resistor",
+   "value": 0.005,
+   "nodes": [
+    "VIN",
+    "VBUS"
+   ]
+  },
+  {
+   "ref": "L3",
+   "type": "inductor",
+   "value": 5.6e-06,
+   "DCR_ohm": 0.03,
+   "ESL_H": 0,
+   "nodes": [
+    "VBUS",
+    "VHB"
+   ]
+  },
+  {
+   "ref": "CA1",
+   "type": "capacitor",
+   "value": 2.2e-05,
+   "ESR_ohm": 0.02,
+   "ESL_H": 1e-09,
+   "nodes": [
+    "VBUS",
+    "0"
+   ]
+  },
+  {
+   "ref": "CA2",
+   "type": "capacitor",
+   "value": 2.2e-05,
+   "ESR_ohm": 0.02,
+   "ESL_H": 1e-09,
+   "nodes": [
+    "VBUS",
+    "0"
+   ]
+  },
+  {
+   "ref": "CA3",
+   "type": "capacitor",
+   "value": 2.2e-05,
+   "ESR_ohm": 0.02,
+   "ESL_H": 1e-09,
+   "nodes": [
+    "VBUS",
+    "0"
+   ]
+  },
+  {
+   "ref": "CA4",
+   "type": "capacitor",
+   "value": 2.2e-05,
+   "ESR_ohm": 0.02,
+   "ESL_H": 1e-09,
+   "nodes": [
+    "VBUS",
+    "0"
+   ]
+  },
+  {
+   "ref": "Q1",
+   "type": "switch",
+   "nodes": [
+    "VHB",
+    "HR_SW"
+   ],
+   "drive": "legb",
+   "invert": false,
+   "model": {
+    "type": "vdmos",
+    "Ron_ohm": 0.008,
+    "Roff_ohm": 10000000000.0,
+    "rise_s": 2e-08,
+    "fall_s": 2e-08,
+    "dead_time_s": 1e-07,
+    "gate_V": 10,
+    "gate_R_ohm": 2,
+    "package_L_H": 1e-09,
+    "source_L_H": 5e-10,
+    "Cds_F": 5e-10,
+    "Cgd_F": 5e-11,
+    "Cgs_F": 1e-09,
+    "body_diode": true,
+    "diode_TT_s": 2e-08,
+    "diode_R_ohm": 0.02
+   }
+  },
+  {
+   "ref": "Q2",
+   "type": "switch",
+   "nodes": [
+    "VHB",
+    "HL_SW"
+   ],
+   "drive": "lega",
+   "invert": false,
+   "model": {
+    "type": "vdmos",
+    "Ron_ohm": 0.008,
+    "Roff_ohm": 10000000000.0,
+    "rise_s": 2e-08,
+    "fall_s": 2e-08,
+    "dead_time_s": 1e-07,
+    "gate_V": 10,
+    "gate_R_ohm": 2,
+    "package_L_H": 1e-09,
+    "source_L_H": 5e-10,
+    "Cds_F": 5e-10,
+    "Cgd_F": 5e-11,
+    "Cgs_F": 1e-09,
+    "body_diode": true,
+    "diode_TT_s": 2e-08,
+    "diode_R_ohm": 0.02
+   }
+  },
+  {
+   "ref": "Q3",
+   "type": "switch",
+   "nodes": [
+    "HR_SW",
+    "0"
+   ],
+   "drive": "legb",
+   "invert": true,
+   "model": {
+    "type": "vdmos",
+    "Ron_ohm": 0.008,
+    "Roff_ohm": 10000000000.0,
+    "rise_s": 2e-08,
+    "fall_s": 2e-08,
+    "dead_time_s": 1e-07,
+    "gate_V": 10,
+    "gate_R_ohm": 2,
+    "package_L_H": 1e-09,
+    "source_L_H": 5e-10,
+    "Cds_F": 5e-10,
+    "Cgd_F": 5e-11,
+    "Cgs_F": 1e-09,
+    "body_diode": true,
+    "diode_TT_s": 2e-08,
+    "diode_R_ohm": 0.02
+   }
+  },
+  {
+   "ref": "Q4",
+   "type": "switch",
+   "nodes": [
+    "HL_SW",
+    "0"
+   ],
+   "drive": "lega",
+   "invert": true,
+   "model": {
+    "type": "vdmos",
+    "Ron_ohm": 0.008,
+    "Roff_ohm": 10000000000.0,
+    "rise_s": 2e-08,
+    "fall_s": 2e-08,
+    "dead_time_s": 1e-07,
+    "gate_V": 10,
+    "gate_R_ohm": 2,
+    "package_L_H": 1e-09,
+    "source_L_H": 5e-10,
+    "Cds_F": 5e-10,
+    "Cgd_F": 5e-11,
+    "Cgs_F": 1e-09,
+    "body_diode": true,
+    "diode_TT_s": 2e-08,
+    "diode_R_ohm": 0.02
+   }
+  },
+  {
+   "ref": "PRIMARY",
+   "type": "inductor",
+   "nodes": [
+    "HL_AC",
+    "HR_SW"
+   ],
+   "value": 2.4e-05,
+   "DCR_ohm": 0.11,
+   "SRF_Hz": 7700000.0,
+   "Rac_ref_ohm": 0.12161003820347586,
+   "loss_model": "parallel_core",
+   "loss_reference_Hz": 125000
+  },
+  {
+   "ref": "SECONDARY",
+   "type": "inductor",
+   "nodes": [
+    "0",
+    "RX"
+   ],
+   "value": 2.4e-05,
+   "DCR_ohm": 0.11,
+   "SRF_Hz": 7700000.0,
+   "Rac_ref_ohm": 0.12161003820347586,
+   "loss_model": "parallel_core",
+   "loss_reference_Hz": 125000
+  },
+  {
+   "ref": "CSECONDARY",
+   "type": "capacitor",
+   "nodes": [
+    "RX",
+    "RX_LOAD"
+   ],
+   "value": "c2",
+   "ESR_ohm": 0.015,
+   "ESL_H": 8e-10
+  },
+  {
+   "ref": "LOAD",
+   "type": "load",
+   "nodes": [
+    "RX_LOAD",
+    "0"
+   ],
+   "resistance_ohm": "rload"
+  }
+ ],
+ "couplings": [
+  {
+   "inductors": [
+    "PRIMARY",
+    "SECONDARY"
+   ],
+   "k": 0.4
+  }
+ ],
+ "drives": {
+  "lega": {
+   "frequency_Hz": "f",
+   "duty": 0.5,
+   "phase_deg": 0
+  },
+  "legb": {
+   "frequency_Hz": "f",
+   "duty": 0.5,
+   "phase_deg": 60
+  }
+ },
+ "probes": {
+  "vhb": {
+   "voltage": [
+    "VHB",
+    "0"
+   ]
+  },
+  "vload": {
+   "voltage": [
+    "RX_LOAD",
+    "0"
+   ]
+  }
+ },
+ "measures": {
+  "primary_rms_A": {
+   "rms": "PRIMARY.winding_I"
+  },
+  "primary_peak_A": {
+   "max": "abs(PRIMARY.winding_I)"
+  },
+  "bus_ripple_V": {
+   "pp": "vhb"
+  }
+ },
+ "targets": [
+  {
+   "adjust": "drives.legb.phase_deg",
+   "range": [
+    1,
+    179
+   ],
+   "measure": "load_power_W",
+   "value": "P",
+   "initial": 60
+  }
+ ],
+ "sweep": {
+  "parameters.f": [
+   90000,
+   110000
+  ],
+  "parameters.P": [
+   5,
+   10,
+   20,
+   30
+  ]
+ },
+ "board": {
+  "parts": {
+   "R9": null,
+   "L3": [
+    null,
+    "L3"
+   ],
+   "CA1": null,
+   "CA2": null,
+   "CA3": null,
+   "CA4": null,
+   "PRIMARY": [
+    "TP15",
+    "TP14"
+   ],
+   "SECONDARY": null,
+   "CSECONDARY": null,
+   "LOAD": null,
+   "VSUP": null
+  },
+  "nets": {
+   "HL_AC": "/HL_AC",
+   "HR_SW": "/HR_SW",
+   "HL_SW": "/HL_SW"
+  },
+  "reference": {
+   "GND": "C20",
+   "VHB": "L3",
+   "HL_SW": "Q2",
+   "HR_SW": "TP14",
+   "HL_AC": "TP15"
+  },
+  "mesh": {
+   "coarse_mm": 3,
+   "fine_mm": 1.6,
+   "margin_mm": 2,
+   "workers": 8,
+   "backend": "openmp",
+   "fit_tolerance": 0.03
+  }
+ },
+ "analysis": {
+  "engine": "ngspice"
+ }
+}

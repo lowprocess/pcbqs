@@ -221,7 +221,6 @@ def write_dumps(exc, q, board, x, y, z, heights, Ht, Et, period):
     import shutil
     from shapely.geometry import box, shape
     from .._artifacts import Dump, write_info
-    from ..power_circuit import write_vtr
     if exc.exists():
         shutil.rmtree(exc)                                          # a rerun's frames: none of the last one's
     exc.mkdir(parents=True)
@@ -279,3 +278,15 @@ def picture(path, board, model, case, x, y, H, E, heights):
     fig.suptitle(model.get('name', '') + (f"  ({case['name']})" if case.get('sweep') else ''), fontsize=10)
     fig.savefig(path, dpi=100)
     plt.close(fig)
+
+
+def write_vtr(path, x, y, z, H):
+    """H on a rectilinear grid (x, y, one z) as a VTK file (ParaView)."""
+    def ascii(a):
+        return ' '.join(f'{v:.9g}' for v in np.asarray(a).ravel())
+
+    nx, ny = len(x), len(y)
+    extent = f'0 {nx - 1} 0 {ny - 1} 0 0'
+    path.write_text(
+        f'<VTKFile type="RectilinearGrid" version="0.1" byte_order="LittleEndian"><RectilinearGrid WholeExtent="{extent}"><Piece Extent="{extent}"><PointData Vectors="H"><DataArray type="Float32" Name="H" NumberOfComponents="3" format="ascii">{ascii(H.transpose(1, 0, 2))}</DataArray></PointData><Coordinates><DataArray type="Float64" format="ascii">{ascii(x)}</DataArray><DataArray type="Float64" format="ascii">{ascii(y)}</DataArray><DataArray type="Float64" format="ascii">{z}</DataArray></Coordinates></Piece></RectilinearGrid></VTKFile>'
+    )

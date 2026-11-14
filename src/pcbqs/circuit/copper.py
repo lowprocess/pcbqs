@@ -2,7 +2,9 @@
 A model's board: the copper between its parts' pads, as part of the circuit.
 
     "board": {"file": "06_boost.kicad_pcb",          # beside the model; a .kicad_pcb, or kicad2ems's board.json
-              "parts": {"V1": "J1", "R1": "J2"},     # a model part's footprint, when its reference differs
+              "parts": {"V1": "J1", "R1": "J2"},     # a model part's footprint, when its reference differs;
+                                                     # a footprint a pin (["TP15", "TP14"]: a coil soldered to two
+                                                     # test points); null: off the board (a pin's, or the part's)
               "nets": {"vbus": "+24V"},              # a model node's net on the board, when its name differs
               "reference": {"in": "C1"},             # the part whose pad is a net's node itself (else its first)
               "mesh": {"coarse_mm": 3, "fine_mm": 1.6, "fit_tolerance": 0.03}}
@@ -55,6 +57,13 @@ def net_name(model, node, nets):
     return node
 
 
+def footprint_of(model, ref, k):
+    """The footprint pin k of part `ref` is on: board.parts' (a name, a name a pin, or null: off the board), else
+    the part's own reference."""
+    fp = (model.get('board') or {}).get('parts', {}).get(ref, ref)
+    return fp[k] if isinstance(fp, list) else fp
+
+
 def pins(model, board):
     """Where each pin of the model is on the board: ({(ref, 0 | 1): terminal}, {terminal: (footprint, net)},
     [parts with no footprint]). A terminal is a footprint's pads on one net, named '<footprint>.<net>'."""
@@ -67,13 +76,20 @@ def pins(model, board):
         ref = part['ref']
         if not part.get('enabled', True):
             continue
-        fp = names.get(ref, ref)
-        if fp not in footprints:
-            if ref in names:
-                raise BoardError(f"board.parts: {ref} is given footprint {fp!r}, which the board does not have")
-            absent.append(ref)
-            continue
+        given = names.get(ref, ref)
+        if isinstance(given, list) and len(given) != len(part['nodes']):
+            raise BoardError(f"board.parts: {ref} has {len(part['nodes'])} pins, so a footprint a pin is "
+                             f"{len(part['nodes'])} names (null: that pin off the board)")
+        on_board = False
         for k, node in enumerate(part['nodes']):
+            fp = footprint_of(model, ref, k)
+            if fp is None:                                          # (null: kept off the board)
+                continue
+            if fp not in footprints:
+                if ref in names:
+                    raise BoardError(f"board.parts: {ref} is given footprint {fp!r}, which the board does not have")
+                continue
+            on_board = True
             net = net_name(model, node, known)
             if not footprints[fp].on({net}):
                 have = sorted({pad.net for pad in footprints[fp].pads if pad.net})
@@ -81,6 +97,8 @@ def pins(model, board):
                                  f"{', '.join(have) or 'no net'}")
             where[(ref, k)] = f"{fp}.{net}"
             terminals[f"{fp}.{net}"] = (fp, net)
+        if not on_board:
+            absent.append(ref)
     if not terminals:
         raise BoardError('none of the model\'s parts is a footprint of the board (board.parts names them when their '
                          'references differ)')
@@ -129,12 +147,14 @@ def geometry(model, board, log=print):
         mine = [t for t in dict.fromkeys(order) if terminals[t][1] == net]
         want = chosen.get(net) or next((chosen[n] for n in chosen if net_name(model, n, nets) == net), None)
         if want:
-            fp = (model.get('board') or {}).get('parts', {}).get(want, want)
-            if f"{fp}.{net}" not in mine:
+            given = (model.get('board') or {}).get('parts', {}).get(want, want)     # a footprint, or a part's (its
+            fp = next((f for f in (given if isinstance(given, list) else [given])   # pins' footprints: the one on
+                       if f and f"{f}.{net}" in mine), None)                        # this net)
+            if fp is None:
                 raise BoardError(f"board.reference: {want} has no pad on net {net!r}")
             reference[net] = f"{fp}.{net}"
         else:                                                       # where the board meets the outside: a source's
-            kind = {(model.get('board') or {}).get('parts', {}).get(p['ref'], p['ref']): p['type'] for p in model['parts']}
+            kind = {footprint_of(model, p['ref'], k): p['type'] for p in model['parts'] for k in range(len(p['nodes']))}
             rank = lambda t: dict(source=0, load=1).get(kind.get(terminals[t][0]), 2)   # pad, else a load's, else the first
             reference[net] = min(mine, key=rank)
     ports, same = [], {}
@@ -169,7 +189,6 @@ def prepare(model, out, log=print):
     its board and kept in <out>/copper-model.json."""
     from .._cli import load_board
     from ..mqs_ports import CopperPorts, foster_equivalent
-    from ..power_circuit import reduce_copper
     path = board_file(model)
     fs = frequencies(model)
     key = fingerprint(model, path, fs)
@@ -235,3 +254,50 @@ def port_currents(model, cu, currents):
             t = cu['same'].get(t, t)
             at[t] = at.get(t, 0.0) + (-i if k == 0 else i)
     return [at.get(p['terminal'], 0.0) for p in cu['ports']]
+
+
+def reduce_copper(model, response, tolerance=FIT_TOLERANCE):
+    """The copper's Foster fit with the modes left out whose share of the impedance is under `tolerance` at every
+    frequency of `response` (smallest first, while the fit stays within it): fewer states for the circuit."""
+    import copy
+    from ..mqs_ports import model_impedance, rl_error
+
+    result = copy.deepcopy(model)
+    s = 2j * np.pi * response.frequencies
+    target = response.impedance
+    norm = np.maximum(np.linalg.norm(target, axis=(1, 2)), 1e-30)
+    current = model_impedance(result, response.frequencies)
+    matrix = lambda kind: np.asarray(result[kind] if isinstance(kind, str) else result['foster'][kind]['R_ohm'])
+    candidates = []
+    for kind in ['L_H', *range(len(result.get('foster', [])))]:
+        A = matrix(kind)
+        e, V = np.linalg.eigh(A)
+        factor = s if isinstance(kind, str) else s / (s + result['foster'][kind]['pole_rad_s'])
+        for j, val in enumerate(e):
+            if val <= max(e.max() * 1e-8, 1e-20):
+                continue
+            part = val * np.outer(V[:, j], V[:, j])
+            delta = factor[:, None, None] * part
+            candidates.append((float(np.max(np.linalg.norm(delta, axis=(1, 2)) / norm)), kind, part, delta))
+    removed = 0
+    for _, kind, part, delta in sorted(candidates, key=lambda t: t[0]):
+        if np.max(np.linalg.norm(current - delta - target, axis=(1, 2)) / norm) <= tolerance:
+            current -= delta
+            A = matrix(kind) - part
+            if isinstance(kind, str):
+                result[kind] = A.tolist()
+            else:
+                result['foster'][kind]['R_ohm'] = A.tolist()
+            removed += 1
+    for part in [result, *result.get('foster', [])]:
+        key = 'L_H' if part is result else 'R_ohm'
+        A = np.asarray(part[key])
+        e, V = np.linalg.eigh((A + A.T) / 2)
+        part[key] = (np.zeros_like(A) if abs(e).max() < 1e-15 else (V * np.maximum(e, 0)) @ V.T).tolist()
+    result.update(
+        reduction_tolerance=tolerance,
+        removed_modes=removed,
+        retained_dynamic_modes=len(candidates) - removed,
+        relative_impedance_error=rl_error(result, response),
+    )
+    return result

@@ -13,9 +13,6 @@ it is running.
     python -m pcbqs.circuit boost.json --out result --fields          # and the H and E fields over the board
     python -m pcbqs.circuit --from-kicad board.kicad_pcb > model.json  # the parts of a KiCad design
 
-(`python -m pcbqs.power_circuit` is the older, format 1 tool for one circuit: a phase-shifted full bridge into a
-coupled receiver, with the board's copper. It is unchanged; its model will move to this format.)
-
 ## The model (format 2)
 
 ```json
@@ -95,28 +92,57 @@ its current reaches zero, at the instant that happens, so discontinuous conducti
 and the dead time's conduction through a body diode come out without being told. Everything after a run is the
 same: the targets' search, the parts' figures, the supply's currents, the report.
 
+What it models: a switch as its on resistance with its body diode and its drain-source capacitance (`Cds_F`, a
+state of its own, so turning on discharges it through the switch, as it does in ngspice's deck) and its package's
+inductances; a diode as a threshold and a resistance; capacitors with their ESR, ESL and leakage; inductors and
+windings (self-capacitance and core loss); coupled inductors; sources with a sine or a pulse; the board's copper.
+The targets are searched on the period's own samples; the reported run is sampled as finely as the circuit rings
+(the copper's inductance against a switch's capacitance, hundreds of MHz: `Plant.resolution`), and after each
+switching instant as finely as its fastest transient, so a capacitance discharged in picoseconds is in the
+averages (a part's power among them); RMS values and peaks are of the regular samples.
+
+The examples alone (2026-11-14; the time is the whole run, its targets' search included):
+
 | Example | ngspice | pwl | Agreement |
 |---|---|---|---|
-| Buck | 5.9 s | 0.3 s | duty 0.4462 / 0.4458, output ripple 6.75 / 6.74 mV, efficiency 93.63 / 93.67 % |
-| Synchronous buck | 39.9 s | 0.8 s | duty 0.2872 / 0.2881, inductor ripple 0.438 / 0.438 A, efficiency 98.2 / 98.9 % |
-| Boost | 13.8 s | 0.3 s | duty 0.5143 / 0.5139, output ripple 65.4 / 65.3 mV, efficiency 97.51 / 97.55 % |
-| Buck-boost | 17.2 s | 0.3 s | duty 0.5663 / 0.5660, efficiency 95.76 / 95.83 % |
-| Flyback (coupled inductors) | 11.3 s | 0.4 s | duty 0.3347 / 0.3355, switch peak 64.3 / 65.5 V, efficiency 82.1 / 81.7 % |
-| Resonant half bridge | 4.4 s | 0.8 s | tank current 1.971 / 1.971 A, efficiency 98.33 / 98.32 % |
-| Phase-shifted full bridge | 9.9 s | 0.8 s | phase 54.3 / 54.5°, currents within 0.1 %, efficiency 94.5 / 94.8 % |
-| Bridge rectifier on a sine | 0.4 s | 0.4 s | DC output 30.35 / 30.27 V, ripple 2.365 / 2.364 V, mains current 1.540 / 1.528 A |
-| Half-wave rectifier; RC filter on a pulse | 0.3 s; 0.6 s | 0.2 s | output and ripple within 0.4 % |
+| Buck | 5.8 s | 0.7 s | duty 0.4462 / 0.4458, output ripple 6.75 / 6.74 mV, efficiency 93.63 / 93.67 % |
+| Synchronous buck, 0.5 A | 39.9 s | 2.0 s | duty 0.2872 / 0.2867, inductor ripple 0.438 / 0.438 A, efficiency 98.17 / 98.24 % |
+| Boost | 13.9 s | 0.7 s | duty 0.5143 / 0.5139, output ripple 65.4 / 65.4 mV, efficiency 97.51 / 97.55 % |
+| Buck-boost | 17.3 s | 0.7 s | duty 0.5663 / 0.5660, efficiency 95.76 / 95.83 % |
+| Flyback (coupled inductors) | 11.3 s | 0.9 s | duty 0.3347 / 0.3355, switch peak 64.3 / 65.4 V, efficiency 82.1 / 81.7 % |
+| Resonant half bridge, 130 kHz | 4.2 s | 1.0 s | tank current 1.413 / 1.413 A, efficiency 98.14 / 98.15 % |
+| Phase-shifted full bridge | 9.9 s | 1.3 s | phase 54.34 / 54.31°, currents within 0.1 %, efficiency 94.50 / 94.56 % |
+| Bridge rectifier on a sine | 0.4 s | 0.5 s | DC output 30.35 / 30.27 V, ripple 2.365 / 2.364 V, mains current 1.540 / 1.528 A |
+| Half-wave rectifier; RC filter on a pulse | 0.3 s; 0.6 s | 0.3 s; 0.2 s | output and ripple within 0.4 % |
 
-What it is for is where the answer does not hang on a device: operating points, ripples, RMS currents, the
-conduction loss, a sweep of many points. What it leaves out is what makes the difference in the table: a switch
-is its on resistance or nothing (no capacitance, no gate charge, no edges: the synchronous buck's 12 mW of
-switching loss), a diode a threshold and a resistance (no junction capacitance, no recovery), a capacitor has
-no ESL (said in the result's notes). The spikes ngspice shows at hard-switched edges (the full bridge's 21 A in
-a switch, its bus ripple of 105 mV for 46 mV) are those capacitances' and are not in it. A sine source is two
-more states that turn at its frequency and a pulse a level that changes at its edges, so a rectifier on the
-mains runs too (a diode's line against its curve: the bridge's diodes lose 4 % more). A source with a
-piecewise-linear wave, a MOSFET model, a winding's self-capacitance and core loss, and the board's copper in
-the circuit (`--copper`) stop it with a line saying they are ngspice's.
+On their boards' copper (`--copper`: every part on its pads, the copper's R-L model between them; the copper's
+loss is its own dissipation, I^T R I and its Foster sections', not the ports' V x I, whose reactive parts cancel
+only in the sum):
+
+| Example | ngspice | pwl | Efficiency | Copper loss | Agreement |
+|---|---|---|---|---|---|
+| Half-wave rectifier | 0.5 s | 0.4 s | 94.28 / 94.26 % | 0.23 / 0.23 mW | output, ripple and peak within 0.4 % |
+| Bridge rectifier | 0.9 s | 1.0 s | 94.06 / 93.87 % | 5.00 / 4.93 mW | as alone |
+| Buck | 9.5 s | 0.9 s | 93.57 / 93.48 % | 7.47 / 7.04 mW | output and inductor ripple within 0.1 % |
+| Synchronous buck, 0.5 / 2 / 4 A | 22–50 s | 3.5–4 s | 98.18 / 98.22, 96.63 / 96.67, 94.12 / 94.14 % | 1.91 / 1.84, 8.45 / 8.19, 28.8 / 28.3 mW | output within 0.1 %, ripple 0.1 % |
+| Boost | 20.2 s | 1.0 s | 97.50 / 97.40 % | 2.32 / 1.94 mW | output, inductor ripple within 0.1 % |
+| Buck-boost | 21.6 s | 0.9 s | 95.75 / 95.54 % | 2.27 / 1.80 mW | as alone |
+| Flyback | 18.8 s | 1.4 s | 82.03 / 81.43 % | 4.27 / 4.21 mW | switch peak 64.3 / 65.1 V, primary peak 0.973 / 0.976 A |
+| Resonant half bridge, 3 points | 4–5 s | 3–6 s | within 0.03 % | within 1 % | tank and load RMS the same |
+| Phase-shifted full bridge | 26.4 s | 6.2 s | 94.45 / 94.47 % | 14.3 / 12.7 mW | phase, currents within 0.1 % |
+
+What it leaves out is where the tables differ. A switch's gate is ideal (no gate charge, no edge: ngspice's
+switch turns on over its rise time; its gate capacitances are said in the notes); a diode has no junction
+capacitance and no recovery (a constant Cj put a bridge rectifier's floating AC side on the junctions' charge,
+whose steady state the search could not pin down; ngspice's falls with the reverse voltage). On copper, the
+diodes' recovery and junction currents through the copper's loops are ngspice's alone: the copper loss of the
+buck, the boost, the buck-boost and the full bridge is 6 to 21 % lower. A peak to peak on copper (an output's
+"ripple") is the switching edges' spikes through the copper's inductance, which the two engines put very
+differently (ngspice's 20 V on the buck's output, this one's 1.2 V): averages and RMS values agree. Where a switch
+opens on a copper current with no capacitance across it, that current's energy goes with the edge and in no part
+(0.1 to 0.4 % of the power on the diode converters: the loss and the efficiency have it, and the notes say how
+much). A source with a piecewise-linear wave and a MOSFET or subcircuit switch model stop it with a line saying
+they are ngspice's.
 
 ## Results
 
@@ -136,7 +162,10 @@ and `waveforms.png`:
 - `supply`: what the parts draw from each supply (a node a DC source is on), for a power-integrity or near-field
   run: `node`, `net`, `volts`, the node's `capacitors`, and for every other part on it (parts on one footprint
   together) its `avg_A`, `rms_A` and `file`, `supply-<footprint>.csv` beside the case: 40 harmonics as `f_Hz`,
-  `A` (peak), `deg` ([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next))
+  `A` (peak), `deg` ([From one tool to the next](power-workflow.md#4-from-one-tool-to-the-next)). Behind an input
+  filter (all the source feeds is a lone inductor or resistor in series, as far as they lead) the node is the one
+  behind it, `net` the source's, `through` the filter's inductors and `dcr` their DC resistance: the wpthb
+  bridge's rail VIN, its loads Q1 and Q2 on VHB, through L3
 - `stored_energy_change_W`: what went into the capacitors and inductors over the reported period, counted out of
   the parts' powers, the loss and the efficiency
 - `periodic_error`, `energy_drift_relative`, `reltol`, `runs`, `periods`, `history` (every run of the search)
@@ -160,6 +189,18 @@ frequency sweep), `full_bridge_phase_shift` (two drives; the phase between them 
 `tests/test_circuit_examples.py` against its closed form: ripple and duty for the converters, harmonic by
 harmonic for the resonant tank, charge and power balance for the rest.
 
+`data/wpthb_bridge.json` (and `wpthb_bridge.toml`, under File > Examples > Circuits > Bridges) is the wpthb
+board's 24 V full bridge driving a wireless-power link: its four switches on VHB (vdmos, with their packages'
+inductances and Cds), the tank C25/C27/C30 into the primary coil on the test points TP15 and TP14, the input
+filter R9, CA1 to CA4 and L3, and a receiver off the board (a coil like the primary, coupled by k = 0.4, its
+series capacitor and its load, fixed at 130 nF and 5.65 ohm: tuned and matched at 90 kHz). Leg B's phase is the
+target's knob, set so the load takes `P`; the sweep is 90 and 110 kHz at 5 to 30 W. Its board section names the
+board's pads (`board.parts`, `board.reference`), so `--board wpthb.kicad_pcb --copper` puts the bridge on its
+copper: 24 ports. At 90 kHz and 10 W, alone: phase 55.66°, input 10.71 W, efficiency 93.18 %, primary 1.435 A RMS
+(42 s); the piecewise-linear engine 55.58°, 94.21 %, 1.436 A (29 s). It was the model of the full-bridge tool
+(`pcbqs.power_circuit`, format 1, removed 2026-11-14), which also tuned the receiver at each frequency; that
+tool's answers at the same receiver: 55.64°, 93.13 %, 1.435 A.
+
 ## On a board
 
 ```json
@@ -169,7 +210,9 @@ harmonic for the resonant tank, charge and power balance for the rest.
 With `--copper` the board's copper is part of the circuit. A part's pin is the pads of its footprint on its
 node's net (`0` is the board's GND), so nothing is said twice: the model says which part is on which node, the
 board which pad is on which net. `board.parts` names a part's footprint when its reference differs (a source is a
-connector), `board.nets` a node's net when its name differs.
+connector), a footprint a pin where its pins are on two (a coil soldered to two test points: `["TP15", "TP14"]`),
+or `null` for a part kept off the board (or a pin of it: the input filter's inductor with one pad on the copper
+modelled, `[null, "L3"]`), which is then at its nets' nodes; `board.nets` a node's net when its name differs.
 
 Without copper every pin on a node is one point. With it, one pad of each net is the node itself (a source's
 pad, else a load's, else the first; `board.reference` chooses another) and every other pad reaches it through a
@@ -279,5 +322,5 @@ board; the hard-switched ones ring to twice their bus and more.
 
 ## Not here yet
 
-Parts' own fields (an inductor's stray field, a part body's E), the fields in kicad2ems's viewer, the temperature
-sweep and the report pages of `pcbqs.power_circuit`.
+Parts' own fields (an inductor's stray field, a part body's E), the fields in kicad2ems's viewer, and the
+temperature sweep.

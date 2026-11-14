@@ -9,10 +9,9 @@ pip install .
 python -m pcbqs.pdn --describe --json
 python -m pcbqs.mqs --describe --json
 python -m pcbqs.sparams board.kicad_pcb --fmin 1e3 --fmax 1e8 --out lf
-python -m pcbqs.power_circuit --template > model.json
-python -m pcbqs.power_circuit model.json --out result --jobs 4
 python -m pcbqs.circuit --template boost > boost.json
 python -m pcbqs.circuit boost.json --out result
+python -m pcbqs.circuit src/pcbqs/data/wpthb_bridge.json --engine pwl --out wpthb   # the wpthb full bridge
 ```
 
 JSON-based solving, layout/mesh export and field reconstruction work without
@@ -44,10 +43,10 @@ remain supported. Static-fill plugins use the `pcbqs.static_backends` entry grou
 - [Low-frequency S-parameters](docs/sparams.md): a board's ports from DC to a tenth of a wavelength, with the
   return current where it flows; `--solvers pcbqs` in a kicad2ems run. Its example,
   `examples/return-path/return_path.py`: what a ground via's place does to a layer change
-- [Circuits](docs/circuit.md): any circuit of parts, nodes and drives; ten examples, each with a board whose
-  copper can be put in; KiCad boards, schematics and netlists read into a model
+- [Circuits](docs/circuit.md): any circuit of parts, nodes and drives, by ngspice or the piecewise-linear steady
+  state; ten examples, each with a board whose copper can be put in, and the wpthb full bridge; KiCad boards,
+  schematics and netlists read into a model
 - [Temperature](docs/thermal.md): a trial of a lightweight thermal solver, on a grid and on the triangle mesh
-- [Operational circuits](docs/power-circuit.md): the full bridge with the board's copper
 - [Validation and limits](docs/quasistatic-validation.md)
 - [Migration](docs/migration.md)
 - [Copied-code provenance](PROVENANCE.json)

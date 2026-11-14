@@ -7,7 +7,7 @@ There are no compatibility shims in `mom25d`.
 |---|---|
 | `python -m mom25d.pdn` | `python -m pcbqs.pdn` |
 | `python -m mom25d.mqs` | `python -m pcbqs.mqs` |
-| `python -m mom25d.power_circuit` | `python -m pcbqs.power_circuit` |
+| `python -m mom25d.power_circuit` | `python -m pcbqs.circuit` (the full-bridge tool was removed on 2026-11-14: its model is `data/wpthb_bridge.json`) |
 | QS `mom25d.*` imports | Corresponding `pcbqs.*` modules |
 | `MOM25D_FILL_*`, QS `MOM25D_OMP_THREADS` | `PCBQS_FILL_*`, `PCBQS_OMP_THREADS` |
 | QS `MOM25D_NO_CORE`, `MOM25D_ARCH` | `PCBQS_NO_CORE`, `PCBQS_ARCH` |

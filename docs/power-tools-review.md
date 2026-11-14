@@ -1,5 +1,9 @@
 # Review: power tools and their GUI integration (2026-11-09)
 
+*The full-bridge tool reviewed here (`pcbqs.power_circuit`, `power_bridge`) was removed on 2026-11-14: its
+model is a general circuit model (`data/wpthb_bridge.json`, run by `pcbqs.circuit`). The findings about it are kept
+as they were written.*
+
 Scope: `pcbqs.pdn` (rail DC drop and PDN impedance), `pcbqs.mqs` CLI (converter
 input-loop near field), `pcbqs.power_circuit` / `power_bridge` / `power_spice`
 (switching circuits with PCB copper), and the kicad2ems window's Power

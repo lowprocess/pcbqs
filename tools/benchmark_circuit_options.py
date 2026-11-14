@@ -1,6 +1,6 @@
-"""Solver-option trials on a real pcbqs power-circuit netlist (wpthb with its 24-port copper model).
+"""Solver-option trials on a real pcbqs circuit netlist (the wpthb bridge with its copper model: pcbqs.circuit's).
 
-    python tools/benchmark_circuit_options.py <power-circuit case folder with circuit.cir> [variant ...] [--out DIR]
+    python tools/benchmark_circuit_options.py <circuit case folder with circuit.cir> [variant ...] [--out DIR]
 
 Each variant rewrites only the .options line; measurements (last switching cycle) are compared with the
 unmodified netlist's.

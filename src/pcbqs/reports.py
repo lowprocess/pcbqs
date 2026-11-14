@@ -16,7 +16,6 @@ import json
 import os
 
 RESULTS = dict(pdn='pdn.json', mqs='mqs.json', thermal='thermal.json', circuit='circuit.json')
-ALSO = dict(circuit=('power-circuit.json',))    # the full bridge's runs (pcbqs.power_circuit): the circuit's too
 PREVIEWS = dict(mqs='mqs-preview.json')
 
 
@@ -220,13 +219,12 @@ def mqs_suggest(res, folder=''):
 
 def circuit_suggest(res, folder='', pads=None):
     """What a circuit's run draws from its supply (a case's 'supply': circuit/supply.py), for the others: the
-    rail with its DC loads and their current spectra for the power-integrity analysis, and, of a general
-    circuit, a part's input current for the near field. Of the point that draws most. pads: {footprint: the
+    rail with its DC loads and their current spectra for the power-integrity analysis, and a part's input current
+    for the near field. Of the point that draws most. pads: {footprint: the
     nets of its pads} of the model's board, when known: only parts on it are proposed."""
     cases = [c for c in res.get('cases') or [] if c.get('supply')]
     if not cases:
         return []
-    general = res.get('format') == 2
     case = max(cases, key=lambda c: c.get('source_power_W') or c.get('input_power_W') or 0.0)
     name = case.get('name') or os.path.basename(str(case.get('folder') or ''))
     here = case.get('folder') if os.path.isdir(str(case.get('folder') or '')) else os.path.join(folder or '', name)
@@ -264,7 +262,7 @@ def circuit_suggest(res, folder='', pads=None):
                  f"DC loads, their harmonics as current spectra"
                  + (f", through {', '.join(row['through'])}" if row.get('through') else '')
                  + (f"; its source is {src}." if known else ". Set its source before Run.")))
-        for l in sorted(loads, key=lambda l: -l['rms_A'])[:2] if general else []:
+        for l in sorted(loads, key=lambda l: -l['rms_A'])[:2]:
             if pads is not None and ground not in pads.get(l['footprint'], ()):
                 continue                                        # (the near field's source: a part on both)
             caps = [c for c in row.get('capacitors') or [] if pads is None or {row['net'], ground} <= set(pads.get(c, ()))]
@@ -328,38 +326,7 @@ def _num(v):
 
 
 def circuit_report(res, folder=''):
-    """A general circuit run (format 2): a row a point, then for each point where its loss goes and its parts'
-    stress; the full bridge's (format 1): its operating points."""
-    if res.get('format') != 2:
-        rows = [[c['frequency_Hz'] / 1e3, c['load_power_W'], _num(c.get('input_power_W')), 100 * c['efficiency'],
-                 c['phase_deg'], c['primary_rms_A'], _num(c.get('bus_ripple_V')), _num(c.get('bus_spike_pp_V')),
-                 _num(c.get('runtime_s'))] for c in res.get('cases', [])]
-        best = max((c for c in res.get('cases', []) if c.get('efficiency')), key=lambda c: c['efficiency'], default=None)
-        name = res.get('name') or 'Full bridge'
-        notes = ["Bus ripple: peak to peak of the final cycle sampled at T/256, as the waveforms are by default. Bus "
-                 "spikes: peak to peak at every solver timestep, switching-edge spikes included (the curve sets "
-                 "named 'solver steps' show them).",
-                 "The receiver, its load and unmeasured parasitics are model assumptions: model.json and each "
-                 "case.json have the matching, the settling and the power checks."]
-        slow = next((c for c in res.get('cases', []) if (c.get('averaged_cycles') or 1) > 1), None)
-        if slow:
-            notes.append(f"Powers and efficiency: averaged over whole periods of the supply filter's slow mode "
-                         f"({slow['slow_mode_Hz'] / 1e3:.3g} kHz: {slow['averaged_cycles']} switching cycles at "
-                         f"{slow['frequency_Hz'] / 1e3:g} kHz), so a mode still ringing does not shift them.")
-        if res.get('matching_definition'):
-            notes.append(res['matching_definition'])
-        if any('field_inference' in c for c in res.get('cases', [])):
-            notes.append("Fields: band-limited inference from the copper's currents; external coils, package "
-                         "filaments and coupling to the surroundings are left out. Each point's are in its folder, "
-                         "which the viewer opens as a run.")
-        notes += [str(a) for a in res.get('assumptions') or []]
-        return dict(title=name, summary=f"Circuit, {name}: {len(rows)} operating point{'s' if len(rows) != 1 else ''}"
-                    + (f", efficiency up to {100 * best['efficiency']:.1f} %" if best else ''),
-                    sections=[dict(title='Operating points', table=_table(
-                        ['kHz', 'load (W)', 'input (W)', 'efficiency %', 'phase °', 'primary RMS (A)', 'bus ripple (V)',
-                         'bus spikes p-p (V)', 'run (s)'], rows,
-                        ['g', '.3f', '.3f', '.2f', '.2f', '.3f', '.2f', '.2f', '.0f']))],
-                    notes=notes, images=[], footer='Completed.' if res.get('complete') else 'Partial results.')
+    """A circuit run: a row a point, then for each point where its loss goes and its parts' stress."""
     cases = res.get('cases', [])
     knobs = sorted({k for c in cases for k in c.get('knobs', {})})
     measures = sorted({k for c in cases for k in c.get('measures', {})})
@@ -428,64 +395,9 @@ def _case_folder(case, folder):
     return d if os.path.isdir(d) else os.path.join(folder, case.get('name', ''))
 
 
-BRIDGE_VIEWS = (('winding currents', ('PRIMARY.winding_I', 'SECONDARY.winding_I'), 'A'),
-                ('bridge and coil voltages', ('bridge.V', 'PRIMARY.V', 'SECONDARY.V'), 'V'),
-                ('supply filter currents', None, 'A'),              # the series parts between the supply's rails
-                ('bus voltages', ('bus.V', 'input.V', 'supply.V'), 'V'))
-
-
-def _supply_series(model):
-    """The parts in series between the supply's rails (VIN, VBUS, VHB), by what they join: the input filter's
-    inductor and its damping resistor on wpthb, whatever a model has there."""
-    net = lambda t: t[4:] if str(t).startswith('NET:') else (model.get('terminals') or {}).get(t, '')
-    rails = ({'VIN', 'VBUS'}, {'VBUS', 'VHB'})
-    return [p['ref'] for p in model.get('components', []) if p.get('type') in ('inductor', 'resistor')
-            and {net(p.get('a', '')), net(p.get('b', ''))} in rails]
-
-
-def bridge_curves(res, folder=''):
-    """The full bridge's waveforms over the last two periods, per operating point: the windings' currents, the
-    bridge's and the coils' voltages, the currents of the series parts between the supply's rails, the bus
-    voltages; and each again at the solver's own timesteps where the run saved them (the switching edges' spikes,
-    which the samples at T/256 miss)."""
-    import numpy as np
-    info = circuit_report(res, folder)['summary']
-    model = _load(folder, 'model.json') or {}
-    series = tuple(r + '.I' for r in _supply_series(model))
-    sets = []
-    for c in res.get('cases', []):
-        d = _case_folder(c, folder)
-        try:
-            with np.load(os.path.join(d, 'transient.npz')) as data:
-                v = {k: data[k] for k in data.files}
-        except (OSError, ValueError):
-            continue
-        name = f"{c['frequency_Hz'] / 1e3:g} kHz, {c.get('target_W', c.get('load_power_W', 0)):g} W"
-        two = 2 / c['frequency_Hz']
-        for stepped in (False, True):
-            if stepped and 'steps.time_s' not in v:
-                continue
-            w = {**v, 'time_s': v['steps.time_s'], **{k[6:]: x for k, x in v.items() if k.startswith('steps.')}} if stepped else v
-            t = w['time_s']
-            take = t >= t[-1] - two
-            x = ((t[take] - (t[-1] - two)) * 1e6).tolist()
-            for what, keys, unit in BRIDGE_VIEWS:
-                keys = keys if keys is not None else (series or tuple(
-                    k for k in w if k.endswith('.I') and not k.startswith(('PRIMARY', 'SECONDARY', 'steps.'))))
-                have = [k for k in keys if k in w and len(w[k]) == len(t)]
-                if have:
-                    sets.append(dict(title=f"{name}: {what}" + (', solver steps' if stepped else ''),
-                                     xlabel='time in the final two periods (µs)', ylabel=unit, logx=False, logy=False,
-                                     info=info, curves=[dict(name=k, x=x, y=w[k][take].tolist(), role='data', unit=unit)
-                                                        for k in have]))
-    return sets
-
-
 def circuit_curves(res, folder=''):
-    """A general run's waveforms over the last two periods: per point, its probes' voltages and currents (a model
-    without probes: its capacitors' voltages and inductors' currents). The full bridge's: bridge_curves."""
-    if res.get('format') != 2:
-        return bridge_curves(res, folder)
+    """A run's waveforms over the last two periods: per point, its probes' voltages and currents (a model without
+    probes: its capacitors' voltages and inductors' currents)."""
     import numpy as np
     sets = []
     for c in res.get('cases', []):
@@ -519,7 +431,7 @@ BUILDERS = dict(pdn=(pdn_report, pdn_curves), mqs=(mqs_report, mqs_curves), ther
 
 def result(kind, folder):
     """A folder's result of a tool (its preview's when that is all there is), or None."""
-    for name in (RESULTS[kind], *ALSO.get(kind, ()), PREVIEWS.get(kind)):
+    for name in (RESULTS[kind], PREVIEWS.get(kind)):
         res = _load(folder, name) if name else None
         if res is not None:
             if name == PREVIEWS.get(kind):

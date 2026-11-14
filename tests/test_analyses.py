@@ -133,25 +133,14 @@ def test_the_circuit_command(tmp_path):
     b.write_text('')
     line = c.command(dict(model=str(model), fields='true', set='drives.pwm.duty=0.4\nparameters.vin=9', powers='5'), str(b), 'out')
     assert line[7:] == ['--fields', '--set', 'drives.pwm.duty=0.4', '--set', 'parameters.vin=9', '--copper', '--jobs', '4',
-                        '--board', str(b)]                          # the bridge's powers: not this tool's
-    model.write_text(json.dumps(dict(format=1)))                    # the full bridge on a board's terminals
-    assert c.command(dict(model=str(model)), None, 'out')[3:] == ['pcbqs.power_circuit', str(model), '--out', 'out', '--jobs', '4']
-    line = c.command(dict(model=str(model), copper=True, frequencies='90000,110000', powers='5', coupling=0.3, receiver_c='',
-                          load=2.5, switch_type='vdmos', override=['tank.ESR_ohm=0.004', 'filter.DCR_ohm=0.01'], jobs=2,
-                          set='x=1', field_harmonics=16), str(b), 'out')
-    assert line[7:] == ['--copper', '--frequencies', '90000,110000', '--powers', '5', '--coupling', '0.3', '--load', '2.5',
-                        '--switch-type', 'vdmos', '--override', 'tank.ESR_ohm=0.004', '--override', 'filter.DCR_ohm=0.01',
-                        '--jobs', '2', '--board', str(b)]           # its default harmonics and the other tool's --set: not passed
+                        '--board', str(b)]                          # (powers: an option it has not, not passed)
+    model.write_text(json.dumps(dict(format=1)))                    # the full-bridge tool's model: no longer
+    with pytest.raises(ValueError, match='wpthb_bridge'):
+        c.command(dict(model=str(model)), None, 'out')
     assert c.tag(dict(model=str(model))) == 'm' and c.env
-    opts = {o['key']: o for o in c.options()}                        # the two tools' own tables, by the kind of model
-    assert [k for k, o in opts.items() if o['only'] == ''] == ['model', 'copper', 'fields', 'jobs']
-    assert [k for k, o in opts.items() if o['only'] == 'general'] == ['set', 'engine'] and opts['jobs']['default'] == 4
-    assert opts['engine']['choices'] == ['ngspice', 'pwl']             # (the piecewise-linear engine: circuit/pwl.py)
-    assert [k for k, o in opts.items() if o['only'] == 'bridge'] == ['field_harmonics', 'frequencies', 'powers', 'coupling',
-                                                                     'primary_l', 'secondary_l', 'receiver_c', 'load',
-                                                                     'switch_type', 'override']
-    assert opts['switch_type']['choices'][0] == 'vdmos' and 'board' not in opts
-
+    opts = {o['key']: o for o in c.options()}                        # pcbqs.circuit's own table
+    assert list(opts) == ['model', 'copper', 'fields', 'set', 'engine', 'jobs'] and opts['jobs']['default'] == 4
+    assert opts['engine']['choices'] == ['ngspice', 'pwl'] and 'board' not in opts     # (pwl: circuit/pwl.py)
 
 # ---- the circuit examples as configs -----------------------------------------------------------------------
 def test_the_examples_are_configs_beside_their_models(tmp_path):
@@ -308,59 +297,6 @@ def test_circuit_report_and_waveforms(tmp_path):
     assert sets and not sets[0]['logx'] and sets[0]['title'].endswith(('voltages', 'currents'))
     c = sets[0]['curves'][0]
     assert len(c['x']) == len(c['y']) > 10 and c['x'][0] == pytest.approx(0.0, abs=1e-6)
-    old = dict(format=1, complete=True, cases=[dict(frequency_Hz=9e4, load_power_W=10.0, input_power_W=10.6,
-                                                    efficiency=0.94, phase_deg=120.0, primary_rms_A=1.2)])
-    assert len(cells(R.circuit_report(old))['Operating points'][1]) == 1 and R.circuit_curves(old) == []   # no waveforms saved
-
-
-def test_the_full_bridge_s_run_is_a_circuit_result_too(tmp_path):
-    """pcbqs.power_circuit's power-circuit.json: the circuit analysis's result as circuit.json is: its operating
-    points and what to read them with, and each point's waveforms as curve sets (the windings, the bridge, the
-    series parts between the supply's rails found by what they join, the bus; again at the solver's own steps
-    where the run saved them)."""
-    import numpy as np
-    from pcbqs import power_circuit
-    run = tmp_path / 'run'
-    case = run / 'case-90k-10W'
-    case.mkdir(parents=True)
-    model = power_circuit.template('simple')                        # its filter: R1 and L1, not wpthb's L3 and R9
-    (run / 'model.json').write_text(json.dumps(model))
-    f = 9e4
-    t = np.linspace(0, 4 / f, 4 * 256 + 1)
-    ts = np.sort(np.concatenate([t, 3.5 / f + np.linspace(0, 1e-7, 40)]))       # the solver's own: denser at an edge
-    wave = lambda x, a=1.0: a * np.sin(2 * np.pi * f * x)
-    np.savez(case / 'transient.npz', time_s=t, **{'PRIMARY.winding_I': wave(t, 2.0), 'SECONDARY.winding_I': wave(t), 'bridge.V': wave(t, 24),
-             'L1.I': 0.4 + 0 * t, 'R1.I': 0.01 * wave(t), 'bus.V': 24 + 0.1 * wave(t), 'other.I': t,
-             'steps.time_s': ts, 'steps.bus.V': 24 + 0.1 * wave(ts) + 3.0 * (ts > 3.5 / f) * (ts < 3.5 / f + 1e-7)})
-    res = dict(format=1, complete=True, name='A bridge', matching_definition='Receiver matched per frequency.',
-               assumptions=['The receiver coil is not on the board.'],
-               cases=[dict(frequency_Hz=f, target_W=10, load_power_W=9.98, input_power_W=10.6, efficiency=0.941, phase_deg=120.0,
-                           primary_rms_A=1.41, bus_ripple_V=0.2, bus_spike_pp_V=3.2, runtime_s=50.0, folder=str(case),
-                           field_inference=dict(harmonics=16), averaged_cycles=9, slow_mode_Hz=10378.0)])
-    (run / 'power-circuit.json').write_text(json.dumps(res))
-    a = A.Circuit()
-    assert a.owns(str(run)) and not a.owns(str(run), preview=True) and not a.owns(str(tmp_path))
-    rep = a.report(str(run))
-    assert rep['title'] == 'A bridge' and rep['summary'] == 'Circuit, A bridge: 1 operating point, efficiency up to 94.1 %'
-    assert cells(rep)['Operating points'][1] == [[90.0, 9.98, 10.6, 94.1, 120.0, 1.41, 0.2, 3.2, 50.0]] and rep['footer'] == 'Completed.'
-    notes = ' '.join(rep['notes'])
-    assert 'solver timestep' in notes and 'Receiver matched per frequency.' in notes and 'not on the board' in notes
-    assert 'Fields:' in notes and 'which the viewer opens' in notes
-    assert "slow mode (10.4 kHz: 9 switching cycles at 90 kHz)" in notes
-    sets = a.curves(str(run))
-    assert [s['title'] for s in sets] == [
-        '90 kHz, 10 W: winding currents', '90 kHz, 10 W: bridge and coil voltages', '90 kHz, 10 W: supply filter currents',
-        '90 kHz, 10 W: bus voltages', '90 kHz, 10 W: bus voltages, solver steps']
-    by = {s['title'].split(': ')[1]: s for s in sets}
-    assert [c['name'] for c in by['supply filter currents']['curves']] == ['R1.I', 'L1.I']       # by what they join
-    assert [c['name'] for c in by['winding currents']['curves']] == ['PRIMARY.winding_I', 'SECONDARY.winding_I']
-    x = by['bus voltages']['curves'][0]['x']
-    assert x[0] == pytest.approx(0.0, abs=1e-9) and x[-1] == pytest.approx(2e6 / f) and len(x) == 513   # two periods, µs
-    stepped = by['bus voltages, solver steps']['curves'][0]
-    assert max(stepped['y']) > 26.5 > max(by['bus voltages']['curves'][0]['y'])          # the edge's spike: only there
-    (run / 'model.json').unlink()                                   # a run without its model: every other current
-    assert [c['name'] for c in {s['title']: s for s in a.curves(str(run))}['90 kHz, 10 W: supply filter currents']['curves']] == \
-        ['L1.I', 'R1.I', 'other.I']
 
 
 def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):

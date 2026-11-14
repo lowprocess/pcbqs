@@ -96,15 +96,13 @@ def test_what_it_leaves_to_ngspice(tmp_path):
     fet = buck()
     fet['parts'][1]['model'] = dict(type='mosfet')
     assert "a mosfet switch model is ngspice's" in run(fet, tmp_path / 'f', **QUIET)['failed'][0]['error']
-    with pytest.raises(pwl.Unsupported, match="copper"):
-        pwl.simulate(M.resolve(buck()), None, 1, tmp_path / 'c', {}, None, None, copper=dict(ports=[1]))
     bad = buck()
     bad['analysis']['engine'] = 'spectre'
     assert 'analysis.engine' in run(bad, tmp_path / 'b', **QUIET)['failed'][0]['error']
-    esl = buck()
-    esl['parts'][4]['ESL_H'] = 1e-9                                  # a capacitor's ESL: left out, and said
-    case = run(esl, tmp_path / 'e', **QUIET)['cases'][0]
-    assert any('C1: its ESL is left out' in n for n in case['notes'])
+    gate = buck()
+    gate['parts'][1]['model'] = dict(type='switch', Cgd_F=1e-10, body_diode=False)     # what is left out is said
+    case = run(gate, tmp_path / 'e', **QUIET)['cases'][0]
+    assert any('Q1: its gate capacitances' in n for n in case['notes'])
 
 
 def test_the_command_and_the_window_s_option(tmp_path, capsys):
@@ -119,7 +117,7 @@ def test_the_command_and_the_window_s_option(tmp_path, capsys):
     assert 'efficiency 97.' in capsys.readouterr().out
     opt = next(o for o in describe()['options'] if o['key'] == 'engine')
     assert opt['choices'] == ['ngspice', 'pwl'] and opt['default'] is None
-    assert any(o['key'] == 'engine' and o['only'] == 'general' for o in Circuit().options())
+    assert any(o['key'] == 'engine' for o in Circuit().options())
 
 
 def test_a_sine_and_a_pulse_source(tmp_path):
@@ -171,3 +169,98 @@ def test_the_examples_as_ngspice_has_them_and_much_sooner(tmp_path, name, same, 
     assert b['load_power_W'] == pytest.approx(a['load_power_W'], rel=0.01)
     if a['runs'] > 1:                                                   # (a rectifier's one run is quick either way)
         assert seconds['pwl'] < 0.4 * seconds['ngspice']
+
+
+def test_nodes_held_only_by_inductors_are_islands(tmp_path):
+    """A node between two windings and a capacitor between two inductances (as a part's pads are on its board's
+    copper) have no conductance to ground: their potentials are what keep the windings' currents in Kirchhoff's
+    law. The same buck with its inductance split in two, and with its output capacitor behind two small
+    inductances, gives the buck's answer."""
+    base = run(buck(), tmp_path / 'b', **QUIET)['cases'][0]
+    split = buck()
+    split['parts'][3] = dict(ref='L1', type='inductor', nodes=['sw', 'mid'], value=4e-6)
+    split['parts'].append(dict(ref='L2', type='inductor', nodes=['mid', 'out'], value=6e-6))
+    behind = buck()
+    behind['parts'][4]['nodes'] = ['c+', 'c-']
+    behind['parts'] += [dict(ref='La', type='inductor', nodes=['out', 'c+'], value=1e-9),
+                        dict(ref='Lb', type='inductor', nodes=['c-', '0'], value=1e-9)]
+    for m in (split, behind):
+        case = run(m, tmp_path / m['parts'][-1]['ref'], **QUIET)['cases'][0]
+        assert case['measures']['vout_avg'] == pytest.approx(base['measures']['vout_avg'], rel=1e-4)
+        assert case['measures']['il_ripple'] == pytest.approx(base['measures']['il_ripple'], rel=1e-3)
+        assert case['power_balance_relative'] < 1e-6
+    plant = pwl.Plant(M.resolve(behind))
+    m = plant.matrices(plant.gates_at(0.0), (False,))
+    assert np.isfinite(m['A']).all()
+
+
+def test_a_switch_s_capacitance_is_a_state_and_its_charge_a_loss(tmp_path):
+    """Cds_F across a switch (type switch, as ngspice's deck has it): a capacitor of the plant, discharged through
+    the switch when it turns on. A synchronous buck's high side turns on hard: about C V^2 f more loss."""
+    m = buck(duty=0.4)
+    m['parts'][1]['model'] = dict(type='switch', Ron_ohm=0.02, body_diode=True)
+    m['parts'].insert(2, dict(ref='Q2', type='switch', nodes=['sw', '0'], drive='pwm', invert=True,
+                              model=dict(type='switch', Ron_ohm=0.02, body_diode=True)))
+    m['parts'] = [p for p in m['parts'] if p['ref'] != 'D1']
+    m['drives']['pwm']['dead_time_s'] = 50e-9
+    rows = {}
+    for c in (0.0, 1e-9):
+        mm = copy.deepcopy(m)
+        for p in mm['parts']:
+            if p['type'] == 'switch':
+                p['model']['Cds_F'] = c
+        rows[c] = run(mm, tmp_path / f"c{c:g}", **QUIET)['cases'][0]
+        assert len(pwl.Plant(M.resolve(mm)).caps) == 1 + (2 if c else 0)
+    extra = rows[1e-9]['loss_W'] - rows[0.0]['loss_W']
+    assert extra == pytest.approx(1e-9 * 12.0 ** 2 * 200e3, rel=0.25)
+
+
+EX_DIR = os.path.join(os.path.dirname(__file__), '..', 'src', 'pcbqs', 'circuit', 'examples')
+
+
+def on_board(name):
+    m = example(name)
+    m['board']['file'] = os.path.join(EX_DIR, m['board']['file'])
+    m.setdefault('analysis', {})['engine'] = 'pwl'
+    return m
+
+
+def test_on_its_board_as_ngspice_has_it_in_a_tenth_of_the_time(tmp_path):
+    """The board's copper (circuit/copper.py's R-L model, every part on its own pads) in the piecewise-linear
+    engine. The synchronous buck's three loads against ngspice's run of the same model and board (2026-11-13: 22
+    to 50 s a load, here a few): its efficiency, its copper's loss, its output, its inductor's ripple."""
+    ngspice_rows = {                                    # efficiency, copper loss W, vout_avg, il_ripple
+        'I1-current-A=0.5': (0.981754, 0.001912, 3.298765, 0.437710),
+        'I1-current-A=2': (0.966313, 0.008455, 3.296591, 0.442873),
+        'I1-current-A=4': (0.941158, 0.028776, 3.290672, 0.448115)}
+    t = time.perf_counter()
+    out = run(on_board('05_buck_synchronous'), tmp_path, copper=True, **QUIET)
+    assert not out['failed'], out['failed']
+    assert time.perf_counter() - t < 60
+    for c in out['cases']:
+        eff, cu, vout, ripple = ngspice_rows[c['name']]
+        assert c['efficiency'] == pytest.approx(eff, abs=0.001)
+        assert c['copper']['loss_W'] == pytest.approx(cu, rel=0.05)
+        assert c['measures']['vout_avg'] == pytest.approx(vout, rel=0.002)
+        assert c['measures']['il_ripple'] == pytest.approx(ripple, rel=0.005)
+        assert c['power_balance_relative'] < 1e-4 and c['engine'] == 'pwl'     # (the copper: its dissipation, not V x I)
+        with np.load(os.path.join(c['folder'], 'port-spectrum.npz')) as sp:      # what the fields are mapped from
+            assert sp['coefficients_A'].shape[1] == len(c['copper']['ports']) == 10
+            dc = sp['coefficients_A'][0].real
+            assert dc[[p['name'] for p in c['copper']['ports']].index('T5')] == pytest.approx(-float(c['name'].split('=')[1]), rel=0.01)
+
+
+@ngspice
+def test_a_rectifier_on_its_board_as_ngspice_has_it(tmp_path):
+    rows = {}
+    for engine in ('ngspice', 'pwl'):
+        m = on_board('02_half_wave_rectifier')
+        m['analysis']['engine'] = engine
+        out = run(m, tmp_path / engine, copper=True, **QUIET)
+        assert not out['failed'], out['failed']
+        rows[engine] = out['cases'][0]
+    a, b = rows['ngspice'], rows['pwl']
+    assert b['efficiency'] == pytest.approx(a['efficiency'], abs=0.002)
+    assert b['copper']['loss_W'] == pytest.approx(a['copper']['loss_W'], rel=0.03)
+    for k in ('vout_avg', 'vout_ripple', 'id_peak'):
+        assert b['measures'][k] == pytest.approx(a['measures'][k], rel=0.01), k

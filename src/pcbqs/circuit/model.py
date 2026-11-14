@@ -162,8 +162,8 @@ def validate(model):
     measure, target, coupling and sweep path refers to something that exists. Values are checked when resolved
     (resolve), since a sweep may set them. Returns the model."""
     _need(isinstance(model, dict), 'the model must be an object')
-    _need(model.get('format') == FORMAT, f"format must be {FORMAT} (a format 1 model is the full-bridge tool's: "
-          'python -m pcbqs.power_circuit)')
+    _need(model.get('format') == FORMAT, f"format must be {FORMAT} (format 1 was the full-bridge tool's, which is no "
+          "longer: pcbqs's data/wpthb_bridge.json is that bridge as a circuit model)")
     parts = model.get('parts')
     _need(isinstance(parts, list) and parts, 'parts: a list of at least one part')
     refs = {}
@@ -219,7 +219,8 @@ def validate(model):
               f"measures.{name}: one of {', '.join(STATS)}: <expression of probes>")
         for token in re.findall(r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_]+)?', str(next(iter(ms.values())))):
             _need(token in signals or token in FUNCTIONS or token == 'pi',
-                  f"measures.{name}: {token!r} is not a probe or a part's signal (<ref>.V, <ref>.I)")
+                  f"measures.{name}: {token!r} is not a probe or a part's signal (<ref>.V, <ref>.I; a winding's "
+                  f"<ref>.winding_I, a capacitor's <ref>.cap_V)")
     for i, t in enumerate(model.get('targets', [])):
         _need(isinstance(t, dict) and all(k in t for k in ('adjust', 'range', 'measure', 'value')),
               f"targets[{i}]: needs adjust, range, measure and value")
@@ -253,12 +254,17 @@ AUTOMATIC = ('source_power_W', 'load_power_W', 'efficiency', 'loss_W')        # 
 
 def signal_names(model):
     """The signals a measure may use: the probes' names, every part's <ref>.V and <ref>.I, and every node's
-    voltage node.<name>."""
+    voltage node.<name>; a winding's <ref>.winding_I (its inductance's current, without its self-capacitance's)
+    and a capacitor's <ref>.cap_V (its capacitance's voltage, without its ESR's and ESL's drops)."""
     out = set(model.get('probes', {}))
     for p in model.get('parts', []):
         if isinstance(p, dict) and isinstance(p.get('ref'), str):
             out |= {p['ref'] + '.V', p['ref'] + '.I'}
             out |= {'node.' + n for n in p.get('nodes', []) if isinstance(n, str)}
+            if p.get('type') == 'inductor' and any(p.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm', 'loss_model')):
+                out.add(p['ref'] + '.winding_I')
+            if p.get('type') == 'capacitor':
+                out.add(p['ref'] + '.cap_V')
     return out
 
 

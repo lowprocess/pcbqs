@@ -2,8 +2,10 @@
 what a circuit draws from its supply (circuit/supply.py) as a rail's loads and current spectra (pdn/cli.py's
 ripple) and as the near field's input current (mqs_cli.py's --spectrum), and what each result proposes to the
 others (reports.py)."""
+import copy
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -17,6 +19,7 @@ from pcbqs.circuit import boards as B
 from pcbqs.circuit import model as M
 from pcbqs.circuit import supply as S
 from pcbqs.circuit.converter import model_of
+from pcbqs.circuit.engine import run
 from pcbqs.mqs_cli import parser, run as near_field
 
 ngspice = pytest.mark.skipif(not shutil.which('ngspice'), reason='ngspice not installed')
@@ -320,51 +323,58 @@ def test_a_near_field_run_writes_its_converter_as_a_circuit(board, tmp_path):
     assert circuit['values'] == dict(model=str(out / 'circuit-model.json'), copper=True)
 
 
-# ---- the full bridge's runs ----
-def test_a_bridge_s_high_side_switches_are_its_rail_s_loads():
-    """pcbqs.power_circuit's model (format 1): what each high-side switch draws from the bridge's rail, the rail
-    named from the supply's side with the filter's inductors on the way."""
-    from pcbqs import power_circuit
-    w = power_circuit.template('wpthb')
+# ---- a supply behind an input filter: the wpthb bridge ----
+def wpthb():
+    import pcbqs
+    return json.loads((Path(pcbqs.__file__).parent / 'data' / 'wpthb_bridge.json').read_text())
+
+
+def test_a_rail_behind_an_input_filter_is_the_one_its_loads_are_on():
+    """Where all a DC source feeds is a lone inductor or resistor in series (the wpthb bridge's R9 and L3), the
+    supply row is the node behind them: the high-side switches drawn from VHB, the rail named from the source's
+    side (VIN), the filter's inductors on the way with their DC resistance, VHB's capacitors as its decoupling."""
+    from pcbqs.circuit import model as M
+    w = M.resolve(wpthb(), M.cases(wpthb())[0])
     f, n = 100e3, 256
     t = np.arange(3 * n + 1) / (n * f)
     first = (t * f) % 1 < 0.5
     result = {'time_s': t, 'Q1.I': np.where(first, 2.0, 0.0), 'Q2.I': np.where(first, 0.0, 2.0),
-              'Q3.I': np.where(first, 0.0, 2.0), 'Q4.I': np.where(first, 2.0, 0.0)}
-    row, = S.bridge_currents(w, result, f)
-    assert (row['node'], row['net'], row['source'], row['volts'], row['through']) == ('VHB', 'VIN', 'supply', 24.0, ['L3'])
-    assert row['dcr'] == dict(L3=0.03)
+              'Q3.I': np.where(first, 0.0, 2.0), 'Q4.I': np.where(first, 2.0, 0.0), 'R9.I': 0 * t, 'L3.I': 2 + 0 * t}
+    row, = S.currents(w, result, 1 / f)
+    assert (row['node'], row['net'], row['source'], row['volts'], row['through']) == ('VHB', 'VIN', 'VSUP', 24.0, ['L3'])
+    assert row['dcr'] == dict(L3=0.03) and row['source_footprint'] is None          # (the supply is off the board)
     assert row['capacitors'] == ['C19', 'C20', 'C21', 'C22', 'C23', 'C24']
     q1, q2 = row['loads']
     assert (q1['footprint'], q2['footprint']) == ('Q1', 'Q2') and q1['avg_A'] == q2['avg_A'] == pytest.approx(1.0)
     amp = lambda l, k: l['A'][k - 1] * np.exp(1j * np.radians(l['deg'][k - 1]))
     assert abs(amp(q1, 1)) == pytest.approx(4 / np.pi, rel=1e-3)                 # a 2 A square wave's fundamental
     assert abs(amp(q1, 1) + amp(q2, 1)) < 1e-9                                   # the two halves: it cancels in the rail
-    assert S.bridge_currents(dict(w, switches=[]), result, f) == []
-    bare = power_circuit.template('simple')                                      # its switches on the supply's own net
-    row, = S.bridge_currents(bare, result, f)
-    assert row['net'] != row['node'] or row['through'] == []
+    bare = copy.deepcopy(w)
+    bare['parts'] = [p for p in bare['parts'] if p['ref'] not in ('R9', 'L3')]  # the switches on the source's own node
+    for p in bare['parts']:
+        p['nodes'] = ['VIN' if n in ('VBUS', 'VHB') else n for n in p['nodes']]
+    row, = S.currents(bare, result, 1 / f)
+    assert row['node'] == row['net'] == 'VIN' and row['through'] == []
 
 
-@ngspice
-def test_a_bridge_run_proposes_its_rail(tmp_path):
-    from pcbqs import power_circuit
-    c = power_circuit.template('wpthb')
-    c['frequencies_Hz'], c['powers_W'] = [90000.0], [30.0]
-    power_circuit.validate(c)
-    rows, _ = power_circuit.run_cases(c, tmp_path, log=lambda *a: None)
-    row, = rows[0]['supply']
+def test_the_bridge_proposes_its_rail(tmp_path):
+    """The wpthb bridge, as a general model, run (the piecewise-linear engine: seconds) at 90 kHz and 30 W: its
+    rail for the power-integrity analysis, through L3, the switches' input currents as spectra."""
+    w = wpthb()
+    w['sweep'] = {'parameters.f': [90000.0], 'parameters.P': [30.0]}
+    w['analysis'] = dict(engine='pwl')
+    out = run(w, tmp_path, log=lambda *a: None)
+    assert not out['failed'], out['failed']
+    case, = out['cases']
+    assert case['load_power_W'] == pytest.approx(30.0, rel=0.01)
+    row, = case['supply']
     assert row['net'] == 'VIN' and row['through'] == ['L3'] and [l['file'] for l in row['loads']] == ['supply-Q1.csv', 'supply-Q2.csv']
-    assert sum(l['avg_A'] for l in row['loads']) == pytest.approx(rows[0]['input_power_W'] / 24.0, rel=0.05)
-    hz, a1 = S.read_spectrum(tmp_path / '90kHz_30W' / 'supply-Q1.csv')
-    _, a2 = S.read_spectrum(tmp_path / '90kHz_30W' / 'supply-Q2.csv')
+    assert sum(l['avg_A'] for l in row['loads']) == pytest.approx(case['source_power_W'] / 24.0, rel=0.05)
+    hz, a1 = S.read_spectrum(Path(case['folder']) / 'supply-Q1.csv')
+    _, a2 = S.read_spectrum(Path(case['folder']) / 'supply-Q2.csv')
     assert hz[0] == pytest.approx(90e3) and abs(a1[0] + a2[0]) < 0.05 * abs(a1[0])      # the rail sees twice the frequency
     assert abs(a1[1] + a2[1]) > 1.0
-    res = dict(format=1, cases=rows)
-    pdn, = reports.circuit_suggest(res, str(tmp_path))                           # no near field of a bridge
-    assert pdn['to'] == 'pdn' and pdn['values']['rail'] == 'VIN' and pdn['values']['through'] == 'L3'
-    assert pdn['values']['dcr'] == 'L3=0.03'
+    pdn = next(p for p in reports.circuit_suggest(out, str(tmp_path)) if p['to'] == 'pdn')
+    assert pdn['values']['rail'] == 'VIN' and pdn['values']['through'] == 'L3' and pdn['values']['dcr'] == 'L3=0.03'
     assert pdn['values']['volts'] == 24.0 and pdn['values']['load'].splitlines()[0].startswith('Q1=')
-    assert pdn['values']['load_spectrum'].splitlines() == [f"Q1={tmp_path / '90kHz_30W' / 'supply-Q1.csv'}",
-                                                           f"Q2={tmp_path / '90kHz_30W' / 'supply-Q2.csv'}"]
     assert 'through L3' in pdn['note']

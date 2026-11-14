@@ -8,11 +8,14 @@ What a circuit draws from its supply, for the other tools: a rail's loads for th
 
 A supply node is one a DC voltage source is on (its + side; the other on ground). Every other part with a pin on
 it draws a current from it, but the capacitors: they are the rail's own decoupling, which a model of the rail has
-as parts. A part's current is taken at its pin on the node, over the last period: its average (the rail's DC
+as parts. Where all the source feeds is one inductor or resistor in series (an input filter), the rail is the
+node behind it, as far as such parts lead: its loads are drawn from there, and the row says which inductors the
+way passes (through) and their DC resistance (dcr), so a model of the rail has them (pcbqs.pdn --through, --dcr). A part's current is taken at its pin on the node, over the last period: its average (the rail's DC
 load) and its harmonics, i(t) = avg + sum A_n cos(2 pi n t / period + phase_n). Parts on one footprint (a
 regulator's switches) are one load, their currents added.
 
-    [dict(node='in', net='+5V', source='V1', source_footprint=None, volts=5.0, capacitors=['C704', 'C705', 'C706'], loads=[
+    [dict(node='in', net='+5V', source='V1', source_footprint=None, volts=5.0, capacitors=['C704', 'C705', 'C706'],
+          through=[], dcr={}, loads=[
         dict(footprint='U702', parts=['QH'], avg_A=1.40, rms_A=1.67, f_Hz=[...], A=[...], deg=[...],
              file='supply-U702.csv')])]
 
@@ -50,73 +53,53 @@ def _load(at, i, n, count, period):
 
 def currents(model, result, period, harmonics=HARMONICS):
     """The supply rows of a resolved model's reported run (result: {signal: samples}, uniformly sampled)."""
-    from .copper import net_name
+    from .copper import net_name, footprint_of
     got = _period(result, period, harmonics)
     if got is None:
         return []
     last, n, count = got
-    names = (model.get('board') or {}).get('parts', {})
+    live = [p for p in model['parts'] if p.get('enabled', True) and p['nodes'][0] != p['nodes'][1]]
+    where = lambda part, node: footprint_of(model, part['ref'], part['nodes'].index(node)) or part['ref']
     rows = []
-    for src in model['parts']:
-        if src['type'] != 'source' or 'dc_V' not in src or not src.get('enabled', True) or src['nodes'][1] not in GROUND:
+    for src in live:
+        if src['type'] != 'source' or 'dc_V' not in src or src['nodes'][1] not in GROUND:
             continue
-        node = src['nodes'][0]
+        node, through, dcr, passed = src['nodes'][0], [], {}, {src['ref']}
+        while True:                                                 # behind a lone series part: an input filter
+            drawing = [p for p in live if node in p['nodes'] and p['ref'] not in passed
+                       and p['type'] not in ('capacitor', 'source')]
+            if len(drawing) != 1 or drawing[0]['type'] not in ('inductor', 'resistor'):
+                break
+            step = drawing[0]
+            other = step['nodes'][1] if step['nodes'][0] == node else step['nodes'][0]
+            if other in GROUND:
+                break
+            passed.add(step['ref'])
+            if step['type'] == 'inductor':
+                through.append(step['ref'])
+                if step.get('DCR_ohm'):
+                    dcr[step['ref']] = float(step['DCR_ohm'])
+            node = other
         drawn = {}
-        for part in model['parts']:
-            if part is src or part['type'] in ('capacitor', 'source') or not part.get('enabled', True):
+        for part in live:
+            if part['ref'] in passed or part['type'] in ('capacitor', 'source') or node not in part['nodes']:
                 continue
             key = part['ref'] + '.I'
-            if node not in part['nodes'] or key not in result or part['nodes'][0] == part['nodes'][1]:
+            if key not in result:
                 continue
             i = np.asarray(result[key])[last] * (1.0 if part['nodes'][0] == node else -1.0)
-            fp = names.get(part['ref'], part['ref'])
+            fp = where(part, node)
             at = drawn.setdefault(fp, dict(footprint=fp, parts=[], i=0.0))
             at['parts'].append(part['ref'])
             at['i'] = at['i'] + i
         loads = [_load(at, at.pop('i'), n, count, period) for at in drawn.values()]
         if loads:
-            caps = [names.get(p['ref'], p['ref']) for p in model['parts'] if p['type'] == 'capacitor'
-                    and p.get('enabled', True) and node in p['nodes'] and set(p['nodes']) & set(GROUND)]
-            rows.append(dict(node=node, net=net_name(model, node, ()), source=src['ref'],
-                             source_footprint=names.get(src['ref']), volts=float(src['dc_V']),
-                             capacitors=caps, loads=loads))
+            caps = [where(p, node) for p in live if p['type'] == 'capacitor' and node in p['nodes']
+                    and set(p['nodes']) & set(GROUND)]
+            rows.append(dict(node=node, net=net_name(model, src['nodes'][0], ()), source=src['ref'],
+                             source_footprint=footprint_of(model, src['ref'], 0), volts=float(src['dc_V']),
+                             capacitors=caps, through=through, dcr=dcr, loads=loads))
     return rows
-
-
-def bridge_currents(config, result, frequency, harmonics=HARMONICS):
-    """The supply row of a full bridge's run (pcbqs.power_circuit's model, format 1; result: its signals): what
-    each high-side switch draws from the bridge's rail, as currents() gives a general circuit's. The rail is
-    named from the supply's side: the net the series parts lead back to from the switches' (VHB, through L3 and
-    R9 to VIN on wpthb), with the inductors on that way in `through` and their DC resistance in `dcr`, so that
-    a model of the rail has them (pcbqs.pdn --through, --dcr)."""
-    from ..power_bridge import net_of
-    period = 1.0 / frequency
-    got = _period(result, period, harmonics)
-    high = [sw for sw in config.get('switches', []) if sw.get('high') and sw['ref'] + '.I' in result]
-    if got is None or not high:
-        return []
-    last, n, count = got
-    bus = net_of(config, high[0]['a'])
-    net, through, dcr, seen = bus, [], {}, {bus}
-    while True:                                                     # back towards the supply, a series part at a time
-        step = next((p for p in config.get('components', []) if p.get('enabled', True)
-                     and p['type'] in ('inductor', 'resistor')
-                     and net in (net_of(config, p['a']), net_of(config, p['b']))
-                     and ({net_of(config, p['a']), net_of(config, p['b'])} - {net}) - seen - set(GROUND)), None)
-        if step is None:
-            break
-        net = ({net_of(config, step['a']), net_of(config, step['b'])} - {net}).pop()
-        seen.add(net)
-        if step['type'] == 'inductor':
-            through.append(step['ref'])
-            if step.get('DCR_ohm'):
-                dcr[step['ref']] = float(step['DCR_ohm'])
-    loads = [_load(dict(footprint=sw['ref'], parts=[sw['ref']]), np.asarray(result[sw['ref'] + '.I'])[last], n, count, period)
-             for sw in high if net_of(config, sw['a']) == bus]
-    caps = [p['ref'] for p in config.get('components', []) if p['type'] == 'capacitor' and p.get('enabled', True)
-            and {net_of(config, p['a']), net_of(config, p['b'])} == {bus, 'GND'}]
-    return [dict(node=bus, net=net, source='supply', volts=float(config['voltage_V']), through=through, dcr=dcr,
-                 capacitors=caps, loads=loads)]
 
 
 def write(folder, rows):

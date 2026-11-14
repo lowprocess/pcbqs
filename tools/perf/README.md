@@ -9,11 +9,11 @@ Maintained entry points:
 
 | Script | What it measures |
 |---|---|
-| `../benchmark_ports.py SHEETS [auto\|direct\|iterative\|dense] [auto\|graph\|faces]` | Copper-port extraction for the wpthb circuit: time, peak memory, GMRES iterations per frequency, one JSON line. `--save`/`--compare` check one route against another. |
+| `../benchmark_ports.py SHEETS [auto\|direct\|iterative\|dense] [auto\|graph\|faces]` | Copper-port extraction for the wpthb bridge (`data/wpthb_bridge.json`'s board section): time, peak memory, GMRES iterations per frequency, one JSON line. `--save`/`--compare` check one route against another. |
 | `workloads.py CASE` | cProfile of one workload of a tool (S-parameters three ways, the capacitance matrix, the near field, two rails, the temperature, the copper ports, a circuit on copper): wall time, peak memory, and the functions with the most time of their own. What it found on 2026-11-13 is below. |
-| `circuit_timing.sh NAME SHEETS BACKEND` | The whole circuit regression case (90 kHz, 10 W, copper ports): wall time, peak memory, headline answers. |
 
-One-off trials:
+One-off trials (the port and preconditioner trials of the same investigation, `prof.py`, `ports.py`, `twolevel*.py`
+and `circuit_timing.sh`, ran on the full-bridge tool, which is no longer; the git history has them):
 
 | Script | What it showed |
 |---|---|
@@ -21,9 +21,6 @@ One-off trials:
 | `dcmesh.py` | Per-layer mesh sizes in the PDN: 4.4 million triangles around two vias drilled into one another. |
 | `dcfix.py [fix]` | The PDN with one of those vias removed: the case for `pdn.mesh.overlapping_vias`. |
 | `dcsolve.py [mmd] [default]` | Sparse orderings for the DC solve. Not worth changing once the mesh is sane. |
-| `prof.py SHEETS` | Where lockstep port GMRES spends its time (compressed products, then the preconditioner). |
-| `ports.py SHEETS MODE` | Lockstep GMRES against a dense loop matrix built from the compressed inductance: the case for the direct route (`mqs_iterative.loop_matrices`). |
-| `twolevel.py`, `twolevel2.py` | Two-level preconditioners for two face sheets: the prototype of `mqs_precond.FaceLoops`. |
 
 `results/` (not tracked) holds logs and saved port matrices from these runs.
 

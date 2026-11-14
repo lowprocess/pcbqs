@@ -9,7 +9,44 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+### Removed
+- **The full-bridge tool** (`pcbqs.power_circuit`, `power_bridge`, `power_report`; format 1 models;
+  `data/wpthb-power.json`, `data/simple-bridge.json`, `examples/wpthb`). It was a second circuit tool beside
+  `pcbqs.circuit`, for one circuit. The wpthb bridge is a circuit model now, `data/wpthb_bridge.json` (and
+  `wpthb_bridge.toml`, under the window's Examples > Circuits > Bridges): the board's parts and pads named in its
+  board section, leg B's phase a target for the load's power, the sweep 90 and 110 kHz at 5 to 30 W. Its receiver
+  is fixed (130 nF and 5.65 ohm: tuned and matched at 90 kHz); the old tool tuned it at each frequency, which is
+  dropped. It gives the old tool's answers at the same receiver: 90 kHz, 10 W, alone: efficiency 93.18 % for
+  93.13 %, phase 55.66° for 55.64°, primary 1.435 A RMS for 1.435 A; on the board with its copper 93.11 % for
+  93.13 % (the board regression's new baseline). A format 1 model is refused, saying where its bridge went. The
+  schematic import keeps reading KiCad (`schematic.read_netlist`, `read_schematic`); the bridge's model editing
+  in it is gone. `tools/perf`'s port and preconditioner trials on the old tool are gone too (git has them);
+  `tools/benchmark_ports.py` runs on the new model.
+
 ### Changed
+- **The piecewise-linear engine takes the board's copper** (`--engine pwl --copper`). Every part on its pads, the
+  copper's ports as states with their coupled inductance and resistance, and each Foster section's every mode a
+  state of its own. A pad held only by inductance (a winding's, a capacitor's between two pads, a current load's)
+  is an island: its potential is what keeps the current into it at zero, and the open switches and diodes are
+  open where they join islands (their leakage was a nanoamp state on a 1e-17 s time constant). On the nine
+  examples' boards against ngspice: efficiency within 0.2 points (the flyback 0.6), averages and RMS within about
+  1 %, 0.3 to 6 s a point for 0.5 to 50 s; the copper's loss within 4 % where ngspice's diodes recover through
+  it and 6 to 21 % below it where they do (the buck, the boost, the buck-boost, the full bridge). The copper's loss
+  is its own dissipation (I^T R I and its Foster sections'), not its ports' V x I; `port-spectrum.npz` is written
+  for the fields.
+- **A switch's capacitance in the piecewise-linear engine.** `Cds_F` (type switch, as ngspice's deck has it) is a
+  state, discharged through the switch as it turns on; the reported run is sampled after every switching instant
+  as finely as its fastest transient, and as finely as the circuit rings, so that energy is in the averages. The
+  synchronous buck alone: 98.24 % for ngspice's 98.17 % (98.9 % before). A diode's `Cj_F` stays out (a constant
+  one put a bridge rectifier's floating AC side on the junctions' charge), said in the notes, as are a switch's gate
+  capacitances; ESL, a winding's self-capacitance and core loss, switch package inductances and a vdmos switch (as a
+  switch) are taken now. The targets are searched on the period's own samples, the reported run fine.
+- **A supply behind an input filter** (`circuit/supply.py`): where all a DC source feeds is a lone inductor or
+  resistor in series, the supply row is the node behind it, with `through` (its inductors) and `dcr`, as the
+  bridge tool's own rows were; the reports' proposal of the rail then has them.
+- **A part on two footprints, or off the board** (`board.parts`): a footprint a pin (`"PRIMARY": ["TP15",
+  "TP14"]`), `null` for a part or a pin kept off the board; `board.reference` may name a footprint. A measure may
+  use a winding's `<ref>.winding_I` and a capacitor's `<ref>.cap_V`.
 - **The solves' own Python is in the compiled core** (`core/dense_kernels.hpp`, `pcbqs/kernels.py`). A profile of
   each tool (`tools/perf/workloads.py`; its README has where every tool's time goes) found three places where the
   time was pcbqs's own NumPy rather than LAPACK or the fill:

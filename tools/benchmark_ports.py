@@ -4,7 +4,7 @@
 
 SHEETS 1 or 2 (face sheets); SOLVER auto | direct | iterative | dense (the dense backend); PRECONDITIONER auto |
 graph | faces (mqs_iterative.port_method). One run per process: peak memory is the process's. Default board:
-~/Desktop/wpthb with pcbqs's wpthb-power.json.
+~/Desktop/wpthb with pcbqs's data/wpthb_bridge.json (its board section: which pads, which nets).
 """
 import argparse
 import json
@@ -17,7 +17,7 @@ import numpy as np
 import pcbqs
 from pcbqs._cli import load_board
 from pcbqs.mqs_ports import CopperPorts
-from pcbqs.power_bridge import load_config, make_board_ports
+from pcbqs.circuit.copper import geometry
 
 FREQUENCIES = [0.0, 1e3, 1e4, 3e4, 9e4, 1e5, 3e5, 9e5, 3e6, 7e6, 2e7]
 
@@ -26,16 +26,17 @@ a.add_argument('sheets', type=int, choices=(1, 2))
 a.add_argument('solver', nargs='?', default='auto', choices=('auto', 'direct', 'iterative', 'dense'))
 a.add_argument('preconditioner', nargs='?', default='auto', choices=('auto', 'graph', 'faces'))
 a.add_argument('--board', default=str(pathlib.Path.home() / 'Desktop/wpthb/wpthb.kicad_pcb'))
-a.add_argument('--config', default=str(pathlib.Path(pcbqs.__file__).parent / 'data/wpthb-power.json'))
+a.add_argument('--model', default=str(pathlib.Path(pcbqs.__file__).parent / 'data/wpthb_bridge.json'))
 a.add_argument('--save')
 a.add_argument('--compare')
 a = a.parse_args()
 
-cfg = load_config(a.config)
-cfg['mesh']['matrix_backend'] = 'dense' if a.solver == 'dense' else 'hierarchical'
-cfg['mesh']['thickness_sheets'] = a.sheets
+model = json.loads(pathlib.Path(a.model).read_text())
+mesh = model.setdefault('board', {}).setdefault('mesh', {})
+mesh['matrix_backend'] = 'dense' if a.solver == 'dense' else 'hierarchical'
+mesh['thickness_sheets'] = a.sheets
 t0 = time.time()
-q, ports, _ = make_board_ports(load_board(a.board, set(cfg['mesh']['nets'])), cfg, print)
+q, ports, _ = geometry(model, load_board(a.board), print)
 if a.solver != 'dense':
     q.port_solver, q.port_preconditioner = a.solver, a.preconditioner
 q._assemble()

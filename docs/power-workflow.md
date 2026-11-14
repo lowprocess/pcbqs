@@ -9,7 +9,7 @@ examples with their images are in
 |---|---|---|---|
 | Converter placed | Is the switching loop small, and where is its field? | `python -m pcbqs.mqs` | Near field |
 | Planes poured | Does each rail hold its voltage, at DC and across frequency? | `python -m pcbqs.pdn` | Power Integrity |
-| Power stage routed | How do the switches, filter and load behave with this copper? | `python -m pcbqs.power_circuit` | Circuit |
+| Power stage routed | How do the switches, filter and load behave with this copper? | `python -m pcbqs.circuit --copper` | Circuit |
 
 [From one tool to the next](#4-from-one-tool-to-the-next): a converter found by the first
 becomes a circuit, and what that circuit draws becomes the rail's load and the near
@@ -64,25 +64,26 @@ On wpthb the input filter L3 resonates with the bridge's ceramics at 11 kHz
 filter) damps it to 0.5 Ω; replacing L3 with a resistor removes it but lets
 the bridge's ripple current reach the supply.
 
-## 3. Switching circuit with copper (`pcbqs.power_circuit`)
+## 3. Switching circuit with copper (`pcbqs.circuit --copper`)
 
-Simulates the power stage in ngspice with the copper as an extracted
-multi-port model, sweeping frequency and target power. Start from
-`--template` and edit components, switches and the coil/receiver.
+Simulates the power stage with the copper as an extracted multi-port model, sweeping what the model sweeps: the
+wpthb bridge's model (`data/wpthb_bridge.json`, [circuits](circuit.md#examples)) sweeps the frequency and the
+load's power, leg B's phase set for each. Edit its parts, switches and receiver in the window's Circuit page or
+its JSON.
 
 ![wpthb circuit builds](../examples/power-workflow/images/04-wpthb-circuit-builds.png)
 
 - **Efficiency, coil currents, input power** per operating point.
-- **VHB p-p** is measured at every solver step and includes switching-edge
-  spikes; the plotted waveforms are sampled at T/256 and do not show them.
+- **VHB p-p** (`bus_ripple_V`) is a peak to peak of the reported run's samples, with the switching-edge spikes
+  the copper's inductance puts on the bus.
 - **Supply current**: the ripple an input filter keeps off the supply cable
   (wpthb: 0.2–1 mA rms with L3, 35–47 mA without).
-- Switch, package and capacitor parasitics in the template are placeholders;
+- Switch, package and capacitor parasitics in the model are placeholders;
   use datasheet or vendor models before trusting overshoot or loss.
 
-Run time: phase-search trials use relaxed tolerances and continue from each
-other; the reported run is strict. See
-[power-circuit.md](power-circuit.md#run-time-and-solver-settings).
+Run time: ngspice runs each point until it repeats (40 s alone at 90 kHz, 10 W); `--engine pwl` finds the steady
+state itself (30 s, most of it the reported run sampled as finely as the packages ring), leaving out gate charge
+and diode recovery ([the piecewise-linear engine](circuit.md#the-piecewise-linear-engine)).
 
 ## 4. From one tool to the next
 
@@ -131,15 +132,15 @@ question it is copied to is ticked, so Run includes it.
   1.03 A at 1 MHz) and differ fivefold at its nulls (0.03 against 0.15 A at 3 MHz):
   the settled duty is 0.72, not 0.66, and the current has the inductor's ripple.
 
-The full bridge's runs (`pcbqs.power_circuit`) say the same of their high-side
-switches, with the rail named from the supply's side and the filter's inductor on
-the way (`through`, `dcr`). On wpthb at 90 kHz and 30 W, Q1 and Q2 draw 1.11 and
+The wpthb bridge's runs say the same of its high-side switches, the rail named
+from the supply's side and the filter's inductor on the way (`through`, `dcr`):
+the source feeds only R9 and L3 in series, so the rail is the node behind them. On wpthb at 90 kHz and 30 W, Q1 and Q2 draw 1.11 and
 0.20 A on average, and their fundamentals cancel in the rail, which sees twice the
 switching frequency:
 
 ```sh
 python -m pcbqs.pdn wpthb.kicad_pcb --rail VIN --volts 24 --source TP2 --ground-source TP1 --through L3 --dcr L3=0.03 \
-    --load Q1=1.109 --load Q2=0.198 --load-spectrum Q1=out/90kHz_30W/supply-Q1.csv --load-spectrum Q2=out/90kHz_30W/supply-Q2.csv
+    --load Q1=1.109 --load Q2=0.198 --load-spectrum Q1=out/f=90k_P=30/supply-Q1.csv --load-spectrum Q2=out/f=90k_P=30/supply-Q2.csv
 ```
 
 The rail's model gives 36.6 mV at 180 kHz on the bridge rail (20.8 mΩ), where the
