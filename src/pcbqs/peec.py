@@ -16,7 +16,7 @@ from scipy.linalg import lu_factor, lu_solve
 from collections import OrderedDict
 
 from ._numerics.base import qform
-from .kernels import peec_system, lu_factor_rows, lu_solve_rows, solve_symmetric
+from .kernels import peec_system, lu_factor_rows, lu_solve_rows, solve_symmetric, factor_bytes
 
 
 def electric_field(model, result, fi, pts, chunk=100_000):
@@ -264,11 +264,11 @@ def solve(model, freqs, amps=None):
                 system, zscale = peec_system(R, L, jw, pscale, nl, m['electro'], changes)
                 cached = lu_factor_rows(system), zscale
                 m['factorizations'] += 1
-                size = cached[0][0].nbytes + cached[0][1].nbytes
+                size = factor_bytes(cached[0])
                 if size <= model.factor_cache_bytes:
                     while m['factor_bytes'] + size > model.factor_cache_bytes:
                         _, old = m['factors'].popitem(last=False)
-                        m['factor_bytes'] -= old[0][0].nbytes + old[0][1].nbytes
+                        m['factor_bytes'] -= factor_bytes(old[0])
                     m['factor_bytes'] += size
                     m['factors'][float(freq)] = cached
             else:

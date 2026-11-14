@@ -10,6 +10,15 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **Dense solves in single precision, refined (R-D13).** A complex system of 4,000 unknowns or more is factored
+  in complex64 (LAPACK's cgetrf, about 2.1 times as fast) and each solve corrected by its residual in double
+  until it is a double solve's (1e-12 of the right-hand side: three or four steps); one that will not get there
+  is factored in double, in its own memory. The double matrix is kept for the residuals (1.5 times a double
+  factor's memory), only when twice the copy and 2 GB are free; `PCBQS_LU=double` turns it off. The demo board's
+  S-parameters with the charge: 13.3 s to 10.6 s; on the copper's faces (16,215 unknowns) 145.9 s to 83.3 s, the
+  same peak memory; S within 2e-12 and 5e-14. Every LU and solve now runs BLAS on the fast cores only (emsdev's
+  core_threads; `PCBQS_BLAS_THREADS`): on a hybrid CPU OpenBLAS's 24 threads made a 2,532-unknown factor take
+  0.11-0.88 s from one call to the next, for 0.041 s on the eight P-cores.
 - **The copper's runs are faster.** ngspice spent 73 % of a copper run refactoring the dense block that couples
   each of the copper's modes to every port (KLU at each Newton step). R and L now share one modal basis (R's
   Cholesky factor, then L's eigenvectors in it): each mode is a resistor and an inductor in series, exactly R + sL,

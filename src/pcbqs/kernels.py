@@ -103,22 +103,127 @@ def tri_locate(nodes, tris, points, tol=1e-9, numpy=False):
     return index, weight
 
 
-def lu_factor_rows(a):
-    """LAPACK's LU of the square row-major matrix `a`, in a's own memory (a is destroyed): what lu_solve_rows
-    takes. scipy's lu_factor copies a row-major matrix to column-major first, a second matrix of the same size;
-    this factors a's transpose, which is a's memory read by columns, and lu_solve_rows solves with the transpose
-    of that, so the answers are a's."""
+def blas_threads():
+    """BLAS on the fast physical cores only (emsdev's core_threads), as mom25d's LU: on a hybrid CPU OpenBLAS's
+    24 threads made an LU of 2,532 unknowns take 0.11-0.88 s, from one call to the next, for 0.041 s on the 8
+    P-cores. A context manager; MOM25D_BLAS_THREADS / OPENBLAS_NUM_THREADS set by hand are left as they are."""
+    import contextlib
+    if os.environ.get('OPENBLAS_NUM_THREADS') or os.environ.get('PCBQS_BLAS_THREADS') == '0':
+        return contextlib.nullcontext()
+    try:
+        from threadpoolctl import threadpool_limits
+        from emsdev.cpu import core_threads
+        n = int(os.environ.get('PCBQS_BLAS_THREADS') or core_threads())
+        return threadpool_limits(max(1, n), user_api='blas')
+    except Exception:                                           # noqa: BLE001  (no threadpoolctl or emsdev: as is)
+        return contextlib.nullcontext()
+
+
+MIXED_MIN = 4000                # the smallest system factored in single precision (2,532 unknowns: no gain)
+
+
+class MixedLU:
+    """The LU of a complex row-major matrix in single precision, refined to double's accuracy (R-D13).
+
+    LAPACK's cgetrf is about 2.3 times as fast as zgetrf (6,233 unknowns: 0.57 s for 1.30). Each solve takes the
+    single-precision solution and corrects it by its residual, worked out with the double matrix (kept, so the
+    factor is 1.5 times a double factor's memory), until the residual is a double solve's (1e-12 of b; three or
+    four steps). A system it cannot bring there (single precision's error times the condition number near 1) is
+    factored in double, once, and solved as before."""
+
+    TOL, STEPS = 1e-12, 12
+
+    def __init__(self, a):
+        from scipy.linalg import lu_factor
+        self.a = a                                              # (row-major, double: the residuals)
+        with blas_threads():
+            self.lu = lu_factor(np.array(a.T, dtype=np.complex64), overwrite_a=True, check_finite=False)
+        self.double = None
+
+    @property
+    def nbytes(self):
+        if self.double is not None:
+            return self.double[0].nbytes + self.double[1].nbytes
+        return self.a.nbytes + self.lu[0].nbytes + self.lu[1].nbytes
+
+    def _double(self):
+        if self.double is None:                                 # the single factor first freed, then the matrix
+            from scipy.linalg import lu_factor                  # factored in its own memory (no third copy)
+            self.lu = None
+            self.double = lu_factor(self.a.T, overwrite_a=True, check_finite=False)
+            self.a = None
+        return self.double
+
+    def solve(self, b):
+        with blas_threads():
+            return self._solve(b)
+
+    def _solve(self, b):
+        from scipy.linalg import lu_solve
+        b = np.asarray(b)
+        if self.double is not None:
+            return lu_solve(self.double, b, trans=1, check_finite=False)
+        one = lambda r: lu_solve(self.lu, r.astype(np.complex64), trans=1, check_finite=False).astype(complex)
+        x = one(b)
+        nb = max(float(np.linalg.norm(b)), 1e-300)
+        last = np.inf
+        for _ in range(self.STEPS):
+            r = b - self.a @ x
+            res = float(np.linalg.norm(r)) / nb
+            if res <= self.TOL:
+                return x
+            if res > 0.5 * last:                                # no longer converging: double from here on
+                break
+            last = res
+            x = x + one(r)
+        if last <= 1e-10:                                       # (stalled at a double solve's own level)
+            return x
+        return lu_solve(self._double(), b, trans=1, check_finite=False)
+
+
+def _mixed_fits(a):
+    """Whether the single-precision copy fits beside the double matrix in the memory free now, with room to
+    spare (twice the copy: the solver's other arrays come and go meanwhile)."""
+    try:
+        from emsdev.memory import available
+        free = available()
+    except Exception:                                           # noqa: BLE001  (no probe: assume it does)
+        return True
+    return free is None or free > 2 * (a.size * 8) + 2e9
+
+
+def lu_factor_rows(a, mixed='auto'):
+    """LAPACK's LU of the square row-major matrix `a`: what lu_solve_rows takes. A complex one of MIXED_MIN
+    unknowns or more is factored in single precision and refined (MixedLU: a is kept, not destroyed) where the
+    copy fits in memory; otherwise in double, in a's own memory (a is destroyed): scipy's lu_factor copies a
+    row-major matrix to column-major first, a second matrix of the same size, so this factors a's transpose,
+    which is a's memory read by columns, and lu_solve_rows solves with the transpose of that, so the answers are
+    a's. PCBQS_LU=double: always double."""
     from scipy.linalg import lu_factor
     a = np.asarray(a)
     if not a.flags.c_contiguous:
         a = np.ascontiguousarray(a)
-    return lu_factor(a.T, overwrite_a=True, check_finite=False)
+    if mixed == 'auto':
+        mixed = (os.environ.get('PCBQS_LU', '').lower() != 'double' and np.iscomplexobj(a)
+                 and a.shape[0] >= MIXED_MIN and _mixed_fits(a))
+    if mixed:
+        return MixedLU(a)
+    with blas_threads():
+        return lu_factor(a.T, overwrite_a=True, check_finite=False)
 
 
 def lu_solve_rows(lu, b):
     """The solution of a x = b for lu = lu_factor_rows(a)."""
+    if isinstance(lu, MixedLU):
+        return lu.solve(b)
     from scipy.linalg import lu_solve
-    return lu_solve(lu, b, trans=1, check_finite=False)
+    with blas_threads():
+        return lu_solve(lu, b, trans=1, check_finite=False)
+
+
+def factor_bytes(lu):
+    """The memory a factor of lu_factor_rows holds."""
+    return lu.nbytes if isinstance(lu, MixedLU) else lu[0].nbytes + lu[1].nbytes
 
 
 def solve_symmetric(P, B):

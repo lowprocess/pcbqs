@@ -150,3 +150,27 @@ def test_symmetric_solve_by_cholesky_where_it_can():
     assert np.allclose(Q @ K.solve_symmetric(Q, B), B)
     Z = P * (1 + 0.3j)                                              # complex symmetric (a lossy stack)
     assert np.allclose(Z @ K.solve_symmetric(Z, B), B)
+
+
+def test_the_single_precision_lu_is_refined_to_double_and_falls_back_when_it_cannot():
+    """lu_factor_rows's mixed factor (R-D13) solves to a double solve's accuracy, several right-hand sides at once,
+    and a system too ill-conditioned for single precision is factored in double, with the same answer."""
+    import numpy as np
+    from pcbqs.kernels import lu_factor_rows, lu_solve_rows, MixedLU, factor_bytes
+    rng = np.random.default_rng(3)
+    n = 300
+    a = rng.standard_normal((n, n)) + 1j * rng.standard_normal((n, n)) + 20 * np.eye(n)
+    b = rng.standard_normal((n, 3)) + 1j * rng.standard_normal((n, 3))
+    want = np.linalg.solve(a, b)
+    lu = lu_factor_rows(a.copy(), mixed=True)
+    assert isinstance(lu, MixedLU) and lu.double is None and factor_bytes(lu) == lu.nbytes
+    np.testing.assert_allclose(lu_solve_rows(lu, b), want, rtol=1e-11, atol=1e-13)
+    np.testing.assert_allclose(lu_solve_rows(lu, b[:, 0]), want[:, 0], rtol=1e-11, atol=1e-13)
+    u, _ = np.linalg.qr(rng.standard_normal((n, n)) + 1j * rng.standard_normal((n, n)))
+    bad = (u * np.logspace(0, -11, n)) @ u.conj().T                     # condition number 1e11
+    want = np.linalg.solve(bad, b)
+    lu = lu_factor_rows(bad.copy(), mixed=True)
+    got = lu_solve_rows(lu, b)
+    assert lu.double is not None and lu.a is None                       # in double now, in the matrix's memory
+    assert np.linalg.norm(bad @ got - b) <= 10 * np.linalg.norm(bad @ want - b)     # as good as a double solve
+    assert not isinstance(lu_factor_rows(a.copy()), MixedLU)            # below MIXED_MIN: double, as before
