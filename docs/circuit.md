@@ -85,7 +85,9 @@ the power it absorbs.
 4. Settled, each target is compared with its measure and its knob moved by a secant step. A target that cannot be
    reached inside its range ends the point saying which end it stopped at and what it gave there.
 5. The reported run repeats a few periods at the strict tolerance (`reltol` 1e-4; the search runs at 1e-3) with
-   steps four times finer. If ngspice cannot hold that, the search's result is reported and a note says so.
+   steps four times finer. A target it measures off (the strict solve's steady state is a little off the search's)
+   is stepped along the search's slope and run again at the strict tolerance, once or twice. If ngspice cannot hold
+   that tolerance, the search's result is reported and a note says so.
 
 ## Results
 
@@ -170,7 +172,9 @@ a second to under a minute.
 
 The copper costs ngspice about ten times the time, and moves a converter's operating point very little. So the
 circuit alone is settled first and its targets met; the copper is put in where that ended, and the runs go on
-from there. A case reports `copper`: the board, the fit's error, the copper's loss, and each port's RMS
+from there, a tenth of `cycles` (at least 20) at first, longer if they do not settle. Its R and L share one modal
+basis (each mode a resistor and an inductor in series), which halves what ngspice refactors at each step. A case
+reports `copper`: the board, the fit's error, the copper's loss, and each port's RMS
 current. A part with no footprint on the board is at its net's node, and the notes say so.
 
 What the copper shows is mostly at the edges. The loop a switch and a diode commutate around has a few
