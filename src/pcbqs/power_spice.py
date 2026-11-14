@@ -458,6 +458,10 @@ class Circuit:
         try:
             try:
                 stdout, stderr = child.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:                   # a case's failure, not the whole sweep's
+                child.kill()
+                child.wait()
+                raise RuntimeError(f"ngspice did not finish in {timeout:g} s (analysis.timeout_s)") from None
             except BaseException:
                 child.terminate()
                 try:

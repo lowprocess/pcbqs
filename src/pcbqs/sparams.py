@@ -246,6 +246,7 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
         kw.update(edge_rings=int(edge_rings or EDGE_RINGS), edge_width=max(0.5 * min(p['w'] for p in ports), 0.05))
     if thickness:                                           # at the copper's edges: graded rings there
         kw['conductor_loss'] = 'slab'
+    chosen = (dmax, fine)
     for attempt in range(5):
         # the return current of a trace lies within a few heights of it: the fine cells reach that far
         zone = sig.buffer(float(np.clip(3 * height, 2 * fine, 3.0)))
@@ -275,7 +276,12 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
         for j, pj in enumerate(ports):
             S[:, j, k] = 2 * r.i[:, part[pj['name'] + '.Z']] * np.sqrt(pj['z0'] / pk['z0']) - (j == k)
         drive.append((r, 1.0 - r.i[:, part[pk['name'] + '.Z']]))                    # what went into the board
+    coarsened = None if (dmax, fine) == chosen else (f"the mesh was made {dmax / chosen[0]:.2g} times coarser "
+                                                     f"({dmax:.2g} mm, {min(fine, dmax):.2g} mm at the ports' nets, "
+                                                     f"for {chosen[0]:.2g} and {min(chosen[1], chosen[0]):.2g}) to "
+                                                     f"stay under {limit:,} triangles: set dmax and fine to choose it")
     info = dict(triangles=int(len(q.tris)), backend=q.matrix_backend, dmax_mm=dmax, fine_mm=min(fine, dmax),
+                coarsened=coarsened,
                 seconds=round(time.perf_counter() - t0, 2), capacitance=bool(charge), thickness=bool(thickness),
                 edge_rings=int(kw.get('edge_rings', 1)),
                 valid_to_Hz=float(f_wave if charge else min(f_wave, f_cap)),
@@ -467,6 +473,8 @@ def main(argv=None):
     over = int((r['f'] > info['valid_to_Hz']).sum())
     if over:
         notes.append(f"{over} of the {len(r['f'])} frequencies are above that.")
+    if info.get('coarsened'):                                       # (it had been said only in the log)
+        notes.append(info['coarsened'].capitalize() + '.')
     for p in paths(r['f'], r['S'], r['names'], r['zref']):
         if not p['joined']:
             notes.append(apart_note(p))

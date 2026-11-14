@@ -134,7 +134,9 @@ def _walk(model, path):
             at = at[int(key)]
         elif isinstance(at, dict):
             if key not in at:
-                if key in ('model',):                               # a part's model: made when first written to
+                if key in ('model', 'analysis', 'fields', 'solver'):     # made when first written to (a model
+                                                                         # with no analysis section took no --set
+                                                                         # analysis.cycles=...)
                     at[key] = {}
                 else:
                     raise ModelError(f"{path}: no {key!r}")
@@ -360,10 +362,16 @@ def load(path):
 
 
 def _beside(model, folder):
-    """The model with its board's file as a full path: one written relative is beside the model."""
+    """The model with its board's file and its parts' vendor libraries as full paths: one written relative is
+    beside the model (a library had been taken from the working directory: it ran from the model's folder and
+    failed from the window)."""
     board = model.get('board')
     if isinstance(board, dict) and board.get('file') and not Path(board['file']).expanduser().is_absolute():
         board['file'] = str((Path(folder) / board['file']).resolve())
+    for part in model.get('parts', []) if isinstance(model.get('parts'), list) else []:
+        m = part.get('model') if isinstance(part, dict) else None
+        if isinstance(m, dict) and isinstance(m.get('library'), str) and not Path(m['library']).expanduser().is_absolute():
+            m['library'] = str((Path(folder) / m['library']).resolve())
     return model
 
 

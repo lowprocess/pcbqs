@@ -217,6 +217,16 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 
 ### Fixed
+- **Errors that said nothing** (the review of 2026-11-14, R-B8, B9, B12):
+  - an ngspice run past `analysis.timeout_s` fails its own point, saying so, and the sweep goes on (TimeoutExpired
+    had escaped: a traceback and no circuit.json);
+  - the Circuit analysis's check looks for ngspice (it said available without it, and every run then failed);
+  - each point records ngspice's version, which the case cache's fingerprint holds with a vendor library's contents
+    (an edited `.lib` had left a point "unchanged");
+  - a part's vendor library written relative is beside the model, not the working directory (it failed from the
+    window);
+  - `--set analysis.<key>` and `fields.<key>` write a section the model does not have;
+  - sparams says when its automatic mesh was made coarser, in its notes and the run's warnings (only its log had).
 - **Touchstone of ports with different references** (R-A20): v1 holds one reference, and the header had the first
   port's alone: such a board's file is v2.0 with [Reference].
 - **Two-face copper** (R-A16). `conductor_faces` was ignored with the face sheets the slab defaults to, so faces 1

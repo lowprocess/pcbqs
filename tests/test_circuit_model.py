@@ -296,3 +296,18 @@ def test_a_coupling_is_named_by_its_inductors():
     assert M.get(m, 'couplings.0.k') == 0.9 == M.get(m, f"couplings.{a}+{b}.k")
     with pytest.raises(M.ModelError, match='no coupling of'):
         M.get(m, f"couplings.{a}+X9.k")
+
+
+def test_paths_a_model_writes_without_having_them_and_libraries_beside_it(tmp_path):
+    """--set analysis.cycles=50 on a model with no analysis section (it had failed: "no 'analysis'"); a part's
+    vendor library written relative is beside the model (it had been taken from the working directory)."""
+    import json
+    m = M.template('rc_filter')
+    m.pop('analysis', None)
+    M.put(m, 'analysis.cycles', 50)
+    assert m['analysis']['cycles'] == 50
+    m['parts'].append(dict(ref='Q9', type='switch', nodes=['a', 'b'], drive='x', model=dict(library='lib/q.lib')))
+    (tmp_path / 'm.json').write_text(json.dumps(m))
+    raw = json.loads((tmp_path / 'm.json').read_text())
+    beside = M._beside(raw, tmp_path)
+    assert next(p for p in beside['parts'] if p['ref'] == 'Q9')['model']['library'] == str((tmp_path / 'lib/q.lib').resolve())

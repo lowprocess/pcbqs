@@ -210,3 +210,17 @@ def test_the_losses_thermal_and_the_report_take(solved, name):
         for ref, p in c['parts'].items():
             if p['type'] == 'switch':
                 assert heat[ref] == pytest.approx(p['power_W'] + p['gate_power_W'])
+
+
+def test_an_ngspice_timeout_fails_its_point_not_the_sweep(tmp_path):
+    """ngspice past analysis.timeout_s: that point fails, saying so, and circuit.json is written (TimeoutExpired had
+    escaped the run: a traceback, exit 1, no circuit.json); each point records ngspice's version."""
+    import json
+    model = M.template('rc_filter')
+    model.setdefault('analysis', {})['timeout_s'] = 1e-3
+    model['sweep'] = {'parameters.r': [1e3, 2e3]} if 'r' in model.get('parameters', {}) else {}
+    summary = run(model, tmp_path / 'slow', jobs=1, log=lambda s: None)
+    res = json.loads((tmp_path / 'slow' / 'circuit.json').read_text())
+    assert summary['failed'] and all('analysis.timeout_s' in f['error'] for f in res['failed'])
+    ok = run(M.template('rc_filter'), tmp_path / 'ok', jobs=1, log=lambda s: None)
+    assert ok['cases'][0]['ngspice'].lower().startswith(('ngspice', '** ngspice'))

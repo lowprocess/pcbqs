@@ -282,6 +282,16 @@ class Circuit(_Tool):
     page = True                                         # the GUI's schematic editor
     env = dict(OPENBLAS_NUM_THREADS='8')
 
+    def check(self):
+        """pcbqs with ngspice, its engine (it had said available without looking: every run then failed)."""
+        ok, where = super().check()
+        from .circuit.engine import ngspice_version
+        found = ngspice_version()
+        if not found:
+            return False, ("ngspice is not installed (or not on PATH): the circuit's engine (Fedora: dnf install ngspice; "
+                           "Debian, Ubuntu: apt install ngspice; Windows: ngspice.sourceforge.io)")
+        return ok, f"{where}, {found}"
+
     def owns(self, folder, preview=False):
         return not preview and os.path.isfile(os.path.join(folder or '', self.result))
 
@@ -502,6 +512,8 @@ class QuasiStatic(Solver):
                        if info['capacitance'] else "where the copper's capacitance counts: resistance and inductance only"))
         for note in apart:
             run.log(f"  pcbqs: {note}")
+        if info.get('coarsened'):                                   # (said in the run's warnings, not only its log)
+            run.log(f"  WARNING pcbqs: {info['coarsened']}")
         Smm, names, zref = mixed_mode(S, run.m)
         about = ("The ports from pcbqs's quasi-static solve of the copper: every layer's sheet current, the vias and "
                  "their mutual inductance, the return current where it flows"

@@ -33,6 +33,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -438,10 +439,33 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
     return result, deck, count_out_storage(collect(result['_measures'], deck), result, model, deck), k
 
 
+_NGSPICE = []
+
+
+def ngspice_version():
+    """ngspice's version line ('ngspice-45.2 ...'), '' when it is not found; asked once."""
+    if not _NGSPICE:
+        exe = shutil.which('ngspice')
+        text = ''
+        if exe:
+            try:
+                p = subprocess.run([exe, '-v'], capture_output=True, text=True, timeout=20)
+                text = next((l.strip() for l in (p.stdout + p.stderr).splitlines() if 'ngspice' in l.lower()), '')
+            except (OSError, subprocess.TimeoutExpired):
+                text = ''
+        _NGSPICE.append(text)
+    return _NGSPICE[0]
+
+
 def fingerprint(model, copper=None):
     h = hashlib.sha256(json.dumps({k: v for k, v in model.items() if k not in ('name', 'description', 'sweep', 'schematic', 'board')},
                                   sort_keys=True).encode())
     h.update((copper or {}).get('fingerprint', 'no copper').encode())
+    for part in model.get('parts', []):                             # a vendor library's contents (an edited .lib had
+        lib = (part.get('model') or {}).get('library')              # left a point "unchanged")
+        if lib and Path(lib).expanduser().is_file():
+            h.update(Path(lib).expanduser().read_bytes())
+    h.update(ngspice_version().encode())
     from .. import power_spice
     from . import deck as D, supply
     for module in (power_spice, D, M, supply, __import__(__name__, fromlist=['x'])):
@@ -580,6 +604,7 @@ def run_case(model, point, out, log=print, copper=None):
                          f"its worst frequency")
     row = dict(
         fingerprint=key, sweep=point or {}, name=M.case_name(point), folder=str(out), period_s=deck.period,
+        ngspice=ngspice_version(),
         knobs={kn.path: kn.x for kn in knobs},
         targets=[dict(adjust=kn.path, measure=kn.measure, value=kn.value, reached=measured_value(kn.measure, stats))
                  for kn in knobs],
