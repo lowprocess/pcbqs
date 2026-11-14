@@ -235,7 +235,7 @@ def test_boost_on_its_board(boost_copper, tmp_path):
     log = []
     alone = run(model, tmp_path / 'alone', log=lambda s: None)['cases'][0]
     board = run(model, out, log=log.append, copper=True)['cases'][0]
-    assert board['notes'] == [] and board['reltol'] == 1e-4 and alone['copper'] is None
+    assert _notes(board) == [] and board['reltol'] == 1e-4 and alone['copper'] is None
     assert [h['copper'] for h in board['history']].count(True) >= 1 and not board['history'][0]['copper']
     assert sum("with the board's copper" in line for line in log) >= 1
     assert board['knobs']['drives.pwm.duty'] == pytest.approx(alone['knobs']['drives.pwm.duty'], abs=0.003)
@@ -318,7 +318,7 @@ def test_boost_fields_come_from_its_own_currents_and_voltages(boost_copper):
     assert ez.max() - ez.min() > 10 * abs(Et[:, np.abs(x - 7).argmin(), j, 1, 2].max() - Et[:, np.abs(x - 7).argmin(), j, 1, 2].min())
     high = ez > (ez.max() + ez.min()) / 2                          # up while the switch is off: 1 - duty of the period
     assert high.mean() == pytest.approx(1 - case['knobs']['drives.pwm.duty'], abs=0.04)
-    assert (out / 'run' / 'fields.png').is_file() and case['notes'] == []
+    assert (out / 'run' / 'fields.png').is_file() and _notes(case) == []
     assert any('fields at 1 mm' in line for line in log)
     # the Viewer's: time-domain dumps under <run>/<point>/exc_fields, which kicad2ems finds as any run's
     assert f['dumps'] == ['dump_H_topp1mm_td', 'dump_H_topp5mm_td', 'dump_E_topp1mm_td', 'dump_E_topp5mm_td']
@@ -332,4 +332,10 @@ def test_boost_fields_come_from_its_own_currents_and_voltages(boost_copper):
     rep = reports.report('circuit', str(out))
     assert rep['images'] == [] and rep['show'] == dict(field='H')   # in the Viewer, not a picture in the report
     again = run(model, out, log=lambda s: None, copper=True, fields=True)['cases'][0]
-    assert again['notes'] == [] and again['fields']['E_ac_rms_max_V_per_m'] == f['E_ac_rms_max_V_per_m']
+    assert _notes(again) == [] and again['fields']['E_ac_rms_max_V_per_m'] == f['E_ac_rms_max_V_per_m']
+
+
+def _notes(case):
+    """A case's notes but the one every ideal switch gets (its switching loss is its ramp's)."""
+    return [n for n in case['notes'] if "drive's own ramp" not in n]
+
