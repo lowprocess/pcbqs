@@ -34,7 +34,8 @@ it is running.
 
 A value is a number, engineering notation (`22u`, `4.7k`, `100n`) or an expression over the parameters
 (`1/((2*pi*fsw)**2*l)`; `+ - * / **`, `pi`, `sqrt abs min max exp log`). A path names a number anywhere in the
-model: `parameters.vin`, `drives.pwm.duty`, `R1.resistance_ohm`, `Q1.model.Ron_ohm`, `couplings.0.k`.
+model: `parameters.vin`, `drives.pwm.duty`, `R1.resistance_ohm`, `Q1.model.Ron_ohm`, `couplings.0.k` (or
+`couplings.L1+L2.k`, the coupling of those two inductors).
 
 | part | nodes | fields |
 |---|---|---|

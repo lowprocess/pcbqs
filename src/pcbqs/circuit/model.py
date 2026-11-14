@@ -35,7 +35,7 @@ entering it, so its voltage times its current is the power it absorbs):
     load        resistance_ohm, or power_W (constant power), or current_A (constant current); below min_V it is
                 a resistor, so it starts
 A path names a number: 'parameters.fsw', 'drives.pwm.duty', '<ref>.<field>' or 'parts.<ref>.<field>',
-'<ref>.model.<field>', 'couplings.0.k', 'analysis.cycles'.
+'<ref>.model.<field>', 'couplings.0.k' (or 'couplings.L1+L2.k': the coupling of those two), 'analysis.cycles'.
 """
 import ast
 import copy
@@ -121,6 +121,12 @@ def _walk(model, path):
             found = next((p for p in at if p.get('ref') == key), None)
             if found is None:
                 raise ModelError(f"{path}: no part {key!r}")
+            at = found
+        elif at is model.get('couplings') and depth == 1 and '+' in key:    # 'couplings.L1+L2.k': by its inductors
+            want = set(key.split('+'))
+            found = next((c for c in at if set(c.get('inductors', ())) == want), None)
+            if found is None:
+                raise ModelError(f"{path}: no coupling of {' and '.join(sorted(want))}")
             at = found
         elif isinstance(at, list):
             if not key.isdigit() or int(key) >= len(at):

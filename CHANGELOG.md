@@ -203,6 +203,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   overrides one part, `--no-part-loads` ignores the fields, and the result names the loads that came from them
   (`pdn.rail.field_loads`).
 
+### Added
+- **A coupling named by its inductors** in a path: `couplings.L1+L2.k` (`--set`, a proposal), whatever its place in
+  the list; kicad2ems-fem's coils propose each coupling so, for any model.
+
 ### Fixed
 - **The losses thermal takes from a circuit** (the stack review of 2026-11-14, R-A2 and R-A3). A coupled winding's
   `power_W` is the power it passes to the other windings as well as its loss, and thermal took it as heat: wpthb's

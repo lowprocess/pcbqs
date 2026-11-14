@@ -284,3 +284,15 @@ def test_a_models_board_is_checked_and_found_beside_it(tmp_path):
             M.validate(bad)
     assert E.fingerprint(M.resolve(m)) == E.fingerprint(M.resolve(M.template('boost')))      # the board is not the circuit
     assert E.fingerprint(M.resolve(m), dict(fingerprint='abc')) != E.fingerprint(M.resolve(m))
+
+
+def test_a_coupling_is_named_by_its_inductors():
+    """'couplings.L1+L2.k': the coupling of those two, whatever its place in the list (kicad2ems-fem's coils say so
+    for the model of any circuit, not only one that lists them first)."""
+    m = M.template('flyback')
+    (c,) = m['couplings']
+    a, b = c['inductors']
+    M.put(m, f"couplings.{b}+{a}.k", 0.9)
+    assert M.get(m, 'couplings.0.k') == 0.9 == M.get(m, f"couplings.{a}+{b}.k")
+    with pytest.raises(M.ModelError, match='no coupling of'):
+        M.get(m, f"couplings.{a}+X9.k")
