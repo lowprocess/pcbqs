@@ -41,12 +41,20 @@ reaches zero, at the instant that happens (found by bisection inside the step), 
 a rectifier's commutation are the circuit's own. An open switch or diode is G_OFF, so a current with nowhere to
 go finds the diode that takes it at once.
 
+The edges are instant. A switch that opens on an inductance's current with no capacitance across it (a package's
+or the copper's inductance in series with it) cuts that current off: its voltage leaps, an off diode the leap
+forward-biases takes the current (the free-wheeling diode of a converter), and what no diode takes jumps to the
+currents Kirchhoff's law allows (the inductances' flux kept, as a voltage impulse leaves it). The energy that jump
+takes is the switch's loss: ngspice's switch takes it over the gate's edge.
+
 The result is the signals ngspice's run gives (every part's V and I, the nodes, the probes), over a few
 identical periods, and the same measures, so everything after a run (the targets' search, the parts' figures,
 the supply's currents, the report) is engine.py's as it is.
 """
 import json
 import math
+import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -65,8 +73,8 @@ SAMPLES = 8192          # a period's samples in the result (analysis.samples_per
 SEARCH = 512            # and while the steady state is looked for: the instants are exact whatever this is
 PERIODS = 4             # the periods the result holds (identical: engine.py judges a run over several)
 HOLD = 2000             # an island's current is held to its law at this many times over a period (Plant.matrices):
-                        # fast, as while it is off the law a current goes nowhere (held over a switch's 20 ns edge
-                        # instead, the buck's loss rose by a seventh)
+                        # what rounding moves it by between the edges, where the state is put back on it exactly
+EDGE = 1e-12            # of a period: "just after" an instant, where the gates are read
 PER_RING = 16           # samples in a cycle of the circuit's fastest ringing (Plant.resolution), at least
 GROW = 1.3              # after a switching instant: samples from a quarter of the fastest time constant, each this
                         # much further on (Plant.fine_period)
@@ -85,6 +93,34 @@ def diode_line(vf, i_f, n=1.0, rs=0.01):
     return junction - n * VT, rs + n * VT / i_f
 
 
+class _Steps:
+    """The product of a period's steps' matrices, kept as its runs in one topology: exp(M a) exp(M b) is
+    exp(M (a + b)), so a run's product is one exponential, taken where the topology changes, not a matrix product
+    a step (a reported run's period is 2^18 steps)."""
+
+    def __init__(self, plant):
+        self.plant, self.P, self.key, self.h = plant, np.eye(plant.nx + 1), None, 0.0
+
+    def add(self, key, h):
+        if key != self.key:
+            self.flush()
+            self.key = key
+        self.h += h
+
+    def apply(self, J):
+        self.flush()
+        self.P = J @ self.P
+
+    def flush(self):
+        if self.key is not None and self.h > 0:
+            self.P = expm(self.plant.matrices(*self.key)['M'] * self.h) @ self.P
+        self.h = 0.0
+
+    def matrix(self):
+        self.flush()
+        return self.P
+
+
 class Plant:
     """A resolved model as a switched linear system. States: every capacitor's own voltage (a switch's Cds and a
     diode's Cj among them), then every inductor's current (a source's series inductance and the copper's ports
@@ -100,7 +136,8 @@ class Plant:
         on_board = bool(copper and (copper.get('ports') or copper.get('ends')))
         if on_board and 'ends' not in copper:
             copper = dict(model=copper['model'], ends=C.port_nodes(model, copper), pins=C.nodes(model, copper))
-        pins = (copper or {}).get('pins') or {}
+        pins = (copper.get('pins') or {}) if on_board else {}   # (a board with no ports: the parts at their nets,
+                                                                # as the deck has them)
         self.index = {}                                     # node name -> row (ground: -1)
         self.g, self.vs, self.cs = [], [], []               # (a, b, S); (ref, a, b, S, V); (ref, a, b, A a -> b)
         self.caps, self.inds, self.sw, self.di, self.pl = [], [], [], [], []
@@ -146,8 +183,11 @@ class Plant:
                 kind_m = m.get('type', 'switch')
                 if kind_m == 'vdmos':
                     kind_m = 'switch'
-                    self._note(ref, "its vdmos model is taken as a switch: Ron_ohm, Cds_F and the body diode "
-                                    "(the piecewise-linear engine)")
+                    self._note(ref, "its vdmos model is taken as a switch: Ron_ohm, Cds_F and a body diode of a "
+                                    "threshold and a resistance (the piecewise-linear engine)")
+                if m.get('body_diode', True) and m.get('diode_TT_s'):
+                    self._note(ref, "its body diode's reverse recovery (diode_TT_s) is left out: the switch that "
+                                    "turns on against it loses less than ngspice's (the piecewise-linear engine)")
                 if kind_m not in ('switch', 'ideal'):
                     raise Unsupported(f"{ref}: a {kind_m} switch model is ngspice's (analysis.engine = \"ngspice\")")
                 pins_ = (a, b)                              # its package's inductances: the channel behind them
@@ -239,6 +279,8 @@ class Plant:
         self.notes = [f"{', '.join(refs)}: {text}" for text, refs in self._noted.items()]   # (one line a kind)
         self.n, self.nc, self.nl, self.nf = len(self.index), len(self.caps), len(self.inds), len(self.modes)
         self.s0 = self.nc + self.nl + self.nf               # the first sine state
+        self.layout = (tuple(q['ref'] for q in self.caps), tuple(q['ref'] for q in self.inds), self.nf,
+                       len(self.sines), tuple(d['ref'] for d in self.di))   # (what a state from before must fit)
         self.nx = self.s0 + 2 * len(self.sines)
         self.free = np.arange(self.s0)                      # the states the steady state is looked for in
         self.x0 = np.zeros(self.nx)
@@ -255,7 +297,13 @@ class Plant:
         for c in model.get('couplings', []):
             i, j = (where[r] for r in c['inductors'])
             L[i, j] = L[j, i] = c['k'] * math.sqrt(L[i, i] * L[j, j])
-        self.Linv = np.linalg.inv(L) if self.nl else L
+        self.L, self.Linv = L, (np.linalg.inv(L) if self.nl else L)
+        # what owns each diode's state (a body diode: its switch), for the energy a cut puts in it
+        self.owner = [d['ref'].split(':')[0] for d in self.di]
+        self.held_by = [None if k >= self.cu else q['ref'].split(':')[0] for k, q in enumerate(self.inds)]   # (an
+                                                                        # inductance's part; None: the copper's)
+        self.visited = set()                                # the topologies a period went through
+        self.cut_power = {}                                 # W: the energy the last fine_period's cuts took, by part
         # the gates' edges within the period: [(time, switch, on)], and each switch's state at its start
         self.edges = []
         for k, s in enumerate(self.sw):
@@ -273,16 +321,19 @@ class Plant:
         """The samples a period needs so that the fastest ringing of the circuit (the copper's inductance against
         a switch's capacitance: hundreds of MHz) is seen PER_RING times a cycle: a period's averages taken
         between samples further apart alias it, and move the power between a switch and the copper by more
-        than either has. The ringings: each topology's underdamped eigenvalues (gates as they come in the
-        period, the diodes all off and all on). 0: none faster than the period's own samples see."""
-        tops = {self.gates_at(t) for t, *_ in self.edges} | {self.gates_at(0.0)}
+        than either has. The ringings: the underdamped eigenvalues of each topology a period went through (a
+        search for the steady state first: steady_state); before one, of the gates as they come in the period with
+        the diodes all off and all on. 0: none faster than the period's own samples see."""
+        tops = set(self.visited)
+        if not tops:
+            gates = {self.gates_after(t) for t, *_ in self.edges} | {self.gates_after(0.0)}
+            tops = {(g, (on,) * len(self.di)) for g in gates for on in (False, True)}
         fastest = 0.0
-        for gates in tops:
-            for on in (False, True):
-                lam = np.linalg.eigvals(self.matrices(gates, (on,) * len(self.di))['A'][:self.s0, :self.s0])
-                ring = lam[np.abs(lam.imag) > np.abs(lam.real)]
-                if len(ring):
-                    fastest = max(fastest, float(np.abs(ring.imag).max()) / (2 * math.pi))
+        for key in tops:
+            lam = np.linalg.eigvals(self.matrices(*key)['A'][:self.s0, :self.s0])
+            ring = lam[np.abs(lam.imag) > np.abs(lam.real)]
+            if len(ring):
+                fastest = max(fastest, float(np.abs(ring.imag).max()) / (2 * math.pi))
         return int(min(2 ** math.ceil(math.log2(max(fastest * self.period * PER_RING, 1.0))), MOST))
 
     def _note(self, ref, text):
@@ -320,8 +371,12 @@ class Plant:
         return self.index.setdefault(name, len(self.index))
 
     def gates_at(self, t):
-        """Each switch's gate just after time t of the period, then each pulse source's level (high: True)."""
+        """Each switch's gate at time t of the period, then each pulse source's level (high: True)."""
         return tuple(((t - s['on']) % s['T']) < s['span'] for s in (*self.sw, *self.pulses))
+
+    def gates_after(self, t):
+        """The gates just after time t: an edge at t (an edge at the period's start among them) has happened."""
+        return self.gates_at(t + EDGE * self.period)
 
     # ---- one topology: the gates' and the diodes' states ----
     def matrices(self, gates, diodes):
@@ -397,10 +452,11 @@ class Plant:
         # winding; a capacitor between two pads; a switching node while everything on it is open). Its
         # potential is not the conductances' to set. First, it is what keeps the current the inductors and the
         # current sources bring it at zero; what that leaves free (an island no inductor reaches: a bridge's
-        # AC side while its diodes are all off), the open parts' leakage (G_OFF) sets, as it does the rest of
-        # the circuit's. An open part between two islands is open: its leakage stamped in, the current an
-        # inductor drives through it would have to be a state of a nanoamp and a 1e-17 s time constant, whose
-        # rounding is the volts across it. The others: G_MIN to ground, as the deck's GMIN.
+        # AC side while its diodes are all off, a node a current source feeds through open parts), the open
+        # parts' leakage (G_OFF) and the island's own G_MIN set, against what the current sources bring it, as
+        # they do the rest of the circuit's. An open part between two islands is open: its leakage stamped in,
+        # the current an inductor drives through it would have to be a state of a nanoamp and a 1e-17 s time
+        # constant, whose rounding is the volts across it. The others: G_MIN to ground, as the deck's GMIN.
         islands = {}
         for i in range(n):
             islands.setdefault(root(i), []).append(i)
@@ -420,12 +476,15 @@ class Plant:
             if a >= 0 and b >= 0:
                 M_[a, b] -= g
                 M_[b, a] -= g
-        G += np.diag(np.where(N.any(axis=1), 0.0, G_MIN))
+        on_island = N.any(axis=1)
+        G += np.diag(np.where(on_island, 0.0, G_MIN))
+        Gw += np.diag(np.where(on_island, G_MIN, 0.0))
         for f, nodes in enumerate(islands):                 # (a potential for the solve: mu sets the real one)
             G[np.ix_(nodes, nodes)] += max(np.abs(np.diag(G)[nodes]).max(), 1.0)
-        Gi = np.linalg.inv(G)
-        Vx, v0 = Gi @ Jx, Gi @ j0
+        solved = np.linalg.solve(G, np.column_stack([Jx, j0])) if n else np.zeros((0, nx + 1))
+        Vx, v0 = solved[:, :nx], solved[:, nx]
         row = lambda a: (Vx[a], v0[a]) if a >= 0 else (np.zeros(nx), 0.0)
+        jump = kick = Rx = r0 = None
         if islands:
             F = len(islands)
             mux, mu0 = np.zeros((F, nx)), np.zeros(F)
@@ -445,14 +504,26 @@ class Plant:
                 EI = np.zeros((F, nx))
                 EI[:, self.nc:self.nc + self.nl] = E.T
                 mux, mu0 = Sp @ (-alpha * EI - W @ VL), Sp @ (alpha * (N.T @ j0) - W @ v)
-            e, Q = np.linalg.eigh(S)                        # what the inductors leave free: by the leakage
-            Z = Q[:, e <= max(e.max(initial=0.0), 0.0) * 1e-10 + 1e-300]
-            if Z.shape[1] and Gw.any():
+            e, Q = np.linalg.eigh(S)                        # what the inductors leave free: by the leakage,
+            Z = Q[:, e <= max(e.max(initial=0.0), 0.0) * 1e-10 + 1e-300]    # against what is brought in
+            if Z.shape[1]:
                 NG = N.T @ Gw
                 K = np.linalg.pinv(Z.T @ NG @ N @ Z)
-                mux = mux - Z @ (K @ (Z.T @ NG @ (Vx + N @ mux)))
-                mu0 = mu0 - Z @ (K @ (Z.T @ NG @ (v0 + N @ mu0)))
+                mux = mux + Z @ (K @ (Z.T @ (N.T @ Jx - NG @ (Vx + N @ mux))))
+                mu0 = mu0 + Z @ (K @ (Z.T @ (N.T @ j0 - NG @ (v0 + N @ mu0))))
             Vx, v0 = Vx + N @ mux, v0 + N @ mu0
+            if self.nl and S.any():
+                # an edge that leaves an inductance's current nowhere to go (r != 0 just after it): the island's
+                # potential leaps, an impulse Lambda = S+ r (V s) that changes the currents by Linv E Lambda, to
+                # where the law holds. The jump, over x and its 1; and how far each diode's voltage leaps for an r
+                Rx, r0 = N.T @ Jx, N.T @ j0                 # r = Rx x + r0: the current into each island
+                flux = self.Linv @ E @ Sp
+                jump = np.eye(nx + 1)
+                jump[self.nc:self.nc + self.nl, :nx] += flux @ Rx
+                jump[self.nc:self.nc + self.nl, nx] += flux @ r0
+                lam = N @ Sp
+                kick = np.array([(lam[d['a']] if d['a'] >= 0 else 0) - (lam[d['b']] if d['b'] >= 0 else 0)
+                                 for d in self.di]).reshape(len(self.di), F)
         A, c = np.zeros((nx, nx)), np.zeros(nx)
         for k, q in enumerate(self.caps):                   # C x' = g (v_a - v_b - x)
             (ra, ca), (rb, cb) = row(q['a']), row(q['b'])
@@ -475,8 +546,36 @@ class Plant:
         d0 = np.array([row(d['a'])[1] - row(d['b'])[1] for d in self.di])
         Mx = np.zeros((nx + 1, nx + 1))
         Mx[:nx, :nx], Mx[:nx, nx] = A, c
-        self._mats[key] = dict(A=A, c=c, Vx=Vx, v0=v0, Dx=Dx, d0=d0, M=Mx)
+        self._mats[key] = dict(A=A, c=c, Vx=Vx, v0=v0, Dx=Dx, d0=d0, M=Mx, jump=jump, kick=kick, Rx=Rx, r0=r0)
         return self._mats[key]
+
+    def enter(self, xa, gates, diodes, steps=None):
+        """xa (x and its 1) put on the law of the topology it enters: the jump of a current an edge cut off
+        (matrices: nothing where none was). (xa, the energy the jump took from the inductances, J)."""
+        jump = self.matrices(gates, diodes)['jump']
+        if jump is None:
+            return xa, 0.0
+        xb = jump @ xa
+        if steps is not None:
+            steps.apply(jump)
+        i = slice(self.nc, self.nc + self.nl)
+        return xb, 0.5 * float(xa[i] @ self.L @ xa[i] - xb[i] @ self.L @ xb[i])
+
+    def _kicked(self, x, gates, diodes):
+        """The off diode an edge's cut forward-biases most (the island's potential leaps until something
+        conducts: in an instant, any diode it leaps the right way across), or None where nothing is cut."""
+        m = self.matrices(gates, diodes)
+        if m['kick'] is None or not len(self.di):
+            return None
+        r = m['Rx'] @ x + m['r0']
+        i = slice(self.nc, self.nc + self.nl)
+        moved = np.abs(m['jump'][i] @ np.append(x, 1.0) - x[i]).max(initial=0.0)
+        if moved <= 1e-7 * np.abs(x[i]).max(initial=0.0) + 1e-9:
+            return None
+        kd = m['kick'] @ r
+        kd = np.where(np.array(diodes, bool), -np.inf, kd)
+        k = int(np.argmax(kd))
+        return k if kd[k] > 1e-9 * np.abs(m['kick'] @ r).max() else None
 
     def _inductor_rows(self, row, nx):
         """L I' = VL x + v: each inductor's voltage (row(node): that node's voltage over x and its constant) less
@@ -511,29 +610,38 @@ class Plant:
         v = m['Dx'] @ x + m['d0']
         return np.array([(d['vth'] - v[k]) if diodes[k] else (v[k] - d['vth']) for k, d in enumerate(self.di)]) - tol
 
-    def settle(self, x, gates, diodes):
-        """The diodes' states that hold at x with these gates: the worst one flipped until none is wrong."""
+    def settle(self, x, gates, diodes, cut=False):
+        """The diodes' states that hold at x with these gates: the worst one flipped until none is wrong. cut (at an
+        edge): first, a diode the edge's cut forward-biases (_kicked), whatever the voltages before it say."""
         diodes, seen = tuple(diodes), set()
         for _ in range(4 * len(self.di) + 4):
-            w = self.wrong(x, gates, diodes)
-            if not len(w) or w.max() <= 0 or diodes in seen:
+            if diodes in seen:
                 break
             seen.add(diodes)
-            k = int(w.argmax())
+            k = self._kicked(x, gates, diodes) if cut else None
+            if k is None:
+                w = self.wrong(x, gates, diodes)
+                if not len(w) or w.max() <= 0:
+                    break
+                k = int(w.argmax())
             diodes = diodes[:k] + (not diodes[k],) + diodes[k + 1:]
         return diodes
 
-    def advance(self, xa, gates, diodes, h, P=None, hook=None, t0=0.0):
-        """From xa (x and a 1) over h with no gate edge inside: (xa at the end, the diodes' states there, P x the
-        steps' matrices). A diode that changes state does so at its own instant, found by bisection; hook(time,
-        xa, gates, the diodes before, after) is told of each (time: t0 and the time into h)."""
+    def advance(self, xa, gates, diodes, h, steps=None, hook=None, t0=0.0):
+        """From xa (x and a 1) over h with no gate edge inside: (xa at the end, the diodes' states there, steps).
+        A diode that changes state does so at its own instant, found by bisection, and the state enters the new
+        topology there (enter). steps (_Steps): given each piece. hook(time, xa before, xa after, gates, the
+        diodes before, after, the energy the change took) is told of each (time: t0 and the time into h)."""
         left = h
         for _ in range(64):
             key = (gates, diodes)
+            self.visited.add(key)
             Phi = self.step(key, left)
             xb = Phi @ xa
             if not self.di or self.wrong(xb[:-1], gates, diodes).max() <= 0:
-                return xb, diodes, (Phi @ P if P is not None else None)
+                if steps is not None:
+                    steps.add(key, left)
+                return xb, diodes, steps
             lo, hi = 0.0, left                              # the first instant a diode's state stops holding
             for _ in range(40):
                 mid = 0.5 * (lo + hi)
@@ -543,30 +651,31 @@ class Plant:
                     hi = mid
                 if hi - lo < 1e-9 * h + 1e-15:
                     break
-            Phi = expm(self.matrices(*key)['M'] * hi)
-            xa = Phi @ xa
-            if P is not None:
-                P = Phi @ P
+            xa = expm(self.matrices(*key)['M'] * hi) @ xa
+            if steps is not None:
+                steps.add(key, hi)
             new = self.settle(xa[:-1], gates, diodes)
             if new == diodes:                               # (at the tolerance's edge: the worst one, flipped)
                 k = int(self.wrong(xa[:-1], gates, diodes).argmax())
                 new = diodes[:k] + (not diodes[k],) + diodes[k + 1:]
+            xn, lost = self.enter(xa, gates, new, steps)
             if hook is not None:
-                hook(t0 + h - left + hi, xa, gates, diodes, new)
-            diodes, left = new, left - hi
+                hook(t0 + h - left + hi, xa, xn, gates, diodes, new, lost)
+            xa, diodes, left = xn, new, left - hi
             if left <= 0:
-                return xa, diodes, P
+                return xa, diodes, steps
         raise RuntimeError('a diode changes state without end inside one step: a circuit this engine cannot settle '
                            '(analysis.engine = "ngspice")')
 
     def one_period(self, x0, samples=SAMPLES, diodes=None, keep=False):
-        """A period from x0: (x at its end, the product of its steps' matrices, the diodes' states at the end,
-        the samples: [(time, x, gates, diodes)] when keep)."""
+        """A period from x0 (the state just before it starts: an edge at its start comes first): (x at its end, the
+        product of its steps' matrices, the diodes' states at the end, the samples: [(time, x, gates, diodes)]
+        when keep)."""
         T, dt = self.period, self.period / samples
-        xa = np.append(x0, 1.0)
-        gates = self.gates_at(0.0)
-        diodes = self.settle(x0, gates, diodes if diodes is not None else (False,) * len(self.di))
-        P = np.eye(self.nx + 1)
+        steps = _Steps(self)
+        gates = self.gates_after(0.0)
+        diodes = self.settle(x0, gates, diodes if diodes is not None else (False,) * len(self.di), cut=True)
+        xa, _ = self.enter(np.append(x0, 1.0), gates, diodes, steps)
         out = []
         edges = [e for e in self.edges if 0.0 < e[0] < T]
         e = 0
@@ -577,30 +686,40 @@ class Plant:
             while e < len(edges) and edges[e][0] <= t1:
                 te = edges[e][0]
                 if te > t:
-                    xa, diodes, P = self.advance(xa, gates, diodes, te - t, P)
+                    xa, diodes, _ = self.advance(xa, gates, diodes, te - t, steps)
                     t = te
-                gates = self.gates_at(te + 1e-12 * T)
-                diodes = self.settle(xa[:-1], gates, diodes)
+                gates = self.gates_after(te)
+                diodes = self.settle(xa[:-1], gates, diodes, cut=True)
+                xa, _ = self.enter(xa, gates, diodes, steps)
                 e += 1
             if t1 > t:
-                xa, diodes, P = self.advance(xa, gates, diodes, t1 - t, P)
-        return xa[:-1], P, diodes, out
+                xa, diodes, _ = self.advance(xa, gates, diodes, t1 - t, steps)
+        return xa[:-1], steps.matrix(), diodes, out
 
     def fine_period(self, x0, samples, diodes=None):
-        """A period from x0, sampled for its averages: the regular samples, every switching instant twice (the
-        state just before it, in the topology before, and just after, in the one after) and after each instant
-        samples from a quarter of the new topology's fastest time constant, GROW times further on each, up to the
-        next instant or regular sample. A capacitance a switch discharges as it turns on (its Cds through Ron:
-        tens of picoseconds) puts its energy in that time: the regular samples step over it. [(time, x, gates,
-        diodes)] in time order, from 0 to the period's end."""
+        """A period from x0 (as one_period's), sampled for its averages: the regular samples, every switching
+        instant twice (the state just before it, in the topology before, and just after, in the one after) and
+        after each instant samples from a quarter of the new topology's fastest time constant, GROW times further
+        on each, up to the next instant or regular sample. A capacitance a switch discharges as it turns on (its
+        Cds through Ron: tens of picoseconds) puts its energy in that time: the regular samples step over it.
+        diodes: their states at the period's end. (samples [(time, x, gates, diodes)] in time order from 0 to the
+        period's end, the indices of the regular ones). self.cut_power: W to move between the parts' powers for the
+        period's cuts (enter): what a cut took from an inductance outside the part that opened (the copper's, which
+        no part's V x I has; another part's, whose V x I has it) is that part's. What it took from the part's own
+        (its package's) its own V x I has already."""
         T, dt = self.period, self.period / samples
-        xa = np.append(x0, 1.0)
-        gates = self.gates_at(0.0)
-        diodes = self.settle(x0, gates, diodes if diodes is not None else (False,) * len(self.di))
-        out, events = [], []
+        out, events, cut = [], [], {}
 
-        def hook(t, xa_, gates_, before, after):
-            events.append((t, xa_.copy(), gates_, before, gates_, after))
+        def hook(t, xa_, xb_, gates_, before, after, lost):
+            events.append((t, xa_.copy(), gates_, before, xb_.copy(), gates_, after, lost))
+        g_end = self.gates_at(T * (1 - EDGE))               # the period's end: before an edge at its start
+        d_end = tuple(diodes) if diodes is not None else (False,) * len(self.di)
+        gates = self.gates_after(0.0)
+        diodes = self.settle(x0, gates, d_end, cut=True)
+        xa0 = np.append(x0, 1.0)
+        xa, lost = self.enter(xa0, gates, diodes)
+        if (gates, diodes) != (g_end, d_end) or lost:
+            events.append((0.0, xa0, g_end, d_end, xa.copy(), gates, diodes, lost))
         edges = [e for e in self.edges if 0.0 < e[0] < T]
         e = 0
         for i in range(samples):
@@ -611,28 +730,44 @@ class Plant:
                 if te > t:
                     xa, diodes, _ = self.advance(xa, gates, diodes, te - t, None, hook, t)
                     t = te
-                new_g = self.gates_at(te + 1e-12 * T)
-                new_d = self.settle(xa[:-1], new_g, diodes)
-                if (new_g, new_d) != (gates, diodes):
-                    events.append((te, xa.copy(), gates, diodes, new_g, new_d))
-                gates, diodes = new_g, new_d
+                new_g = self.gates_after(te)
+                new_d = self.settle(xa[:-1], new_g, diodes, cut=True)
+                xb, lost = self.enter(xa, new_g, new_d)
+                if (new_g, new_d) != (gates, diodes) or lost:
+                    events.append((te, xa.copy(), gates, diodes, xb.copy(), new_g, new_d, lost))
+                xa, gates, diodes = xb, new_g, new_d
                 e += 1
             if t1 > t:
                 xa, diodes, _ = self.advance(xa, gates, diodes, t1 - t, None, hook, t)
         out.append((T, 0, xa[:-1].copy(), gates, diodes))
         times = sorted({s_[0] for s_ in out} | {ev[0] for ev in events})
-        for k, (te, xe, g0, d0, g1, d1) in enumerate(events):
+        for te, xe, g0, d0, xf, g1, d1, lost in events:
             out.append((te, -2, xe[:-1].copy(), g0, d0))                 # (before it, then after it: the jump)
-            out.append((te, -1, xe[:-1].copy(), g1, d1))
+            out.append((te, -1, xf[:-1].copy(), g1, d1))
+            opened = [s['ref'] for k, s in enumerate(self.sw) if g0[k] and not g1[k]] + \
+                     [self.owner[k] for k in range(len(self.di)) if d0[k] and not d1[k]]
+            if lost and opened:                                         # what a cut took: the opening part's
+                i = slice(self.nc, self.nc + self.nl)
+                Ib, Ia = xe[i], xf[i]
+                for k, e_k in enumerate(0.5 * (Ib * (self.L @ Ib) - Ia * (self.L @ Ia))):
+                    whose = self.held_by[k]                             # (its V x I has what it gave up: moved)
+                    if whose in opened or not e_k:
+                        continue
+                    for ref in opened:
+                        cut[ref] = cut.get(ref, 0.0) + e_k / T / len(opened)
+                    if whose is not None:
+                        cut[whose] = cut.get(whose, 0.0) - e_k / T
             end = min(t_ for t_ in times + [T] if t_ > te)
             lam = self._fastest((g1, d1))
             h = 0.25 / lam if lam > 0 else end - te
             M_ = self.matrices(g1, d1)['M']
             while te + h < end:
-                out.append((te + h, 1, (expm(M_ * h) @ xe)[:-1], g1, d1))
+                out.append((te + h, 1, (expm(M_ * h) @ xf)[:-1], g1, d1))
                 h *= GROW
         out.sort(key=lambda s_: (s_[0], s_[1]))
-        return [(t_, x_, g_, d_) for t_, _, x_, g_, d_ in out]
+        self.cut_power = cut
+        regular = [i for i, s_ in enumerate(out) if s_[1] == 0 and s_[0] < T]
+        return [(t_, x_, g_, d_) for t_, _, x_, g_, d_ in out], regular
 
     def copper_loss(self, fine):
         """Each copper port's share of what the copper dissipates over a period of fine samples (fine_period's),
@@ -664,18 +799,20 @@ class Plant:
             cache[key] = float(np.abs(lam.real).max(initial=0.0))
         return cache[key]
 
-    def steady_state(self, samples=SAMPLES, tol=1e-9, log=None, search=SEARCH):
-        """(the state a period maps onto itself, that period's samples). Newton's method on the period's map, its
-        Jacobian the product of the period's matrices; a constant-power load's resistance is set from its mean
-        voltage between whiles. The search steps through the period on `search` samples (a diode's state is
-        looked at that often), the period kept on `samples`."""
+    def steady_state(self, samples=SAMPLES, tol=1e-9, log=None, search=SEARCH, start=None, keep=True):
+        """(the state a period maps onto itself, as it is just before the period starts, and that period's samples
+        on `samples`; keep=False: the diodes' states at the period's end instead). Newton's method on the
+        period's map, its Jacobian the product of the period's matrices; a constant-power load's resistance is
+        set from its mean voltage between whiles. The search steps through the period on `search` samples (a
+        diode's state is looked at that often). start: (x, diodes) to begin from: a run's before this one."""
         search = min(search, samples)
-        x = self.x0.copy()
+        x, diodes = self.x0.copy(), None
+        if start is not None:
+            x, diodes = np.array(start[0], float), (tuple(start[1]) if start[1] is not None else None)
         free = self.free
-        diodes, periods = None, 0
+        periods = 0
         for outer in range(12 if self.pl else 1):
-            self._mats.clear()
-            self._phi.clear()
+            self._forget()
             for it in range(80):
                 x1, P, diodes, _ = self.one_period(x, search, diodes)
                 periods += 1
@@ -694,9 +831,9 @@ class Plant:
             else:
                 raise RuntimeError(f"no periodic steady state in 80 periods (the state still moves by {err:.2g} of "
                                    f"itself a period): a circuit this engine cannot settle (analysis.engine = \"ngspice\")")
-            x1, P, diodes, kept = self.one_period(x, samples if not self.pl else search, diodes, keep=True)
             if not self.pl:
                 break
+            _, _, _, kept = self.one_period(x, search, diodes, keep=True)
             moved = 0.0
             for q in self.pl:                               # P / <v>^2, a resistor below min_V
                 v = np.mean([self._voltage(s, q['a'], q['b']) for s in kept])
@@ -704,12 +841,21 @@ class Plant:
                 moved = max(moved, abs(g - q['g']) / max(g, q['g']))
                 q['g'] = g
             if moved < 1e-6:
-                x1, P, diodes, kept = self.one_period(x, samples, diodes, keep=True)
+                self._forget()
                 break
         if log:
             log(f"piecewise-linear: {self.nx} states, {periods} periods to the steady state")
-        self.periods = periods
+        self.periods = getattr(self, 'periods', 0) + periods
+        if not keep:
+            return x, diodes
+        _, _, _, kept = self.one_period(x, samples, diodes, keep=True)
         return x, kept
+
+    def _forget(self):
+        """The topologies' matrices dropped (a constant-power load's resistance changed)."""
+        self._mats.clear()
+        self._phi.clear()
+        self.__dict__.pop('_rates', None)
 
     def _voltage(self, sample, a, b):
         t, x, gates, diodes = sample
@@ -790,13 +936,32 @@ STATS = dict(AVG=lambda t, y: float(np.mean(y)), RMS=lambda t, y: float(np.sqrt(
              MIN=lambda t, y: float(np.min(y)))
 
 
+class _Picked(Mapping):
+    """Some of a set of signals' samples (fine_period's regular ones), each signal's picked when it is asked for."""
+
+    def __init__(self, signals, index):
+        self.signals, self.index = signals, np.asarray(index, int)
+
+    def __getitem__(self, key):
+        return np.broadcast_to(np.asarray(self.signals[key], float), self.signals['time_s'].shape)[self.index]
+
+    def __contains__(self, key):
+        return key in self.signals
+
+    def __iter__(self):
+        return iter(self.signals)
+
+    def __len__(self):
+        return len(self.signals)
+
+
 def measure(deck, signals, fine=None):
     """The deck's measures (engine.add_measures: a statistic of an expression over @signal@s) on a period's
     signals. fine (Plant.fine_period's signals, from 0 to the period's end): the averages (a part's power among
     them) are taken over it by the trapezoid, so a switching instant's energy is in them; the RMS values and the
     peaks stay the regular samples' (an instant edge's spike, hundreds of amps for picoseconds, is the ideal
     switch's, not the circuit's)."""
-    names = dict(abs=np.abs, sqrt=np.sqrt, min=np.minimum, max=np.maximum, exp=np.exp, log=np.log, pi=np.pi)
+    from .engine import evaluate
     out = {}
     for name, (stat, expr) in deck.measures.items():
         pieces = expr.split('@')
@@ -804,10 +969,8 @@ def measure(deck, signals, fine=None):
             missing = next(p for p in pieces[1::2] if p not in signals)
             raise Unsupported(f"{name}: the signal {missing} is not one the piecewise-linear engine has "
                               f"(analysis.engine = \"ngspice\")")
-        code = ''.join(f"S[{p!r}]" if k % 2 else p for k, p in enumerate(pieces))
         use = fine if (fine is not None and stat == 'AVG') else signals
-        y = eval(code, {'__builtins__': {}}, dict(names, S=use))        # noqa: S307 (the model's own expression)
-        y = np.broadcast_to(np.asarray(y, float), use['time_s'].shape)
+        y = evaluate(expr, use)
         if use is fine:
             t = fine['time_s']
             out[name] = float(np.sum(np.diff(t) * (y[1:] + y[:-1])) / 2 / (t[-1] - t[0]))
@@ -818,57 +981,91 @@ def measure(deck, signals, fine=None):
 
 def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False, copper=None):
     """engine.simulate with no transient: the model's periodic steady state as the run's result (PERIODS identical
-    periods of every signal), the deck for its names, and what the run measured."""
-    from .engine import add_measures, collect, count_out_storage
+    periods of every signal), the deck for its names, and what the run measured. state: {'pwl': a run's
+    deck.pwl_state} (a run of the same circuit before this one: where the search starts; anything else, from
+    zero). final (the reported run): sampled as finely as the circuit rings, unless
+    analysis.final_samples_per_cycle says how finely; transient.npz keeps samples_per_cycle of each period."""
+    from .engine import add_measures, collect, count_out_storage, sampled_measures
     deck = build(model, None, copper)
     add_measures(deck, model)
     plant = Plant(model, copper)
-    samples = int(a.get('samples_per_cycle') or SAMPLES)
+    stored = int(a.get('samples_per_cycle') or SAMPLES)
+    warm = state.get('pwl') if isinstance(state, dict) else None
+    start = (warm['x'], warm['diodes']) if warm and warm.get('layout') == plant.layout else None
+    say = (lambda s: log(label + s)) if log else None
+    x, ends = plant.steady_state(stored, log=say, start=start, keep=False)
+    samples, ringing = stored, 0
     if final and a.get('final_samples_per_cycle'):
         samples = int(a['final_samples_per_cycle'])
-    # the reported run is sampled as finely as the circuit rings (a diode the ringing turns on between two steps
-    # is missed: the search for its steady state steps as finely); while the targets are looked for, the period's
-    # own samples (what a target measures is the circuit's averages, which the ringing barely moves)
-    ringing = plant.resolution() if final else 0
-    samples = max(samples, ringing)
-    x, kept = plant.steady_state(samples, log=(lambda s: log(label + s)) if log else None, search=max(SEARCH, ringing))
+    elif final:
+        # the reported run is sampled as finely as the circuit rings (a diode the ringing turns on between two
+        # steps is missed: its steady state is looked for as finely, from the search's); while the targets are
+        # looked for, the period's own samples (what a target measures is the circuit's averages, which the
+        # ringing barely moves)
+        ringing = plant.resolution()
+        while samples < ringing:
+            samples *= 2
+        if ringing > SEARCH:
+            x, ends = plant.steady_state(samples, log=say, search=ringing, start=(x, ends), keep=False)
 
     def probed(sig):
         for name, pr in model.get('probes', {}).items():
             if 'voltage' in pr:
-                p, q = (plant.node(n) for n in pr['voltage'])
-                sig[name] = (sig['node.' + pr['voltage'][0]] if p >= 0 else 0.0) - (sig['node.' + pr['voltage'][1]] if q >= 0 else 0.0)
+                ends_ = []
+                for n in pr['voltage']:
+                    if n in GROUND:
+                        ends_.append(0.0)
+                    elif 'node.' + n in sig:
+                        ends_.append(sig['node.' + n])
+                    else:
+                        raise M.ModelError(f"probe {name}: no enabled part is on its node {n!r}")
+                sig[name] = ends_[0] - ends_[1]
             else:
                 ref = next(p['ref'] for p in model['parts'] if p['ref'].lower() == str(pr['current']).lower())
+                if ref + '.I' not in sig:
+                    raise M.ModelError(f"probe {name}: {ref} is not enabled")
                 sig[name] = sig[ref + '.I']
         return sig
-    one = probed(plant.signals(kept))
-    period = plant.fine_period(x, samples, kept[0][3])
-    fine = probed(plant.signals(period))
-    measured = measure(deck, one, fine)
-    for i, w in enumerate(plant.copper_loss(period)):              # the copper's own dissipation, not its V x I
+    fine, regular = plant.fine_period(x, samples, ends)
+    sig = probed(plant.signals(fine))
+    one = _Picked(sig, regular)
+    measured = measure(deck, one, sig)
+    measured.update(sampled_measures(deck, one, plant.period))
+    for ref, w in plant.cut_power.items():                          # what an edge's cut took: the opening part's
+        if f"part.{ref}.power_W" in measured:
+            measured[f"part.{ref}.power_W"] += w
+    for i, w in enumerate(plant.copper_loss(fine)):                 # the copper's own dissipation, not its V x I
         measured[f"copper.{i}.power_W"] = w
-    n = len(one['time_s'])
-    result = {k: np.tile(v, PERIODS) for k, v in one.items() if k != 'time_s'}
+    every = samples // stored if samples > stored and samples % stored == 0 else 1
+    kept = np.asarray(regular, int)[::every]
+    n = len(kept)
+    result = {k: np.tile(np.broadcast_to(np.asarray(v, float), sig['time_s'].shape)[kept], PERIODS)
+              for k, v in sig.items() if k != 'time_s'}
     result['time_s'] = np.arange(PERIODS * n) * (plant.period / n)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(folder / 'transient.npz', **result)
-    (folder / 'signals.json').write_text(json.dumps({k: 'piecewise-linear' for k in one if k != 'time_s'}, indent=2))
+    (folder / 'signals.json').write_text(json.dumps({k: 'piecewise-linear' for k in sig if k != 'time_s'}, indent=2))
     (folder / 'measurements.json').write_text(json.dumps(measured, indent=2))
     (folder / 'performance.json').write_text(json.dumps(dict(engine='pwl', states=plant.nx, periods=plant.periods,
-                                                             samples_per_cycle=samples, ringing_samples=ringing), indent=2))
+                                                             samples_per_cycle=samples, stored_samples_per_cycle=n,
+                                                             ringing_samples=ringing), indent=2))
     if deck.ports:                                                  # the copper's currents, harmonic by harmonic
         port_spectrum(folder, one, plant.period, max(31, int((model.get('fields') or {}).get('harmonics', 16))))
     result['_measures'] = measured
     deck.engine_notes = list(plant.notes)
+    deck.pwl_state = dict(layout=plant.layout, x=x, diodes=ends)
     stats = count_out_storage(collect(measured, deck), result, model, deck)
-    gap = (stats.get('power_balance_relative') or 0.0) * stats.get('source_power_W', 0.0)
-    if deck.ports and gap > 1e-3 * max(stats.get('source_power_W', 0.0), 1e-12):
+    source = max(stats.get('source_power_W', 0.0), 1e-12)
+    cut = {r: w for r, w in plant.cut_power.items() if w > 1e-4 * source}
+    if sum(cut.values()) > 1e-3 * source:
         deck.engine_notes.append(
-            f"{1e3 * gap:.3g} mW is lost at the switching edges and in no part: the copper's inductance carries a "
-            f"current an opening switch or diode cuts off (with no capacitance across it), and its energy goes with "
-            f"the edge. It is in the loss and the efficiency; ngspice puts it in the switch, over the gate's edge")
+            f"{', '.join(sorted(cut))}: {1e3 * sum(cut.values()):.3g} mW in all is the energy of an inductance outside "
+            f"the switch (the copper's) that it cuts off as it opens, with no capacitance across it: put in that switch "
+            f"(the piecewise-linear engine's edges are instant; ngspice's switch takes it over the gate's edge)")
+    gap = (stats.get('power_balance_relative') or 0.0) * stats.get('source_power_W', 0.0)
+    if gap > 1e-3 * source:
+        deck.engine_notes.append(f"{1e3 * gap:.3g} mW of what the sources deliver is in no part (the power balance)")
     return result, deck, stats, 0
 
 
@@ -876,7 +1073,8 @@ def port_spectrum(folder, one, period, harmonics=31):
     """<folder>/port-spectrum.npz from a period's PCB<i>.I (as power_waveforms.save_port_spectrum writes it from
     ngspice's steps): what circuit/fields.py maps the copper's fields from."""
     from ..power_waveforms import periodic_coefficients
-    labels = sorted((k for k in one if k.startswith('PCB') and k.endswith('.I')), key=lambda k: int(k[3:-2]))
+    ports = {int(m[1]): m[0] for m in (re.fullmatch(r'PCB(\d+)\.I', k) for k in one) if m}
+    labels = [ports[i] for i in sorted(ports)]
     if not labels:
         return None
     t = np.append(one['time_s'], period)                            # the period closed: its first sample again

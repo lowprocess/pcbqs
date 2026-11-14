@@ -48,7 +48,7 @@ for col, fsw in enumerate((90e3, 110e3)):
         axes[0, col].plot(x, d['vhb'][m], color=color, lw=1.3, label=label)
         axes[1, col].plot(x, -d['VSUP.I'][m], color=color, lw=1.3, label=label)
         rows.append((fsw, label, r['source_power_W'], r['efficiency'], r['measures']['bus_ripple_V'],
-                     float(np.std(-d['VSUP.I'][t >= t[-1] - T])), r['runtime_s']))
+                     r['measures']['bus_spike_pp_V'], float(np.std(-d['VSUP.I'][t >= t[-1] - T])), r['runtime_s']))
     axes[0, col].set_title(f'{fsw/1e3:.0f} kHz, 30 W', loc='left', color=INK)
 axes[0, 0].set_ylabel('VHB (V)'); axes[1, 0].set_ylabel('Supply current (A)')
 for ax in axes.flat:
@@ -58,5 +58,6 @@ for ax in axes[1]:
 axes[0, 1].legend(frameon=False, fontsize=8.5)
 fig.suptitle('wpthb bridge, settled: VHB and the current drawn from the 24 V supply', x=.06, ha='left', color=INK, fontweight='bold')
 fig.tight_layout(rect=(0, 0, 1, .95)); fig.savefig(out / 'builds.png', dpi=160); keep(out / 'builds.png', '04-wpthb-circuit-builds.png')
-for fsw, label, pin, eff, spike, ripple, secs in rows:
-    print(f'{fsw/1e3:.0f} kHz | {label:28s} | Pin {pin:.2f} W | eff {eff*100:.1f}% | VHB p-p {spike:.2f} V | supply ripple {ripple*1e3:.1f} mA rms | {secs:.0f} s')
+for fsw, label, pin, eff, ripple_v, spike, ripple, secs in rows:
+    print(f'{fsw/1e3:.0f} kHz | {label:28s} | Pin {pin:.2f} W | eff {eff*100:.1f}% | VHB ripple {ripple_v:.2f} V, '
+          f'with the spikes {spike:.2f} V | supply ripple {ripple*1e3:.1f} mA rms | {secs:.0f} s')

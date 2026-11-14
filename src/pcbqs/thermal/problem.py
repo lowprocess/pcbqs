@@ -179,20 +179,26 @@ def solve_spd(A, q):
 def losses_of(case, model):
     """A circuit run's losses as heat per footprint: ({footprint reference: W}, [what was left out and why]).
     `case` is one case of circuit.json, `model` the circuit model it ran. A source and a load are not on the board;
-    nor is a part bound to a connector (a transformer on flying leads). Parts bound to one footprint (the windings
-    of a transformer) are summed."""
+    nor is a part bound to a connector (a transformer on flying leads), one board.parts puts off it (null), or one
+    whose pins are on two footprints (a winding between two test points: its loss is its own, not either's). Parts
+    bound to one footprint (the windings of a transformer; a part with one pin off the board) are summed."""
     bound = (model.get('board') or {}).get('parts', {})
     kinds = {p['ref']: p.get('type') for p in model.get('parts', [])}
     out, left = {}, []
     for ref, st in case.get('parts', {}).items():
         w = float(st.get('power_W', 0.0))
-        fp = bound.get(ref, ref)
+        given = bound.get(ref, ref)
+        names = sorted({f for f in (given if isinstance(given, list) else [given]) if f})
         if kinds.get(ref) in ('source', 'load'):
             left.append(f'{ref}: a {kinds[ref]}, not on the board')
-        elif ref in bound and fp.rstrip('0123456789').upper() in OFF_BOARD:
-            left.append(f'{ref}: at connector {fp}, not on the board')
+        elif not names:
+            left.append(f'{ref}: not on the board (board.parts)')
+        elif len(names) > 1:
+            left.append(f"{ref}: its pins on {' and '.join(names)}, so its loss is not one footprint's")
+        elif ref in bound and names[0].rstrip('0123456789').upper() in OFF_BOARD:
+            left.append(f'{ref}: at connector {names[0]}, not on the board')
         else:
-            out[fp] = out.get(fp, 0.0) + w
+            out[names[0]] = out.get(names[0], 0.0) + w
     for fp in [f for f, w in out.items() if w <= 0]:
         left.append(f'{fp}: no loss')
         del out[fp]

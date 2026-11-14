@@ -203,6 +203,13 @@ def test_circuit_losses_leave_out_what_is_not_on_the_board():
     losses, left = losses_of(case, model)
     assert losses == pytest.approx({'T1': 0.07, 'Q1': 0.02})
     assert len(left) == 4 and any('connector J3' in s for s in left)
+    # board.parts as the wpthb bridge has it: null (off the board), a footprint a pin, one pin off the board
+    model['board']['parts'].update(R9=None, PRIMARY=['TP15', 'TP14'], L3=[None, 'L3'])
+    model['parts'] += [dict(ref='R9', type='resistor'), dict(ref='PRIMARY', type='inductor'), dict(ref='L3', type='inductor')]
+    case['parts'].update(R9=dict(power_W=0.2), PRIMARY=dict(power_W=0.4), L3=dict(power_W=0.05))
+    losses, left = losses_of(case, model)
+    assert losses == pytest.approx({'T1': 0.07, 'Q1': 0.02, 'L3': 0.05})
+    assert any(s.startswith('R9: not on the board') for s in left) and any('TP14 and TP15' in s for s in left)
 
 
 def test_sampling_off_the_board_is_nan():

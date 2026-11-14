@@ -15,8 +15,9 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
     ('set', 'list', [], "PATH=VALUE: a value of the model set before running, e.g. drives.pwm.duty=0.4 "
      "(repeatable)", 'Model'),
     ('engine', 'str', None, "what solves the circuit: ngspice (its transient, until the circuit repeats: the "
-     "default, or the model's analysis.engine), or pwl (the piecewise-linear steady state: ideal switches and "
-     "diodes with no capacitance, 30 to 70 times faster)", 'Run', ('ngspice', 'pwl')),
+     "default, or the model's analysis.engine), or pwl (the piecewise-linear steady state: instant edges, switches "
+     "with their Cds and packages, diodes with no junction capacitance or recovery; 5 to 25 times faster)", 'Run',
+     ('ngspice', 'pwl')),
     ('jobs', 'int', 1, 'sweep points run at once', 'Run'),
 ]
 

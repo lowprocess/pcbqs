@@ -6,7 +6,6 @@ KiCad sources are read-only. XML netlists can be read without KiCad installed;
 """
 import copy
 import hashlib
-import json
 import math
 from pathlib import Path
 import re

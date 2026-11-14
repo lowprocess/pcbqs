@@ -11,8 +11,6 @@ node to its second, <ref>.I the current entering its first node, so V x I is the
 """
 import math
 
-import numpy as np
-
 from ..power_spice import Circuit, _positive
 
 GROUND = ('0', 'GND', 'gnd')
@@ -70,7 +68,6 @@ class Deck(Circuit):
         self.kinds = {}                                             # ref: its part type
         self.coupled = []                                           # the sets of inductors coupled to each other
         self.ports = []                                             # the board's copper ports, PCB<i> in this order
-        self.step_labels = ()
 
     def add(self, part, drives, period, state=None, pin_nodes=None):
         ref, kind, (a, b) = part['ref'], part['type'], part['nodes']
@@ -83,10 +80,11 @@ class Deck(Circuit):
         if kind in ('resistor', 'capacitor'):
             self.passive(ref, a, b, {**part, **saved})
             inner = next((k for k in ('L:' + ref, 'R:' + ref) if k in self.nodes), None)
-            if kind == 'capacitor' and inner:                       # the capacitance's own voltage: the state it
-                self.voltage(ref + '.cap_V', inner, b)              # holds, without its ESR's and ESL's drops
+            if kind == 'capacitor':                                 # the capacitance's own voltage: the state it
+                self.voltage(ref + '.cap_V', inner or a, b)         # holds, without its ESR's and ESL's drops
         elif kind == 'inductor':
-            if any(k in part for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm', 'loss_model')):
+            if any(part.get(k) for k in ('SRF_Hz', 'Cp_F', 'core_R_ohm', 'loss_model')):    # (as pwl's and
+                                                                                            # model.signal_names)
                 coil = dict(part, L_H=part['value'], R_ohm=part.get('DCR_ohm', part.get('R_ohm', 0.0)), **saved)
                 self.coil(ref, a, b, coil)
             else:
@@ -103,7 +101,7 @@ class Deck(Circuit):
             for key in ('gate_V', 'rise_s', 'fall_s'):               # the drive's, unless the switch has its own
                 if key in drive:
                     m.setdefault(key, drive[key])
-            self.switch(ref, a, b, m, 1 / T, 0.0, True, timing=(delay, width))
+            self.switch(ref, a, b, m, 1 / T, timing=(delay, width))
             if 'initial_V' in saved:                                # continuing: its capacitance and its body diode
                 v = saved['initial_V']                              # start at the voltage the last run left on it
                 for i, line in enumerate(self.lines):
@@ -181,7 +179,7 @@ class Deck(Circuit):
                     f"{tf:.17g} {width:.17g} {T:.17g})")
         pts = w['points']                                           # pwl: [[t, v], ...], repeated every period_s
         flat = ' '.join(f"{t:.17g} {v:.17g}" for t, v in pts)
-        return f"PWL({flat})" + (f" r=0" if w.get('repeat', True) else '')
+        return f"PWL({flat})" + (" r=0" if w.get('repeat', True) else '')
 
     def load(self, ref, a, b, part):
         """A resistance; or a constant power or a constant current, drawn by a source of current that is a

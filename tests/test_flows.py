@@ -349,6 +349,14 @@ def test_a_rail_behind_an_input_filter_is_the_one_its_loads_are_on():
     amp = lambda l, k: l['A'][k - 1] * np.exp(1j * np.radians(l['deg'][k - 1]))
     assert abs(amp(q1, 1)) == pytest.approx(4 / np.pi, rel=1e-3)                 # a 2 A square wave's fundamental
     assert abs(amp(q1, 1) + amp(q2, 1)) < 1e-9                                   # the two halves: it cancels in the rail
+    assert row['rail_net'] == 'VHB'
+    sense = copy.deepcopy(w)                                    # L3 as a 10 mOhm resistor: on the way, as L3 was
+    for p in sense['parts']:
+        if p['ref'] == 'L3':
+            p.clear()
+            p.update(ref='L3', type='resistor', nodes=['VBUS', 'VHB'], value=0.01)
+    row, = S.currents(sense, result, 1 / f)
+    assert (row['node'], row['rail_net'], row['through'], row['dcr']) == ('VHB', 'VHB', ['L3'], dict(L3=0.01))
     bare = copy.deepcopy(w)
     bare['parts'] = [p for p in bare['parts'] if p['ref'] not in ('R9', 'L3')]  # the switches on the source's own node
     for p in bare['parts']:
@@ -378,3 +386,20 @@ def test_the_bridge_proposes_its_rail(tmp_path):
     assert pdn['values']['rail'] == 'VIN' and pdn['values']['through'] == 'L3' and pdn['values']['dcr'] == 'L3=0.03'
     assert pdn['values']['volts'] == 24.0 and pdn['values']['load'].splitlines()[0].startswith('Q1=')
     assert 'through L3' in pdn['note']
+    fields = [p for p in reports.circuit_suggest(out, str(tmp_path)) if p['to'] == 'mqs']
+    assert fields and all(p['values']['vin'] == 'VHB' for p in fields)      # where the switches are, not the source
+    assert fields[0]['values']['capacitors'] == 'C19,C20,C21,C22,C23,C24'
+
+
+def test_a_boost_s_inductor_is_its_load_not_a_filter(tmp_path):
+    """The source feeds a lone inductor, but to the switch's node, which no capacitor holds: the rail is the
+    source's node and the inductor its load (an input filter would be followed to the node behind it)."""
+    import pcbqs.circuit
+    with open(os.path.join(os.path.dirname(pcbqs.circuit.__file__), 'examples', '06_boost.json'), encoding='utf-8') as fh:
+        m = json.load(fh)
+    m['analysis'] = dict(engine='pwl')
+    m.pop('board', None)
+    case = run(m, tmp_path, log=lambda *a: None)['cases'][0]
+    row, = case['supply']
+    assert (row['node'], row['rail_net'], row['through']) == ('in', 'in', []) and row['source_footprint'] is None
+    assert [l['parts'] for l in row['loads']] == [['L1']]

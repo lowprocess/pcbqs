@@ -238,7 +238,8 @@ def circuit_suggest(res, folder='', pads=None):
         pass
     out = []
     for row in case['supply']:
-        on = row.get('node') if row.get('through') else row['net']      # behind a filter: the net its loads are on
+        on = row.get('rail_net') or (row.get('node') if row.get('through') else row['net'])   # the net its loads
+                                                                        # are on (behind a filter: not the source's)
         loads = [l for l in row['loads'] if os.path.isfile(os.path.join(here, l['file']))
                  and (pads is None or on in pads.get(l['footprint'], ()) or row['net'] in pads.get(l['footprint'], ()))]
         if not loads:
@@ -265,12 +266,12 @@ def circuit_suggest(res, folder='', pads=None):
         for l in sorted(loads, key=lambda l: -l['rms_A'])[:2]:
             if pads is not None and ground not in pads.get(l['footprint'], ()):
                 continue                                        # (the near field's source: a part on both)
-            caps = [c for c in row.get('capacitors') or [] if pads is None or {row['net'], ground} <= set(pads.get(c, ()))]
+            caps = [c for c in row.get('capacitors') or [] if pads is None or {on, ground} <= set(pads.get(c, ()))]
             out.append(dict(
                 to='mqs', label=f"Copy {l['footprint']}'s input current to Near field",
-                values=dict(converter=l['footprint'], vin=row['net'], ground=ground, capacitors=','.join(caps),
+                values=dict(converter=l['footprint'], vin=on, ground=ground, capacitors=','.join(caps),
                             spectrum=file(l)),
-                need=[], note=f"{l['footprint']} on {row['net']} with the input current the circuit gave it{of}, in "
+                need=[], note=f"{l['footprint']} on {on} with the input current the circuit gave it{of}, in "
                               f"place of the assumed pulse."))
     return out
 

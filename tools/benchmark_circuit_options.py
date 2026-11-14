@@ -1,9 +1,10 @@
-"""Solver-option trials on a real pcbqs circuit netlist (the wpthb bridge with its copper model: pcbqs.circuit's).
+"""Solver-option trials on a real pcbqs circuit netlist (the wpthb bridge, data/wpthb_bridge.json, with its copper:
+a case folder of pcbqs.circuit's ngspice run).
 
     python tools/benchmark_circuit_options.py <circuit case folder with circuit.cir> [variant ...] [--out DIR]
 
-Each variant rewrites only the .options line; measurements (last switching cycle) are compared with the
-unmodified netlist's.
+Each variant rewrites only the .options line; measurements (last switching cycle: the model's measures and the
+supply's and the load's power) are compared with the unmodified netlist's.
 """
 import json
 import re
@@ -26,7 +27,7 @@ VARIANTS = {                                     # each: SOLVER_DEFAULTS with th
     'abstol1e-9': options_line(dict(abstol=1e-9)),
     'reltol1e-3-abstol1e-9': options_line(dict(reltol=1e-3, abstol=1e-9)),
 }
-KEYS = ['input_power_W', 'load_power_W', 'primary_rms_A', 'secondary_rms_A', 'primary_peak_A', 'bus_ripple_V']
+PARTS = ('part.VSUP.power_W', 'part.LOAD.power_W')       # the bridge's supply and load, with the model's measures
 
 
 def run(case, tag, opts, root):
@@ -42,6 +43,7 @@ def run(case, tag, opts, root):
     log = p.stdout + p.stderr
     (work / 'ngspice.log').write_text(log)
     labels = json.loads((case / 'measurements.json').read_text())
+    keys = [k for k in labels if k.startswith('measure.') or k in PARTS]
     meas = {}
     for i, key in enumerate(labels):
         m = re.search(rf'^m{i}\s*=\s*([-+0-9.eE]+)', log, re.M)
@@ -52,7 +54,7 @@ def run(case, tag, opts, root):
                      ('iterations', r'Transient iterations\s*=\s*(\d+)'), ('factor_s', r'Matrix factor time\s*=\s*([0-9.]+)')):
         m = re.search(pat, log)
         stats[key] = float(m.group(1)) if m else None
-    return dict(tag=tag, wall_s=wall, ok=p.returncode == 0, **stats, measures={k: meas.get(k) for k in KEYS})
+    return dict(tag=tag, wall_s=wall, ok=p.returncode == 0, **stats, measures={k: meas.get(k) for k in keys})
 
 
 def main():
@@ -68,9 +70,10 @@ def main():
         r = run(case, tag, VARIANTS[tag], root)
         out.append(r)
         ref = out[0]['measures']
-        dev = {k: (r['measures'][k] / ref[k] - 1) * 100 for k in KEYS if r['measures'].get(k) and ref.get(k)}
+        dev = {k.split('.')[-2] if k.startswith('part.') else k[8:]: (r['measures'][k] / ref[k] - 1) * 100
+               for k in r['measures'] if r['measures'].get(k) and ref.get(k)}
         print(f"{tag:24s} {r['wall_s']:7.1f} s  steps {r['accepted']:.0f}+{r['rejected']:.0f}  iters {r['iterations']:.0f}  "
-              f"| dev % " + ' '.join(f'{k.split("_")[0]}={v:+.2f}' for k, v in dev.items()), flush=True)
+              f"| dev % " + ' '.join(f'{k}={v:+.2f}' for k, v in dev.items()), flush=True)
     json.dump(out, open(root / 'results.json', 'w'), indent=1)
 
 

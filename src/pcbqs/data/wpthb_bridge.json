@@ -388,6 +388,10 @@
    "max": "abs(PRIMARY.winding_I)"
   },
   "bus_ripple_V": {
+   "pp": "vhb",
+   "samples": 256
+  },
+  "bus_spike_pp_V": {
    "pp": "vhb"
   }
  },

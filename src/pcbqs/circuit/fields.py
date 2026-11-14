@@ -111,7 +111,6 @@ def export(model, summary, copper, out, log=print):
     largest values, the files). The copper's solver model is made once, its response once for each period."""
     from .._cli import load_board
     from ..mqs_ports import CopperPorts
-    from . import model as M
     from .copper import board_file, geometry, net_name
     s = settings(model)
     board = load_board(str(board_file(model)))

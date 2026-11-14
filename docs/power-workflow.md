@@ -74,16 +74,18 @@ its JSON.
 ![wpthb circuit builds](../examples/power-workflow/images/04-wpthb-circuit-builds.png)
 
 - **Efficiency, coil currents, input power** per operating point.
-- **VHB p-p** (`bus_ripple_V`) is a peak to peak of the reported run's samples, with the switching-edge spikes
-  the copper's inductance puts on the bus.
+- **VHB ripple** (`bus_ripple_V`) is the settled ripple, VHB sampled 256 times a period (a measure's `samples`), as
+  a scope sees it; `bus_spike_pp_V` is the peak to peak with the switching-edge spikes the copper's inductance puts
+  on the bus (ngspice's every step).
 - **Supply current**: the ripple an input filter keeps off the supply cable
   (wpthb: 0.2–1 mA rms with L3, 35–47 mA without).
 - Switch, package and capacitor parasitics in the model are placeholders;
   use datasheet or vendor models before trusting overshoot or loss.
 
 Run time: ngspice runs each point until it repeats (40 s alone at 90 kHz, 10 W); `--engine pwl` finds the steady
-state itself (30 s, most of it the reported run sampled as finely as the packages ring), leaving out gate charge
-and diode recovery ([the piecewise-linear engine](circuit.md#the-piecewise-linear-engine)).
+state itself (7 s, half of it the reported run sampled as finely as the packages ring), leaving out the gates'
+charge and the body diodes' reverse recovery, as its notes say: its switches lose less, about a point of
+efficiency on this bridge ([the piecewise-linear engine](circuit.md#the-piecewise-linear-engine)).
 
 ## 4. From one tool to the next
 

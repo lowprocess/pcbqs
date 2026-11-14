@@ -8,19 +8,23 @@ What a circuit draws from its supply, for the other tools: a rail's loads for th
 
 A supply node is one a DC voltage source is on (its + side; the other on ground). Every other part with a pin on
 it draws a current from it, but the capacitors: they are the rail's own decoupling, which a model of the rail has
-as parts. Where all the source feeds is one inductor or resistor in series (an input filter), the rail is the
-node behind it, as far as such parts lead: its loads are drawn from there, and the row says which inductors the
-way passes (through) and their DC resistance (dcr), so a model of the rail has them (pcbqs.pdn --through, --dcr). A part's current is taken at its pin on the node, over the last period: its average (the rail's DC
-load) and its harmonics, i(t) = avg + sum A_n cos(2 pi n t / period + phase_n). Parts on one footprint (a
-regulator's switches) are one load, their currents added.
+as parts. Where all the source feeds is one inductor or resistor in series to a node its capacitors hold (an
+input filter; a boost's inductor feeds its switch, which no capacitor holds, and is a load), the rail is the node
+behind it, as far as such parts lead: its loads are drawn from there, and the row says which footprints the way
+passes on the board (through) and their DC resistance (dcr), so a model of the rail has them (pcbqs.pdn
+--through, --dcr). A part's current is taken at its pin on the node, over the last period: its average (the
+rail's DC load) and its harmonics, i(t) = avg + sum A_n cos(2 pi n t / period + phase_n). Parts on one footprint
+(a regulator's switches) are one load, their currents added.
 
-    [dict(node='in', net='+5V', source='V1', source_footprint=None, volts=5.0, capacitors=['C704', 'C705', 'C706'],
-          through=[], dcr={}, loads=[
+    [dict(node='in', net='+5V', rail_net='+5V', source='V1', source_footprint=None, volts=5.0,
+          capacitors=['C704', 'C705', 'C706'], through=[], dcr={}, loads=[
         dict(footprint='U702', parts=['QH'], avg_A=1.40, rms_A=1.67, f_Hz=[...], A=[...], deg=[...],
              file='supply-U702.csv')])]
 
-(capacitors: the node's capacitors to ground, by footprint: a near-field run's input capacitors.
-source_footprint: the supply's own footprint, when the model's board has it: the rail's source.)
+(net: the board's net of the source's node, where a model of the rail starts; rail_net: the board's net of the
+node the loads are on (behind a filter: another). capacitors: the node's capacitors to ground, by footprint: a
+near-field run's input capacitors. source_footprint: the supply's own footprint, when the model has a board and
+does not put the supply off it: the rail's source.)
 
 The CSV: f_Hz, A (peak), deg, a line a harmonic. Harmonics above HARMONICS are left out; the samples of a period
 (engine: 1024, or analysis.final_samples_per_cycle) carry them without aliasing.
@@ -60,6 +64,8 @@ def currents(model, result, period, harmonics=HARMONICS):
     last, n, count = got
     live = [p for p in model['parts'] if p.get('enabled', True) and p['nodes'][0] != p['nodes'][1]]
     where = lambda part, node: footprint_of(model, part['ref'], part['nodes'].index(node)) or part['ref']
+    held = lambda node: any(p['type'] == 'capacitor' and node in p['nodes'] and set(p['nodes']) & set(GROUND)
+                            for p in live)
     rows = []
     for src in live:
         if src['type'] != 'source' or 'dc_V' not in src or src['nodes'][1] not in GROUND:
@@ -72,13 +78,16 @@ def currents(model, result, period, harmonics=HARMONICS):
                 break
             step = drawing[0]
             other = step['nodes'][1] if step['nodes'][0] == node else step['nodes'][0]
-            if other in GROUND:
+            if other in GROUND or not held(other):                  # (a boost's inductor: its switch's node)
                 break
             passed.add(step['ref'])
-            if step['type'] == 'inductor':
-                through.append(step['ref'])
-                if step.get('DCR_ohm'):
-                    dcr[step['ref']] = float(step['DCR_ohm'])
+            fps = [footprint_of(model, step['ref'], k) for k in (0, 1)]
+            fp = next((f for f in fps if f), None)                  # (on the board: its footprint; off it, nothing)
+            if fp and fp not in through:
+                through.append(fp)
+                ohms = step.get('DCR_ohm') if step['type'] == 'inductor' else step.get('value')
+                if ohms:
+                    dcr[fp] = float(ohms)
             node = other
         drawn = {}
         for part in live:
@@ -96,9 +105,9 @@ def currents(model, result, period, harmonics=HARMONICS):
         if loads:
             caps = [where(p, node) for p in live if p['type'] == 'capacitor' and node in p['nodes']
                     and set(p['nodes']) & set(GROUND)]
-            rows.append(dict(node=node, net=net_name(model, src['nodes'][0], ()), source=src['ref'],
-                             source_footprint=footprint_of(model, src['ref'], 0), volts=float(src['dc_V']),
-                             capacitors=caps, through=through, dcr=dcr, loads=loads))
+            rows.append(dict(node=node, net=net_name(model, src['nodes'][0], ()), rail_net=net_name(model, node, ()),
+                             source=src['ref'], source_footprint=footprint_of(model, src['ref'], 0) if model.get('board') else None,
+                             volts=float(src['dc_V']), capacitors=caps, through=through, dcr=dcr, loads=loads))
     return rows
 
 

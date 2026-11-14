@@ -40,7 +40,7 @@ import numpy as np
 
 from ..power_spice import cancel_active_runs, reset_runs
 from . import model as M
-from .deck import build, period_of
+from .deck import build
 
 ENGINES = ('ngspice', 'pwl')                # analysis.engine: ngspice's transient, or the piecewise-linear steady state
 DEFAULTS = dict(engine='ngspice', cycles=200, final_cycles=8, max_cycles=20000, max_trials=40, periodic_tolerance=0.003,
@@ -78,9 +78,49 @@ def add_measures(deck, model):
         deck.measures[f"copper.{i}.rms_A"] = ('RMS', f"@PCB{i}.I@")
     labels = sorted(deck.signals, key=len, reverse=True)
     token = re.compile('|'.join(re.escape(l) for l in labels) or r'$^')
+    deck.sampled = {}                                               # (sampled_measures: taken after the run)
     for name, ms in model.get('measures', {}).items():
-        stat, expr = next(iter(ms.items()))
-        deck.measures['measure.' + name] = (stat.upper(), token.sub(lambda m: '@' + m[0] + '@', str(expr)))
+        stat = next(k for k in ms if k in M.STATS)
+        entry = (stat.upper(), token.sub(lambda m: '@' + m[0] + '@', str(ms[stat])))
+        if 'samples' in ms:
+            deck.sampled['measure.' + name] = (*entry, int(ms['samples']))
+        else:
+            deck.measures['measure.' + name] = entry
+
+
+FUNCTIONS = dict(abs=np.abs, sqrt=np.sqrt, min=np.minimum, max=np.maximum, exp=np.exp, log=np.log, pi=np.pi)
+STATISTICS = dict(AVG=np.mean, RMS=lambda y: np.sqrt(np.mean(y * y)), PP=np.ptp, MAX=np.max, MIN=np.min)
+
+
+def evaluate(expr, signals):
+    """A measure's expression (@signal@s, as add_measures writes it) over a run's signals ({label: samples})."""
+    pieces = expr.split('@')
+    missing = next((p for p in pieces[1::2] if p not in signals), None)
+    if missing is not None:
+        raise M.ModelError(f"{expr!r}: the run has no signal {missing}")
+    code = ''.join(f"S[{p!r}]" if k % 2 else p for k, p in enumerate(pieces))
+    try:
+        y = eval(code, {'__builtins__': {}}, dict(FUNCTIONS, S=signals))    # noqa: S307 (the model's own expression)
+    except (NameError, SyntaxError, TypeError) as exc:
+        raise M.ModelError(f"{expr!r} is not an expression of the run's signals ({exc})") from None
+    return np.broadcast_to(np.asarray(y, float), np.shape(signals['time_s']))
+
+
+def sampled_measures(deck, signals, period):
+    """The measures given samples: N (add_measures), each its statistic over N evenly spaced instants of the run's
+    last period, interpolated in its samples: what a scope that samples so often sees, the switching edges' spikes
+    between the instants left out (a filter's settled ripple). {measure.<name>: value}."""
+    out = {}
+    if not getattr(deck, 'sampled', None):
+        return out
+    t = np.asarray(signals['time_s'], float)
+    whole = t[-1] - t[0] >= period * (1 - 1e-9)                     # (a run of periods; else one period's samples)
+    for name, (stat, expr, n) in deck.sampled.items():
+        y = evaluate(expr, signals)
+        at = (t[-1] - period if whole else t[0]) + np.arange(n) * period / n
+        v = np.interp(at, t, y) if whole else np.interp(at, t, y, period=period)
+        out[name] = float(STATISTICS[stat](v))
+    return out
 
 
 def collect(measured, deck):
@@ -386,6 +426,7 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
                 shutil.copy2(folder / 'ngspice.log', folder / f"ngspice-failed-{k}.log")
             log(f"{label}ngspice did not converge; retrying " + ('with the other integration method' if k == 0 else 'from the DC start'))
     (folder / 'transient.dat').unlink(missing_ok=True)              # reproducible from circuit.cir
+    result['_measures'].update(sampled_measures(deck, result, period))
     if deck.ports:                                                  # the copper's currents, harmonic by harmonic, from
         from ..power_waveforms import save_port_spectrum            # ngspice's own steps (for the fields)
         save_port_spectrum(folder, list(deck.signals), f, harmonics=max(31, int((model.get('fields') or {}).get('harmonics', 16))))
@@ -398,8 +439,12 @@ def fingerprint(model, copper=None):
                                   sort_keys=True).encode())
     h.update((copper or {}).get('fingerprint', 'no copper').encode())
     from .. import power_spice
-    from . import deck as D
-    for module in (power_spice, D, M, __import__(__name__, fromlist=['x'])):
+    from . import deck as D, supply
+    modules = [power_spice, D, M, supply, __import__(__name__, fromlist=['x'])]
+    if settings(model)['engine'] == 'pwl':                          # (its answers are its own code's)
+        from . import pwl
+        modules.append(pwl)
+    for module in modules:
         h.update(Path(module.__file__).read_bytes())
     return h.hexdigest()
 
@@ -453,6 +498,8 @@ def run_case(model, point, out, log=print, copper=None):
                                                 copper=with_copper)
         total += cycles
         state = end_state(result, resolved, deck)
+        if pwl:                                     # (its own state: where the next run's search starts)
+            state['pwl'] = getattr(deck, 'pwl_state', None)
         errors = periodic_error(result, deck, deck.period, a.get('ignore', ()))
         worst = max(errors.values(), default=0.0)
         drifting, _ = unsteadiness(result, resolved, deck, stats)
@@ -462,7 +509,8 @@ def run_case(model, point, out, log=print, copper=None):
                      measures=stats['measures'])
         history.append(entry)
         if worst > a['periodic_tolerance'] or drifting > a['energy_tolerance']:
-            state = end_state(result, resolved, deck, deck.period)  # ringing: start the next run from its middle
+            state = dict(end_state(result, resolved, deck, deck.period), pwl=state.get('pwl'))   # ringing: start the
+                                                                                            # next run from its middle
             cycles = min(cycles * 2, 8 * int(a['cycles']))          # slow to settle: longer runs, fewer of them
             if total >= a['max_cycles']:
                 slow = max(errors, key=errors.get)
@@ -496,9 +544,13 @@ def run_case(model, point, out, log=print, copper=None):
     if pwl:
         reported = None                         # no tolerance: each interval's solution is exact
         log(label + "reported run: the steady state, sampled as finely as the circuit rings")
-        result, deck, stats, _ = run_once(resolved, None, 0, trials / 'final', a, None, log, label, final=True,
-                                          copper=with_copper)
-        folder = trials / 'final'
+        try:                                    # (from the accepted run's state: it is a few periods from there)
+            result, deck, stats, _ = run_once(resolved, dict(pwl=getattr(deck, 'pwl_state', None)), 0, trials / 'final',
+                                              a, None, log, label, final=True, copper=with_copper)
+            folder = trials / 'final'
+        except RuntimeError as exc:
+            notes.append(f"the reported run, sampled as finely as the circuit rings, failed ({exc}): reported from "
+                         f"the search's run, on samples_per_cycle")
         notes += getattr(deck, 'engine_notes', [])
     elif a['strict'] and strict < a['search_reltol']:
         final = trials / 'final'

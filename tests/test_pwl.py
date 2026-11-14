@@ -103,6 +103,10 @@ def test_what_it_leaves_to_ngspice(tmp_path):
     gate['parts'][1]['model'] = dict(type='switch', Cgd_F=1e-10, body_diode=False)     # what is left out is said
     case = run(gate, tmp_path / 'e', **QUIET)['cases'][0]
     assert any('Q1: its gate capacitances' in n for n in case['notes'])
+    body = buck()
+    body['parts'][1]['model'] = dict(type='switch', diode_TT_s=2e-8)                   # its body diode's recovery
+    case = run(body, tmp_path / 'r', **QUIET)['cases'][0]
+    assert any("Q1: its body diode's reverse recovery (diode_TT_s) is left out" in n for n in case['notes'])
 
 
 def test_the_command_and_the_window_s_option(tmp_path, capsys):
@@ -264,3 +268,130 @@ def test_a_rectifier_on_its_board_as_ngspice_has_it(tmp_path):
     assert b['copper']['loss_W'] == pytest.approx(a['copper']['loss_W'], rel=0.03)
     for k in ('vout_avg', 'vout_ripple', 'id_peak'):
         assert b['measures'][k] == pytest.approx(a['measures'][k], rel=0.01), k
+
+
+def edge_buck(phase=0.0, package=None, duty=0.25, engine='pwl'):
+    """A 12 V, 100 kHz buck at a quarter's duty with a 20 ns dead time (its edges 20 ns): at 270 degrees its off
+    edge falls on the period's start."""
+    sw = dict(type='switch', Ron_ohm=0.02, body_diode=False, **({'package_L_H': package} if package else {}))
+    return dict(format=2, name='b', parameters={}, parts=[
+        dict(ref='V1', type='source', nodes=['in', '0'], dc_V=12.0),
+        dict(ref='Q1', type='switch', nodes=['in', 'sw'], drive='pwm', model=sw),
+        dict(ref='D1', type='diode', nodes=['0', 'sw'], model=dict(Vf_V=0.5, If_A=1.0, R_ohm=0.01)),
+        dict(ref='L1', type='inductor', nodes=['sw', 'out'], value=22e-6),
+        dict(ref='C1', type='capacitor', nodes=['out', '0'], value=100e-6, ESR_ohm=5e-3),
+        dict(ref='R1', type='load', nodes=['out', '0'], resistance_ohm=2.0)],
+        drives=dict(pwm=dict(frequency_Hz=100e3, duty=duty, phase_deg=phase, dead_time_s=20e-9)),
+        probes=dict(vout=dict(voltage=['out', '0'])), measures=dict(vout=dict(avg='vout')), analysis=dict(engine=engine))
+
+
+def test_an_edge_on_the_period_s_start_is_the_period_s(tmp_path):
+    """An edge that falls exactly on the period's start is where the period begins: the switch is off from there,
+    as the same drive at 0 degrees has it (it was dropped, and the switch left on all period: 11.6 V for 2.6)."""
+    m = edge_buck(270.0)
+    assert (0.0, 0, False) in pwl.Plant(M.resolve(m)).edges
+    a = run(edge_buck(0.0), tmp_path / 'a', **QUIET)['cases'][0]
+    b = run(m, tmp_path / 'b', **QUIET)['cases'][0]
+    assert b['measures']['vout'] == pytest.approx(a['measures']['vout'], rel=1e-6)
+    assert b['measures']['vout'] == pytest.approx(2.5866, rel=2e-3)     # ngspice's, 2026-11-14
+
+
+def test_a_current_source_into_open_parts_finds_the_diode_that_takes_it(tmp_path):
+    """A current-fed boost: a source of 1 A into a node only an open switch and an off diode are on. What it
+    brings the node turns the diode on (its node is an island no inductor reaches: the leakage and G_MIN against
+    the current, not the leakage alone); half the period into a 10 ohm load: 5 V, as ngspice has it."""
+    m = dict(format=2, name='c', parameters={}, parts=[
+        dict(ref='I1', type='source', nodes=['sw', '0'], dc_A=1.0),
+        dict(ref='Q1', type='switch', nodes=['sw', '0'], drive='pwm', model=dict(type='switch', Ron_ohm=0.01, body_diode=False)),
+        dict(ref='D1', type='diode', nodes=['sw', 'out'], model=dict(Vf_V=0.5, If_A=1.0, R_ohm=0.01)),
+        dict(ref='C1', type='capacitor', nodes=['out', '0'], value=10e-6),
+        dict(ref='R1', type='load', nodes=['out', '0'], resistance_ohm=10.0)],
+        drives=dict(pwm=dict(frequency_Hz=100e3, duty=0.5)),
+        probes=dict(vout=dict(voltage=['out', '0'])), measures=dict(vout=dict(avg='vout')), analysis=dict(engine='pwl'))
+    case = run(m, tmp_path, **QUIET)['cases'][0]
+    assert case['measures']['vout'] == pytest.approx(5.0, rel=1e-3)         # ngspice: 5.00007 V
+    assert case['parts']['R1']['power_W'] == pytest.approx(2.5, rel=2e-3)
+
+
+def test_a_cut_current_s_energy_is_the_switch_s_whatever_the_hold(tmp_path, monkeypatch):
+    """A switch with a package inductance and no capacitance cuts that inductance's current as it opens: the
+    current jumps to zero at the edge (it went on for a period over HOLD, as much again lost at the input's
+    voltage the faster it was held), and the half L I^2 it held is the switch's loss. The same at any HOLD, and the
+    power balance closes."""
+    rows = {}
+    for hold in (2000, 32000):
+        monkeypatch.setattr(pwl, 'HOLD', hold)
+        rows[hold] = run(edge_buck(package=1e-9, duty=0.4), tmp_path / str(hold), **QUIET)['cases'][0]
+    a, b = rows[2000], rows[32000]
+    assert b['parts']['Q1']['power_W'] == pytest.approx(a['parts']['Q1']['power_W'], rel=1e-6)
+    assert a['power_balance_relative'] < 1e-6
+    bare = run(edge_buck(duty=0.4), tmp_path / 'bare', **QUIET)['cases'][0]
+    ipk = a['parts']['L1']['peak_A']
+    extra = a['parts']['Q1']['power_W'] - bare['parts']['Q1']['power_W']
+    assert extra == pytest.approx(0.5 * 1e-9 * ipk ** 2 * 100e3, rel=0.15)
+
+
+def test_a_board_with_no_ports_leaves_the_parts_at_their_nodes():
+    """copper.prepare's answer where no net has two of the model's pads (no ports): no pin is put on a pad of its
+    own, as the deck has it (they were, each on a node of its own: the buck's output read 0 V)."""
+    m = M.resolve(buck())
+    pins = {('Q1', 0): 'Q1.in', ('Q1', 1): 'Q1.sw', ('L1', 1): 'L1.out'}
+    plant = pwl.Plant(m, dict(ports=[], model=None, pins=pins))
+    assert set(plant.index) == set(pwl.Plant(m).index) == {'in', 'sw', 'out'}
+
+
+def test_the_port_spectrum_is_the_copper_s_ports_alone(tmp_path):
+    """PCB<i>.I in port order (PCB2 before PCB10); a part of the model called PCB_TRACE is not a port."""
+    n = 64
+    one = {'time_s': np.arange(n) / (n * 1e3), 'PCB0.I': np.ones(n), 'PCB10.I': 2 * np.ones(n),
+           'PCB2.I': 3 * np.ones(n), 'PCB_TRACE.I': np.zeros(n), 'PCB_TRACE.V': np.zeros(n)}
+    pwl.port_spectrum(tmp_path, one, 1e-3)
+    with np.load(tmp_path / 'port-spectrum.npz') as sp:
+        assert list(sp['port_labels']) == ['PCB0.I', 'PCB2.I', 'PCB10.I']
+        assert sp['coefficients_A'][0].real == pytest.approx([1.0, 3.0, 2.0])
+
+
+@pytest.mark.parametrize('engine', ['pwl', pytest.param('ngspice', marks=ngspice)])
+def test_a_capacitor_s_own_voltage_and_a_sampled_measure(tmp_path, engine):
+    """<ref>.cap_V of a capacitor with no ESR or ESL (its voltage: both engines have it), and a measure taken at
+    so many instants a period (samples): the RC filter's ripple at 64 instants is its peak to peak, to the
+    sampling's step."""
+    m = example('01_rc_filter')
+    m['measures'].update(c_pp=dict(pp='C1.cap_V'), sampled=dict(pp='vout', samples=64), sampled_avg=dict(avg='vout', samples=64))
+    m.setdefault('analysis', {})['engine'] = engine
+    out = run(m, tmp_path, **QUIET)
+    assert not out['failed'], out['failed']
+    ms = out['cases'][0]['measures']
+    assert ms['c_pp'] == pytest.approx(ms['vout_ripple'], rel=1e-6)
+    assert ms['sampled'] == pytest.approx(ms['vout_ripple'], rel=0.02) and ms['sampled'] <= ms['vout_ripple'] * (1 + 1e-9)
+    assert ms['sampled_avg'] == pytest.approx(ms['vout_avg'], rel=0.01)
+    bad = copy.deepcopy(m)
+    bad['measures']['sampled']['samples'] = 2
+    with pytest.raises(M.ModelError, match='samples'):
+        M.validate(bad)
+
+
+def test_a_probe_on_a_node_no_enabled_part_is_on_fails_its_point(tmp_path):
+    m = buck()
+    m['parts'].append(dict(ref='R9', type='resistor', nodes=['x', '0'], value=1.0, enabled=False))
+    m['probes']['vx'] = dict(voltage=['x', '0'])
+    out = run(m, tmp_path, **QUIET)
+    assert out['cases'] == [] and 'probe vx' in out['failed'][0]['error']
+
+
+def test_the_reported_run_keeps_samples_per_cycle(tmp_path):
+    """The reported run is sampled as finely as the circuit rings; what it keeps is samples_per_cycle a period
+    (the bridge: 2^18 and 8192), and it starts from the accepted run's state."""
+    import pcbqs
+    with open(os.path.join(os.path.dirname(pcbqs.__file__), 'data', 'wpthb_bridge.json'), encoding='utf-8') as fh:
+        m = json.load(fh)
+    m['sweep'] = {'parameters.f': [90e3], 'parameters.P': [10.0]}
+    m['analysis'] = dict(engine='pwl')
+    case = run(m, tmp_path, **QUIET)['cases'][0]
+    perf = json.loads(open(os.path.join(case['folder'], 'performance.json'), encoding='utf-8').read())
+    assert perf['samples_per_cycle'] == perf['ringing_samples'] > 8192 and perf['stored_samples_per_cycle'] == 8192
+    with np.load(os.path.join(case['folder'], 'transient.npz')) as d:
+        assert len(d['time_s']) == pwl.PERIODS * 8192
+    assert os.path.getsize(os.path.join(case['folder'], 'transient.npz')) < 40e6
+    assert case['load_power_W'] == pytest.approx(10.0, rel=0.005) and case['efficiency'] == pytest.approx(0.942, abs=0.002)
+    assert case['measures']['bus_spike_pp_V'] >= case['measures']['bus_ripple_V'] > 0

@@ -215,9 +215,14 @@ def validate(model):
         else:
             _need(str(pr['current']).lower() in refs, f"probes.{name}: no part {pr['current']!r}")
     for name, ms in model.get('measures', {}).items():
-        _need(isinstance(ms, dict) and len(ms) == 1 and next(iter(ms)) in STATS,
-              f"measures.{name}: one of {', '.join(STATS)}: <expression of probes>")
-        for token in re.findall(r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_]+)?', str(next(iter(ms.values())))):
+        stats = [k for k in ms if k in STATS] if isinstance(ms, dict) else []
+        _need(len(stats) == 1 and set(ms) <= {stats[0], 'samples'},
+              f"measures.{name}: one of {', '.join(STATS)}: <expression of probes>, and samples: N if it is to be "
+              f"taken at N instants of the period (a scope's settled value: what falls between them left out)")
+        _need('samples' not in ms or (isinstance(ms['samples'], int) and not isinstance(ms['samples'], bool)
+                                      and 4 <= ms['samples'] <= 65536),
+              f"measures.{name}: samples is a whole number of instants a period, 4 to 65536")
+        for token in re.findall(r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_]+)?', str(ms[stats[0]])):
             _need(token in signals or token in FUNCTIONS or token == 'pi',
                   f"measures.{name}: {token!r} is not a probe or a part's signal (<ref>.V, <ref>.I; a winding's "
                   f"<ref>.winding_I, a capacitor's <ref>.cap_V)")
