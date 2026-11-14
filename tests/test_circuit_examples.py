@@ -35,7 +35,7 @@ def test_every_example_runs_clean_and_its_books_balance(solved, name):
     model, cases = solved(name)
     assert len(cases) == len(M.cases(model))
     for c in cases:
-        ramp = [n for n in c['notes'] if "drive's own ramp" in n]               # (said of an ideal switch)
+        ramp = [n for n in c['notes'] if "drive's own ramp" in n or 'generic MOSFET' in n]  # (said of the switches' models)
         assert c['settled'] and [n for n in c['notes'] if n not in ramp] == [] and c['reltol'] == 1e-4
         assert c['periodic_error'] < 0.003 and c['energy_drift_relative'] < 0.01      # and that is counted out
         for t in c['targets']:

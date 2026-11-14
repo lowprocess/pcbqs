@@ -97,7 +97,7 @@ def model_of(board, path, a):
     cap = lambda r, node, value: dict(ref=r, type='capacitor', nodes=[node, '0'], value=value, ESR_ohm=esr, ESL_H=esl)
     model_parts = [dict(ref=v1, type='source', nodes=['in', '0'], dc_V='vin', R_ohm=0.02)]
     model_parts += [cap(c, 'in', selected['values'][c]) for c in selected['capacitors']]
-    switch = dict(type='switch', Ron_ohm=RON, Cds_F='100p')
+    switch = dict(type='vdmos', Ron_ohm=RON)
     model_parts.append(dict(ref=qh, type='switch', nodes=['in', 'sw'], drive='pwm', model=dict(switch)))
     on_board = {qh: ref}
     diodes = [p for p in parts.values() if re.match(r'D\d', p.ref) and p.nets() == {sw, ground}]
@@ -195,7 +195,7 @@ def boost_of(board, path, a, selected, found, parts):
     model_parts.append(dict(ref=ind.ref, type='inductor', nodes=['in', 'sw'], value=henries, DCR_ohm=dcr or DCR))
     if not dcr:
         assumed.append(f"{DCR * 1e3:g} mOhm DCR for {ind.ref}")
-    switch = dict(type='switch', Ron_ohm=RON, Cds_F='100p')
+    switch = dict(type='vdmos', Ron_ohm=RON)
     model_parts.append(dict(ref=low, type='switch', nodes=['sw', '0'], drive='pwm', model=dict(switch)))
     if re.match(r'(Q|M)\d', up.upper()):                # a synchronous boost: the upper switch, the complement
         model_parts.append(dict(ref=up, type='switch', nodes=['sw', 'out'], drive='pwm', invert=True, model=dict(switch)))

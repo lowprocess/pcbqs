@@ -101,7 +101,7 @@ def test_what_kicad_tells_and_what_it_does_not():
                                                        exclude_from_sim=False, **more)
     fet = comp('Q7', 'mosfet', 'BSC', [pin('1', 'G', 'g'), pin('2', 'S', 'GND'), pin('3', 'D', '/sw')], fields={'Rds': '8m'})
     part, _ = K.part_of(fet, {'hb': {}})
-    assert part == dict(ref='Q7', type='switch', nodes=['sw', 'GND'], drive='hb', model=dict(type='switch', Ron_ohm=0.008, Cds_F='300p'))
+    assert part == dict(ref='Q7', type='switch', nodes=['sw', 'GND'], drive='hb', model=dict(type='vdmos', Ron_ohm=0.008))
     assert K.part_of(comp('D2', 'unsupported', 'SS34', [pin('1', '', 'out'), pin('2', '', 'sw')]))[0] == \
         dict(ref='D2', type='diode', nodes=['sw', 'out'], model=dict(Vf_V=0.45, Cj_F='100p'))      # pad 1 is the cathode
     assert K.part_of(comp('D3', 'unsupported', '1N4148', [pin('1', 'A', 'x'), pin('2', 'K', 'y')]))[0]['nodes'] == ['x', 'y']
@@ -337,5 +337,5 @@ def test_boost_fields_come_from_its_own_currents_and_voltages(boost_copper):
 
 def _notes(case):
     """A case's notes but the one every ideal switch gets (its switching loss is its ramp's)."""
-    return [n for n in case['notes'] if "drive's own ramp" not in n]
+    return [n for n in case['notes'] if "drive's own ramp" not in n and 'generic MOSFET' not in n]
 

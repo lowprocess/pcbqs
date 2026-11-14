@@ -22,6 +22,10 @@ SOLVER_DEFAULTS = dict(
 
 
 
+
+# A switch's capacitances when its model gives none (a vdmos, the default): a generic power MOSFET's
+VDMOS_C = dict(Cgs_F=1e-9, Cgd_F=50e-12, Cds_F=500e-12)
+
 def solver_options(options=None):
     """Validated ngspice .options: SOLVER_DEFAULTS overridden by `options`."""
     merged = {**SOLVER_DEFAULTS, **(options or {})}
@@ -193,7 +197,7 @@ class Circuit:
     def switch(self, ref, a, b, model, f, timing):
         """timing: (delay_s, width_s) of the gate pulse within the period 1/f, from a drive of any duty and phase
         (circuit/deck.gate_timing)."""
-        kind = model.get('type', 'switch')
+        kind = model.get('type', 'vdmos')
         if kind not in ('ideal', 'switch', 'mosfet', 'vdmos', 'subcircuit'):
             raise ValueError('unknown switch type: ' + kind)
         T = 1 / f
@@ -258,10 +262,10 @@ class Circuit:
                 VTO=vt,
                 KP=kp,
                 RDS=roff,
-                CGDMIN=model.get('Cgd_F', 0),
-                CGDMAX=model.get('Cgd_F', 0),
-                CGS=model.get('Cgs_F', 0),
-                CJO=model.get('Cds_F', 0),
+                CGDMIN=model.get('Cgd_F', VDMOS_C['Cgd_F']),    # a generic MOSFET's, unless the part's are given
+                CGDMAX=model.get('Cgd_F', VDMOS_C['Cgd_F']),
+                CGS=model.get('Cgs_F', VDMOS_C['Cgs_F']),
+                CJO=model.get('Cds_F', VDMOS_C['Cds_F']),       # (without it ngspice's steps shrink: 100s of times slower)
                 TT=model.get('diode_TT_s', 0),
                 RB=model.get('diode_R_ohm', 0.02),
                 IS=1e-12,

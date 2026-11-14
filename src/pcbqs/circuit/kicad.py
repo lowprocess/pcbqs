@@ -152,7 +152,9 @@ def part_of(c, drives=()):
             ends.append(node_of(on.pop()))
         if ends[0] == ends[1]:
             return None, 'its drain and source are on one net'
-        model = dict(type='switch', Ron_ohm=field('rds', 'rdson', 'ron', 'sim.ron') or 0.02, Cds_F=field('coss', 'cds') or '300p')
+        model = dict(type='vdmos', Ron_ohm=field('rds', 'rdson', 'ron', 'sim.ron') or 0.02,
+                     **{k: v for k, v in [('Cds_F', field('coss', 'cds')), ('Cgd_F', field('crss', 'cgd')),
+                                          ('Cgs_F', field('cgs'))] if v})
         return dict(ref=ref, type='switch', nodes=ends, drive=next(iter(drives), 'pwm'), model=model), ''
     nets = list(dict.fromkeys(p['net'] for p in pins))
     if len(nets) != 2:

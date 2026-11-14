@@ -38,7 +38,7 @@
    ],
    "drive": "pwm",
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.03
    }
   },

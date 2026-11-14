@@ -40,7 +40,7 @@
    ],
    "drive": "lega",
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.01,
     "Cds_F": "300p"
    }
@@ -55,7 +55,7 @@
    "drive": "lega",
    "invert": true,
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.01,
     "Cds_F": "300p"
    }
@@ -69,7 +69,7 @@
    ],
    "drive": "legb",
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.01,
     "Cds_F": "300p"
    }
@@ -84,7 +84,7 @@
    "drive": "legb",
    "invert": true,
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.01,
     "Cds_F": "300p"
    }

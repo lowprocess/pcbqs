@@ -156,6 +156,9 @@ def test_the_period_is_the_one_all_the_drives_and_sources_share():
 
 def test_a_continued_run_starts_every_part_where_the_last_one_stopped():
     m = M.resolve(M.template('buck_synchronous'), M.cases(M.template('buck_synchronous'))[0])
+    for p in m['parts']:                                        # the ideal switch: its Cds and body diode are parts
+        if p['type'] == 'switch':
+            p['model']['type'] = 'switch'
     first = build(m)
     assert not first.uic and not any(' IC=' in l for l in first.lines)
     state = dict(C1=dict(initial_V=11.9, initial_I=0.1), C2=dict(initial_V=3.3, initial_I=0.0), L1=dict(initial_A=2.0),

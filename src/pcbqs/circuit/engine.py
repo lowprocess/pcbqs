@@ -365,6 +365,22 @@ class Knob:
         self.x = new
         return new
 
+    def retarget(self, err):
+        """Move by err along the slope of the last two points tried (the reported run's own error); False when
+        there is no slope to go by. The point it leaves is kept as the last tried."""
+        if getattr(self, 'slope', None) is None:                   # the search's, kept for a second move
+            pts = self.points
+            if len(pts) < 2 or pts[-1][0] == pts[-2][0] or pts[-1][1] == pts[-2][1]:
+                return False
+            (x0, e0), (x1, e1) = pts[-2], pts[-1]
+            self.slope = (e1 - e0) / (x1 - x0)
+        new = min(max(self.x - err / self.slope, self.lo), self.hi)
+        if new == self.x:
+            return False
+        self.points.append((self.x, err))
+        self.x = new
+        return True
+
 
 def plausibility(stats):
     """Notes on results no circuit gives: a part whose peak voltage is far above every source and capacitor
@@ -578,6 +594,35 @@ def run_case(model, point, out, log=print, copper=None):
                 n *= 2
             else:
                 notes.append(f"the strict rerun (reltol {strict:g}) did not settle: reported at reltol {a['search_reltol']:g}")
+            # the strict solver's measure can sit off the search's (a vdmos flyback: 5.04 V for the search's 5.01):
+            # a target it misses is stepped from its own error, along the search's slope, and run again
+            for fix in range(2 if reported == strict else 0):
+                errs = [kn.error(measured_value(kn.measure, stats)) for kn in knobs]
+                off = [(kn, e) for kn, e in zip(knobs, errs) if abs(e) > (kn.tolerance or a['target_tolerance'])]
+                moved = [kn for kn, e in off if kn.retarget(e)]
+                if not moved:
+                    break
+                current = copy.deepcopy(model)
+                for path, value in (point or {}).items():
+                    M.put(current, path, value)
+                for kn in knobs:
+                    M.put(current, kn.path, kn.x)
+                again = M.resolve(current)
+                log(label + f"reported run, its target again: {n} periods"
+                    + ''.join(f", {kn.path} = {kn.x:.6g}" for kn in moved))
+                there, start, m = trials / f'final{fix + 2}', end_state(result, resolved, deck), n
+                for _ in range(3):                                  # as the strict run: longer until it settles
+                    r2, d2, s2, _retries = simulate(again, start, m, there, a, strict, log, label, final=True,
+                                                    copper=copper)
+                    if (max(periodic_error(r2, d2, d2.period, a.get('ignore', ())).values(), default=0.0) <= a['periodic_tolerance']
+                            and unsteadiness(r2, again, d2, s2)[1] <= 5 * a['energy_tolerance']):
+                        break
+                    start, m = end_state(r2, again, d2), 2 * m
+                else:
+                    for kn in moved:                                # not settled: the run before stands
+                        kn.x = kn.points[-1][0]
+                    break
+                folder, result, deck, stats, resolved = there, r2, d2, s2, again
         except RuntimeError as exc:
             if 'ngspice transient failed' not in str(exc):
                 raise
@@ -594,11 +639,19 @@ def run_case(model, point, out, log=print, copper=None):
     (out / 'model.json').write_text(json.dumps(resolved, indent=1))
     notes += plausibility(stats)
     ramps = [pt['ref'] for pt in resolved.get('parts', []) if pt.get('type') == 'switch'
-             and (pt.get('model') or {}).get('type', 'switch') == 'switch'
+             and (pt.get('model') or {}).get('type', 'vdmos') == 'switch'
              and not any((pt.get('model') or {}).get(k) for k in ('Cgd_F', 'Cgs_F', 'Qg_C', 'Qgd_C'))]
     if ramps:                                                       # (its loss had read as a device's)
         notes.append(f"{', '.join(ramps)}: switched by the drive's own ramp (rise_s, fall_s), with no gate charge: "
                      f"the switching loss is the ramp's, not a device's (a vdmos or vendor model gives that)")
+    generic = [pt['ref'] for pt in resolved.get('parts', []) if pt.get('type') == 'switch'
+               and (pt.get('model') or {}).get('type', 'vdmos') == 'vdmos'
+               and not all(k in (pt.get('model') or {}) for k in ('Cgd_F', 'Cgs_F', 'Cds_F'))]
+    if generic:                                                     # its switching loss is a generic part's
+        from ..power_spice import VDMOS_C
+        notes.append(f"{', '.join(generic)}: a generic MOSFET's capacitances where the model gives none (Cgs "
+                     f"{VDMOS_C['Cgs_F'] * 1e9:g} nF, Cgd {VDMOS_C['Cgd_F'] * 1e12:g} pF, Cds "
+                     f"{VDMOS_C['Cds_F'] * 1e12:g} pF): the part's own (Cgs_F, Cgd_F, Cds_F) give its switching loss")
     if copper:
         stats['copper'] = dict(stats['copper'] or dict(loss_W=0.0, ports=[]), board=Path(copper['file']).name,
                                fit_error=copper['fit_error'])

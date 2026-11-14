@@ -9,6 +9,20 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+### Changed
+- **A switch is a vdmos by default (R-A18).** A switch's model without a `type`, the circuits made from a board
+  (`circuit/converter.py`), the parts read from KiCad and the seven switching examples are ngspice's VDMOS with
+  a generic power MOSFET's capacitances where the model gives none: Cgs 1 nF, Cgd 50 pF, Cds 500 pF. The switching
+  loss is then a device's, charging its gate and its Miller capacitance through the gate resistance, not the
+  drive's ramp. On the examples the hard-switched losses are 1.2-3.5 times the ideal switch's (the synchronous
+  buck's Q1 at 2 A: 133 mW for 38), the soft-switched ones (the resonant half bridge, the full bridge's lagging
+  leg) unchanged, and the runs 0-16 % faster (78 s for 85 over the seven). The report says which switches have
+  the generic capacitances. `type: switch` is the ideal switch of before. Decided: Cds is never 0 by default, as
+  ngspice's steps then shrink (the resonant half bridge: 841 s for 3 s).
+- **The reported run meets its targets.** The strict run (reltol 1e-4, finer steps) can measure a little off the
+  search's (the vdmos flyback: 5.04 V for 5.01 V); a target it misses is stepped once or twice along the search's
+  slope and run again at the strict tolerance (the flyback: 4.99 V, 11.3 s for 8.7 s).
+
 ## 2026-11-14 (0.3.0)
 
 ### Changed

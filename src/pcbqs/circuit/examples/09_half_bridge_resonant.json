@@ -36,7 +36,7 @@
    ],
    "drive": "hb",
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.02,
     "Cds_F": "300p"
    }
@@ -51,7 +51,7 @@
    "drive": "hb",
    "invert": true,
    "model": {
-    "type": "switch",
+    "type": "vdmos",
     "Ron_ohm": 0.02,
     "Cds_F": "300p"
    }
