@@ -398,6 +398,41 @@ class RailPDN:
                 out[n][i] = X[self.dof(n), k] + extra
         return out
 
+    def sweep(self, f, observe=None):
+        """(loaded, bare): z's two answers, {name: Z(f)} each, from one factorisation a frequency: the bare network's
+        (the planes, their ties and the series parts), the parts added by Woodbury's identity (the columns of the
+        observed and the parts' DOFs, a small dense solve). z(loaded) and z(bare) had factorised twice
+        (320 factorisations, 5.9 s of the CM5 +5V rail's 22.3 s)."""
+        names = [n for n in (observe or [n for n, i in self.parts.items() if i['role'] == 'load']) if self.dof(n) is not None]
+        f = np.atleast_1d(np.asarray(f, float))
+        loaded = {n: np.zeros(len(f), complex) for n in names}
+        bare = {n: np.zeros(len(f), complex) for n in names}
+        parts = [(n, self.dof(n), i) for n, i in self.parts.items() if i['el'] is not None and self.dof(n) is not None]
+        cols = list(dict.fromkeys([self.dof(n) for n in names] + [d for _, d, _ in parts]))
+        at = {d: k for k, d in enumerate(cols)}
+        E = np.zeros((self.n, len(cols)))
+        for k, d in enumerate(cols):
+            E[d, k] = 1.0
+        o = [at[self.dof(n)] for n in names]
+        u = [at[d] for _, d, _ in parts]
+        for i, fi in enumerate(f):
+            w = 2 * np.pi * fi
+            X = splu(self.matrix(fi, bare=True)).solve(E.astype(complex))[cols]          # Zb on the columns
+            zp = np.array([element_z(info['el'], w, info['mount'] + (0.5e-9 if info['rail'].node else 0.0))
+                           + info.get('mount_R', 0.0) for _, _, info in parts], complex)
+            Zb_oo = X[np.ix_(o, o)]
+            if parts:
+                Zb_op, Zb_po, Zb_pp = X[np.ix_(o, u)], X[np.ix_(u, o)], X[np.ix_(u, u)]
+                Zl_oo = Zb_oo - Zb_op @ np.linalg.solve(np.diag(zp) + Zb_pp, Zb_po)
+            else:
+                Zl_oo = Zb_oo
+            for k, n in enumerate(names):
+                info = self.parts[n]
+                extra = ((1j * w * info['mount'] + info.get('mount_R', 0.0)) if info['rail'].vias else 0.0)
+                loaded[n][i] = Zl_oo[k, k] + extra
+                bare[n][i] = Zb_oo[k, k] + extra
+        return loaded, bare
+
     def transfer(self, f, sources, observe, pads=True):
         """{(observed, source): Z(f) complex}: the voltage between one part's pads for a current drawn at
         another's, everything attached (a part's own: what z gives it). pads False: where each part meets the

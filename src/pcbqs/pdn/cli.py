@@ -220,8 +220,7 @@ def run(a):
         say(f'PDN: {len(f)} frequencies')
         t = time.time()
         obs = [r for r in loads if pdn.dof(r) is not None and r not in pdn.isolated]
-        Z = pdn.z(f, observe=obs)
-        Z0 = pdn.z(f, observe=obs, bare=True)
+        Z, Z0 = pdn.sweep(f, observe=obs)                # loaded and bare from one factorisation a frequency
         t_z = time.time() - t
         step = a.step or 0.5 * sum(loads.values())
         target = None if a.no_target else (a.target or a.volts * a.ripple / step)

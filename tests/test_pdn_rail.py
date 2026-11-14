@@ -369,3 +369,15 @@ def test_a_rail_with_no_plane_pair_keeps_its_dc_answer(tmp_path):
     res = json.loads((tmp_path / 'out' / 'pdn.json').read_text())
     assert rc == 0 and res['loads']['U1']['drop'] > 0 and 'pdn' not in res
     assert any(n.startswith('PDN impedance not computed') for n in res['notes'])
+
+
+def test_one_factorisation_gives_the_loaded_and_the_bare_impedance():
+    """sweep: the bare network factorised once a frequency, the parts added by Woodbury's identity, as z(loaded)
+    and z(bare), which had factorised twice."""
+    r = Rail(board(), 'P', loads={'U1': 2.0, 'U2': 0.5})
+    pdn = RailPDN(r, dmax=1.0, vrm=dict(R=2e-3, L=20e-9), log=lambda *a: None)
+    f = np.logspace(3, 9, 13)
+    loaded, bare = pdn.sweep(f)
+    Z, Z0 = pdn.z(f), pdn.z(f, bare=True)
+    for n in ('U1', 'U2'):
+        assert np.allclose(loaded[n], Z[n], rtol=1e-6) and np.allclose(bare[n], Z0[n], rtol=1e-9)

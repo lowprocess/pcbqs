@@ -31,6 +31,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `tools/benchmark_ports.py` runs on the new model.
 
 ### Changed
+- **The PDN's sweep factorises once a frequency** (R-D12): the bare network, the parts added by Woodbury's identity
+  (`RailPDN.sweep`), where the loaded and the bare impedance had each factorised (320 factorisations, 5.9 s of the
+  CM5 +5V rail's 22.3 s); 3.7 times faster on the rail tests' board, to 7e-9.
 - **The circuit's knob runs are shorter** (R-D1): once a run has settled, the next knob's starts from its end at a
   quarter of the periods (at least 20), doubling only if it does not settle. wpthb's bridge at 90 kHz and 10 W: 25.1 s
   for 40.9, the same answer (93.179 %, Q2 96.13 mW, bus ripple 0.1017 V). A trial's waveforms are saved
