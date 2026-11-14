@@ -46,6 +46,7 @@ DEFAULTS = dict(cycles=200, final_cycles=8, max_cycles=20000, max_trials=40, per
                 energy_tolerance=0.002,
                 target_tolerance=0.005, search_reltol=1e-3, strict=True, samples_per_cycle=None,
                 final_samples_per_cycle=None, linear_solver='klu', threads=1, timeout_s=600)
+KNOB_MIN_CYCLES = 20        # the fewest periods a knob's run takes (from the settled state of the run before)
 PART_STATS = dict(
     resistor=dict(rms_A=('RMS', '@{r}.I@'), rms_V=('RMS', '@{r}.V@')),
     capacitor=dict(avg_V=('AVG', '@{r}.V@'), ripple_V=('PP', '@{r}.V@'), rms_A=('RMS', '@{r}.I@')),
@@ -522,7 +523,10 @@ def run_case(model, point, out, log=print, copper=None):
                 continue
             accepted = (folder, result, deck, stats, resolved)
             break
-        cycles = base_cycles
+        # settled, the targets not yet met: the next knob's run starts from this one's end, near its own steady
+        # state, so a quarter of the periods is enough (wpthb: 40.9 s to 26.5 s, the same answer); one that does
+        # not settle in them doubles, as any run does
+        cycles = max(min(cycles, base_cycles) // 4, KNOB_MIN_CYCLES)
         for kn, e in zip(knobs, errs):
             kn.record(e)
             if abs(e) > (kn.tolerance or a['target_tolerance']):
@@ -554,10 +558,13 @@ def run_case(model, point, out, log=print, copper=None):
             if 'ngspice transient failed' not in str(exc):
                 raise
             notes.append(f"ngspice could not hold reltol {strict:g}: reported at reltol {a['search_reltol']:g}")
-    for name in ('transient.npz', 'circuit.cir', 'ngspice.log', 'signals.json', 'measurements.json', 'performance.json',
+    for name in ('circuit.cir', 'ngspice.log', 'signals.json', 'measurements.json', 'performance.json',
                  'port-spectrum.npz'):
         if (folder / name).exists():
             shutil.copy2(folder / name, out / name)
+    if (folder / 'transient.npz').exists():                         # the run kept: compressed (0.4 s a wpthb run;
+        with np.load(folder / 'transient.npz') as z:                # every trial had paid it)
+            np.savez_compressed(out / 'transient.npz', **{k: z[k] for k in z.files})
     for f in trials.glob('*/transient.npz'):
         f.unlink()
     (out / 'model.json').write_text(json.dumps(resolved, indent=1))

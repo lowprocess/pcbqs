@@ -488,7 +488,8 @@ class Circuit:
             'time_s': table[:, 0],
             **{k: table[:, i + 1] * self.signal_signs.get(k, 1) for i, k in enumerate(labels)},
         }
-        np.savez_compressed(out / 'transient.npz', **res)
+        np.savez(out / 'transient.npz', **res)                     # (plain: a trial's is deleted after; the
+                                                                    # reported run's is compressed as it is kept)
         (out / 'signals.json').write_text(json.dumps(dict(zip(labels, vectors)), indent=2))
         measured = {}
         for i, label in enumerate(self.measures):

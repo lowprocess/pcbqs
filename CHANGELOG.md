@@ -31,6 +31,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `tools/benchmark_ports.py` runs on the new model.
 
 ### Changed
+- **The circuit's knob runs are shorter** (R-D1): once a run has settled, the next knob's starts from its end at a
+  quarter of the periods (at least 20), doubling only if it does not settle. wpthb's bridge at 90 kHz and 10 W: 25.1 s
+  for 40.9, the same answer (93.179 %, Q2 96.13 mW, bus ripple 0.1017 V). A trial's waveforms are saved
+  uncompressed (they are deleted after), the reported run's compressed: 0.4 s a wpthb run (R-D2, its first part).
 - **A supply behind an input filter** (`circuit/supply.py`): where all a DC source feeds is a lone inductor or
   resistor in series, the supply row is the node behind it, with `through` (its inductors) and `dcr`, as the
   bridge tool's own rows were; the reports' proposal of the rail then has them.
