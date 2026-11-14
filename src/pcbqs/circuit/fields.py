@@ -106,6 +106,27 @@ def harmonics_of(result, labels, period, count):
     return (np.fft.fft(samples, axis=0) / n)[:count + 1], at
 
 
+def write_copper_loss(folder, q, driven, weights, total_W):
+    """<folder>/copper-loss.npz: each triangle's share of the copper's loss (its sheet resistance x |J|^2 x its area,
+    summed over the harmonics kept, J at its centroid), scaled to the run's own copper loss total_W: layer, x_mm,
+    y_mm, W. pcbqs.thermal heats the board with it (the copper's loss had reached no thermal map). Its file name."""
+    from ..biot import rwg_currents
+    r = q.rwg
+    raw = np.zeros(len(r.area))
+    for n in range(len(driven.f)):
+        a, b = rwg_currents(r, driven.i[n][:q.n_rwg] / r.l)
+        J = a[:, None] * r.cent + b
+        raw += weights[n] * (np.abs(J) ** 2).sum(axis=1)
+    raw *= r.area / (q.sigma * np.asarray(q.t_of, float))
+    layer = np.empty(len(raw), dtype=object)
+    for lay, idx in q.layer_tris.items():
+        layer[idx] = lay.split('#')[0]                              # (a face sheet's copy: its layer)
+    W = raw * (total_W / raw.sum()) if raw.sum() > 0 else raw
+    np.savez_compressed(folder / 'copper-loss.npz', layer=layer.astype(str), x_mm=r.cent[:, 0] * 1e3,
+                        y_mm=r.cent[:, 1] * 1e3, W=W)
+    return 'copper-loss.npz'
+
+
 def export(model, summary, copper, out, log=print):
     """Every case's fields, written beside it; each case of `summary` gets its 'fields' (what was kept, the
     largest values, the files). The copper's solver model is made once, its response once for each period."""
@@ -203,6 +224,12 @@ def export(model, summary, copper, out, log=print):
         except Exception as exc:                                    # noqa: BLE001  (a picture is not the result)
             fields['picture'] = None
             case.setdefault('notes', []).append(f"fields.png was not drawn: {type(exc).__name__}: {exc}")
+        total = float(((case.get('copper') or {}).get('loss_W')) or 0.0)
+        if total > 0:
+            try:                                                    # where the copper's loss is, for thermal
+                fields['copper_loss'] = write_copper_loss(folder, q, driven, weights, total)
+            except Exception as exc:                                # noqa: BLE001  (thermal says it is left out)
+                case.setdefault('notes', []).append(f"the copper's loss map was not written: {type(exc).__name__}: {exc}")
         if fields['port_current_AC_left_out'] > 0.25:
             case.setdefault('notes', []).append(
                 f"H keeps {count} harmonics (to {count / period / 1e6:.3g} MHz): {100 * fields['port_current_AC_left_out']:.0f} % "

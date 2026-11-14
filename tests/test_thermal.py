@@ -323,3 +323,19 @@ def test_a_part_s_limit_and_its_theta_from_its_footprint(tmp_path):
     assert u['theta_K_W'] == 300.0 and u['margin_K'] == pytest.approx(60.0 - u['part_C']) and u['margin_K'] < 0
     rep = thermal_report(dict(grid=dict(r.summary(), board='b', circuit='', case=None, figure='thermal.png')))
     assert 'OVER ITS LIMIT: disc' in rep['summary']
+
+
+def test_the_board_copper_s_loss_heats_where_its_currents_are(tmp_path):
+    """A circuit case's copper-loss.npz (its --fields): the copper's own loss into the problem, gathered into squares;
+    without the map, said (it had reached no thermal map)."""
+    from pcbqs.thermal.__main__ import add_copper_loss
+    p = disc_problem(side=20.0, a=2.0, film=10.0)
+    case = dict(folder=str(tmp_path), copper=dict(loss_W=0.02))
+    add_copper_loss(p, case, None)
+    assert any("board copper's own loss (20 mW) is left out" in n for n in p.notes)
+    np.savez(tmp_path / 'copper-loss.npz', layer=np.array(['F.Cu', 'F.Cu', 'B.Cu']), x_mm=np.array([5.2, 5.4, 9.0]),
+             y_mm=np.array([5.1, 5.3, 9.0]), W=np.array([0.01, 0.005, 0.005]))
+    add_copper_loss(p, case, None)
+    assert p.powers['board copper'] == pytest.approx(0.02)
+    r = solve(p, 'grid', 1.0, log=quiet)
+    assert r.summary()['heat_in_W'] == pytest.approx(1.02)

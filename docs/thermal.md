@@ -48,6 +48,10 @@ The board is a stack of sheets, one per copper layer (`problem.py`):
 It is the DC drop's equation with thermal conductivities and a sink over the whole face, and it is linear: one
 sparse solve.
 
+With a circuit run on its board's copper and `--fields`, the copper's own loss heats the board where its currents
+are (the run's `copper-loss.npz`: each triangle's share, gathered into 1 mm squares); without `--fields` the
+report says it is left out.
+
 `--circuit FOLDER` takes the board and the losses from a circuit run (`python -m pcbqs.circuit`): every part's
 average power, summed per footprint. A coupled winding gives its own loss (`loss_W`: its resistances', the DCR and
 the core's), not its V·I, which is the power it passes to the other windings too; a switch's gate drive is counted

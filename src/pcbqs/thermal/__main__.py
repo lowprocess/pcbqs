@@ -42,6 +42,34 @@ def describe():
     return describe_options(OPTIONS)
 
 
+COPPER_BIN = 1.0                # mm: the copper's loss map gathered into squares this size, a heat source each
+
+
+def add_copper_loss(p, case, board):
+    """The board copper's own loss into the problem, where the circuit's copper currents put it (the case's
+    copper-loss.npz, which the circuit's --fields writes), gathered into COPPER_BIN squares; without that map, said
+    (the copper's loss had reached no thermal map: 3.6 % of the buck's)."""
+    total = float(((case.get('copper') or {}).get('loss_W')) or 0.0)
+    if total <= 0:
+        return
+    path = Path(case.get('folder', '')) / 'copper-loss.npz'
+    if not path.is_file():
+        p.notes.append(f"the board copper's own loss ({1e3 * total:.3g} mW) is left out: run the circuit with --fields "
+                       f"for where it is")
+        return
+    from shapely.geometry import box
+    with np.load(path, allow_pickle=False) as m:
+        layer, x, y, W = m['layer'], m['x_mm'], m['y_mm'], m['W']
+    names = {l.name for l in p.layers}
+    bins = {}
+    for lay, xi, yi, w in zip(layer, x, y, W):
+        if lay in names and w > 0:
+            k = (str(lay), int(np.floor(xi / COPPER_BIN)), int(np.floor(yi / COPPER_BIN)))
+            bins[k] = bins.get(k, 0.0) + float(w)
+    for (lay, i, j), w in bins.items():
+        p.heat('board copper', [(lay, box(i * COPPER_BIN, j * COPPER_BIN, (i + 1) * COPPER_BIN, (j + 1) * COPPER_BIN))], w)
+
+
 def part_fields(board):
     """({ref: K/W}, {ref: C}) from the footprints' fields thermal.theta and thermal.tmax (as pdn.load gives a part's
     current): what the design holds of its parts' thermal limits."""
@@ -83,7 +111,7 @@ def main(argv=None):
     if a.method not in ('grid', 'mesh', 'both'):
         ap.error(f"--method {a.method!r}: grid, mesh or both")
     losses, left = _pairs(a.loss, '--loss', ap), []
-    board_file, case_name = a.board, None
+    board_file, case_name, case = a.board, None, None
     if a.circuit:
         folder = Path(a.circuit)
         try:
@@ -118,6 +146,8 @@ def main(argv=None):
                    ambient=a.ambient, theta=theta, edge_film=a.film_edge)
     p.tmax = tmax
     p.notes += left
+    if case is not None:
+        add_copper_loss(p, case, board)
     if not p.sources:
         for n in p.notes:
             print(n, file=sys.stderr)

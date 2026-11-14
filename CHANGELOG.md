@@ -211,6 +211,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Added
+- **The board copper's loss in thermal** (R-E8, the circuit's): a circuit run with `--fields` writes
+  `copper-loss.npz` (each triangle's share of the copper's loss, from its solved currents, scaled to the run's
+  copper loss), and thermal heats the board with it; without it the report says the copper's loss is left out (it
+  had reached no map: 3.6 % of the buck's loss). The DC drop's own loss map is not yet a heat source.
 - **A part's thermal limit and its theta from its footprint** (the review of 2026-11-14, R-E7): `thermal.theta` and
   `thermal.tmax` fields (or `--theta`, `--tmax`) give each part its temperature above its pads and its margin; a
   part over its limit is in the headline, and a part with no theta is said to be its pads' temperature (it had been
