@@ -104,9 +104,12 @@ def test_what_it_leaves_to_ngspice(tmp_path):
     case = run(gate, tmp_path / 'e', **QUIET)['cases'][0]
     assert any('Q1: its gate capacitances' in n for n in case['notes'])
     body = buck()
-    body['parts'][1]['model'] = dict(type='switch', diode_TT_s=2e-8)                   # its body diode's recovery
+    body['parts'][1]['model'] = dict(type='switch', diode_TT_s=2e-8)                   # its body diode's recovery:
+    plant = pwl.Plant(M.resolve(body))                                                  # a state, not left out
+    qd = next(q for q in plant.caps if q['ref'] == 'Q1:body:Qd')
+    assert qd['C'] == pytest.approx(2e-8 * plant.di[qd['diode']]['g'])
     case = run(body, tmp_path / 'r', **QUIET)['cases'][0]
-    assert any("Q1: its body diode's reverse recovery (diode_TT_s) is left out" in n for n in case['notes'])
+    assert not any('recovery' in n for n in case['notes'])
 
 
 def test_the_command_and_the_window_s_option(tmp_path, capsys):
@@ -393,5 +396,43 @@ def test_the_reported_run_keeps_samples_per_cycle(tmp_path):
     with np.load(os.path.join(case['folder'], 'transient.npz')) as d:
         assert len(d['time_s']) == pwl.PERIODS * 8192
     assert os.path.getsize(os.path.join(case['folder'], 'transient.npz')) < 40e6
-    assert case['load_power_W'] == pytest.approx(10.0, rel=0.005) and case['efficiency'] == pytest.approx(0.942, abs=0.002)
+    assert case['load_power_W'] == pytest.approx(10.0, rel=0.005) and case['efficiency'] == pytest.approx(0.9376, abs=0.002)
     assert case['measures']['bus_spike_pp_V'] >= case['measures']['bus_ripple_V'] > 0
+
+
+def recovery_buck(tt):
+    """A 24 V buck whose high side, a fast ideal switch, turns on through 100 nH against a diode of transit time tt
+    (the inductance, not the gate, sets di/dt), an RC snubber across the diode."""
+    return dict(format=2, name='rr', parameters={}, parts=[
+        dict(ref='V1', type='source', nodes=['in', '0'], dc_V=24.0),
+        dict(ref='LS', type='inductor', nodes=['in', 'x'], value=100e-9),
+        dict(ref='Q1', type='switch', nodes=['x', 'sw'], drive='pwm',
+             model=dict(type='ideal', Ron_ohm=0.01, body_diode=False, rise_s=1e-9, fall_s=1e-9)),
+        dict(ref='D1', type='diode', nodes=['0', 'sw'], model=dict(Vf_V=0.8, If_A=5.0, R_ohm=0.01, TT_s=tt)),
+        dict(ref='RS', type='resistor', nodes=['sw', 'snub'], value=10.0),
+        dict(ref='CS', type='capacitor', nodes=['snub', '0'], value=1e-9),
+        dict(ref='L1', type='inductor', nodes=['sw', 'out'], value=47e-6),
+        dict(ref='C1', type='capacitor', nodes=['out', '0'], value=47e-6, ESR_ohm=5e-3),
+        dict(ref='R1', type='load', nodes=['out', '0'], resistance_ohm=2.4)],
+        drives=dict(pwm=dict(frequency_Hz=100e3, duty=0.5)),
+        probes=dict(vout=dict(voltage=['out', '0']), id=dict(current='D1'), iq=dict(current='Q1')),
+        measures=dict(vout=dict(avg='vout'), irr=dict(min='id'), iq_peak=dict(max='iq')),
+        analysis=dict(engine='pwl'))
+
+
+def test_a_diode_s_stored_charge_is_its_reverse_recovery(tmp_path):
+    """A diode's transit time (TT_s; a body diode's diode_TT_s): SPICE's diffusion charge, TT times its junction's
+    current, a state while it conducts; it turns off when that charge is out, so a current reversed through it
+    flows on until then. Where the circuit sets di/dt (the high side turning on through 100 nH, against 50 ns):
+    the recovery current, the switch's peak, the snubber's loss and the efficiency as ngspice has them
+    (2026-11-14: -7.597 A, 11.752 A, 366.1 mW, 95.641 %); with no transit time, no reverse current."""
+    rows = {tt: run(recovery_buck(tt), tmp_path / f"{tt:g}", **QUIET)['cases'][0] for tt in (0.0, 50e-9)}
+    a, b = rows[0.0], rows[50e-9]
+    assert a['measures']['irr'] > -1e-3
+    assert b['measures']['irr'] == pytest.approx(-7.597, rel=0.03)
+    assert b['measures']['iq_peak'] == pytest.approx(11.752, rel=0.02)
+    assert b['parts']['RS']['power_W'] == pytest.approx(0.3661, rel=0.08)
+    assert b['efficiency'] == pytest.approx(0.95641, abs=5e-4) and b['power_balance_relative'] < 1e-6
+    plant = pwl.Plant(M.resolve(recovery_buck(50e-9)))
+    qd = next(q for q in plant.caps if q['ref'] == 'D1:Qd')
+    assert qd['C'] == pytest.approx(50e-9 * plant.di[0]['g']) and qd['rest'] == plant.di[0]['vth']

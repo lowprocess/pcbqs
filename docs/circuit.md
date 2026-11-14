@@ -98,8 +98,11 @@ same: the targets' search, the parts' figures, the supply's currents, the report
 
 What it models: a switch as its on resistance with its body diode and its drain-source capacitance (`Cds_F`, a
 state of its own, so turning on discharges it through the switch, as it does in ngspice's deck) and its package's
-inductances; a diode as a threshold and a resistance; capacitors with their ESR, ESL and leakage; inductors and
-windings (self-capacitance and core loss); coupled inductors; sources with a sine or a pulse; the board's copper.
+inductances; a diode as a threshold and a resistance, with its stored charge (`TT_s`, a body diode's
+`diode_TT_s`: SPICE's TT times its junction's current, a state while it conducts, so the diode turns off only once
+the charge is out and a current reversed through it flows on until then: its reverse recovery); capacitors with
+their ESR, ESL and leakage; inductors and windings (self-capacitance and core loss); coupled inductors; sources
+with a sine or a pulse; the board's copper.
 The targets are searched on the period's own samples, each run starting from the last one's state; the reported
 run starts from the accepted one's and is sampled as finely as the circuit rings (the copper's or a package's
 inductance against a switch's capacitance, hundreds of MHz, in the topologies the period goes through:
@@ -147,11 +150,17 @@ ports' V x I, whose reactive parts cancel only in the sum):
 | Phase-shifted full bridge | 26.4 s | 4.0 s | 94.45 / 94.47 % | 14.3 / 12.7 mW | phase, currents within 0.1 % |
 
 What it leaves out is where the tables differ. A switch's gate is ideal (no gate charge, no edge: ngspice's
-switch turns on over its rise time; its gate capacitances are said in the notes); a diode, a switch's body diode
-among them, has no junction capacitance and no reverse recovery (`Cj_F`, `TT_s`, `diode_TT_s`: the notes say
-which parts have them; a constant Cj put a bridge rectifier's floating AC side on the junctions' charge, whose
-steady state the search could not pin down; ngspice's falls with the reverse voltage). A switch that turns on
-against a recovering body diode loses less here: on the wpthb bridge, a point of efficiency. On copper, the
+switch turns on over its rise time; its gate capacitances are said in the notes); a diode has no junction
+capacitance (`Cj_F`, said in the notes: a constant Cj put a bridge rectifier's floating AC side on the junctions'
+charge, whose steady state the search could not pin down; ngspice's falls with the reverse voltage). A diode's
+recovery is ngspice's where the circuit sets how fast its current reverses: a buck's high side turning on through
+100 nH against a diode of 50 ns gives -7.50 A of recovery current for ngspice's -7.60, a snubber's 348 mW for
+366, 95.644 % for 95.641 % (`tests/test_pwl.py`). Where the switch's own edge sets it (a hard-switched leg with
+little loop inductance), the ideal switch closes at once: the recovery current flows at once, into the loop's
+inductance and the diode's snap off rather than through the switch at the bus's voltage over its rise time, and
+the switch loses less than ngspice's (the wpthb bridge's hard-switched leg, Q2 and Q4: 52 mW for 96). The same
+instant edges ring the packages' inductance against the switches' capacitance, which ngspice's 20 ns edges hardly
+do: the bridge's settled VHB ripple is 3.6 V here, 0.10 V there. On copper, the
 diodes' recovery and junction currents through the copper's loops are ngspice's alone: the copper loss of the
 buck, the boost, the buck-boost and the full bridge is 6 to 21 % lower. A peak to peak on copper (an output's
 "ripple") is the switching edges' spikes through the copper's inductance, which the two engines put very
@@ -213,9 +222,10 @@ series capacitor and its load, fixed at 130 nF and 5.65 ohm: tuned and matched a
 target's knob, set so the load takes `P`; the sweep is 90 and 110 kHz at 5 to 30 W. Its board section names the
 board's pads (`board.parts`, `board.reference`), so `--board wpthb.kicad_pcb --copper` puts the bridge on its
 copper: 24 ports. At 90 kHz and 10 W, alone: phase 55.66°, input 10.71 W, efficiency 93.18 %, primary 1.435 A RMS
-(42 s); the piecewise-linear engine 55.58°, 94.20 %, 1.436 A (7 s; its point of efficiency more is the body
-diodes' recovery it leaves out). Its `bus_ripple_V` is VHB's settled ripple (256 samples a period),
-`bus_spike_pp_V` the same with the edges' spikes. It was the model of the full-bridge tool
+(42 s); the piecewise-linear engine 55.56°, 93.76 %, 1.434 A (20 s; its switches recover, but its ideal gates put
+the recovery's loss in the loop's inductance rather than in the switch that turns on: half a point more). Its
+`bus_ripple_V` is VHB's settled ripple (256 samples a period; ngspice's 0.10 V), `bus_spike_pp_V` the same with
+the edges' spikes (3.5 V). It was the model of the full-bridge tool
 (`pcbqs.power_circuit`, format 1, removed 2026-11-14), which also tuned the receiver at each frequency; that
 tool's answers at the same receiver: 55.64°, 93.13 %, 1.435 A.
 

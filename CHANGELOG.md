@@ -81,6 +81,15 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   and its inductance there the field solver's line's within 0.5 %.
 
 ### Added
+- **A diode's reverse recovery in the piecewise-linear engine.** A diode's transit time (`TT_s`; a switch's body
+  diode's `diode_TT_s`) is its stored charge, as SPICE's: TT times its junction's current, a state while it
+  conducts (a capacitance TT g across its line), so it turns off only once the charge is out, a current reversed
+  through it flowing on until then. Where the circuit sets how fast the current reverses (a buck's high side
+  turning on through 100 nH against 50 ns), the recovery current, the switch's peak, a snubber's loss and the
+  efficiency are ngspice's (-7.50 A for -7.60, 11.64 A for 11.75, 348 mW for 366, 95.644 % for 95.641 %). Where
+  the switch's own edge sets it, the ideal gate closes at once and the recovery's loss goes to the loop's
+  inductance and the diode's snap off: the wpthb bridge's hard-switched switches lose 52 mW for ngspice's 96 (38
+  without the charge), its efficiency 93.76 % for 93.18 % (94.20 % without); the gates' edges are what is left.
 - **A piecewise-linear engine for the circuit tool** (`circuit/pwl.py`; `python -m pcbqs.circuit --engine pwl`,
   `analysis.engine` in a model, *Engine* in the window). No transient: between switching instants the circuit
   is linear and solved exactly (a matrix exponential), and the periodic steady state is found by Newton's

@@ -19,9 +19,11 @@ What it models (the rest is ngspice's: analysis.engine = "ngspice", the default)
                 its own, so turning on discharges it through Ron and the loop's inductance rings against it;
                 no gate charge (Cgd_F and Cgs_F are left out, and the results' notes say so)
     diode       a threshold and a resistance: on above Vth with R_on (the model's Vf_V at If_A, its R_ohm), off
-                below; no junction capacitance (Cj_F: ngspice's falls with the reverse voltage, and a constant
-                one put a bridge's floating AC side on the junctions' charge, whose steady state the search could
-                not pin down), no recovery; the results' notes say what was left out
+                below; its stored charge (TT_s; a switch's body diode's diode_TT_s), SPICE's TT times its
+                junction's current, a state while it conducts, so it recovers: it turns off when that charge is
+                out, a current reversed through it flowing on until then; no junction capacitance (Cj_F: ngspice's
+                falls with the reverse voltage, and a constant one put a bridge's floating AC side on the
+                junctions' charge, whose steady state the search could not pin down; the notes say so)
     capacitor   value x bias_factor with its ESR, ESL and leakage
     inductor    value (with its ESL) and its DCR, the model's couplings; a winding (SRF_Hz, Cp_F, core_R_ohm or a
                 loss_model: power_spice.Circuit.coil's) as its series resistance, its inductance, the core's
@@ -173,10 +175,9 @@ class Plant:
                 m = p.get('model', {})
                 vth, ron = diode_line(m.get('Vf_V', 0.7), m.get('If_A', 1.0), m.get('n', 1.0), m.get('R_ohm', 0.01))
                 self.di.append(dict(ref=ref, a=a, b=b, vth=vth, g=1 / ron))
-                left = [k for k in ('Cj_F', 'TT_s') if m.get(k)]
-                if left:
-                    self._note(ref, f"its {' and '.join(dict(Cj_F='junction capacitance', TT_s='reverse recovery')[k] for k in left)} "
-                                    f"left out (the piecewise-linear engine)")
+                self._stored(len(self.di) - 1, m.get('TT_s'))
+                if m.get('Cj_F'):
+                    self._note(ref, "its junction capacitance left out (the piecewise-linear engine)")
                 self.parts.append((ref, kind, a, b, ('diode', len(self.di) - 1, None)))
             elif kind == 'switch':
                 m = p.get('model', {})
@@ -184,10 +185,7 @@ class Plant:
                 if kind_m == 'vdmos':
                     kind_m = 'switch'
                     self._note(ref, "its vdmos model is taken as a switch: Ron_ohm, Cds_F and a body diode of a "
-                                    "threshold and a resistance (the piecewise-linear engine)")
-                if m.get('body_diode', True) and m.get('diode_TT_s'):
-                    self._note(ref, "its body diode's reverse recovery (diode_TT_s) is left out: the switch that "
-                                    "turns on against it loses less than ngspice's (the piecewise-linear engine)")
+                                    "threshold, a resistance and its stored charge (the piecewise-linear engine)")
                 if kind_m not in ('switch', 'ideal'):
                     raise Unsupported(f"{ref}: a {kind_m} switch model is ngspice's (analysis.engine = \"ngspice\")")
                 pins_ = (a, b)                              # its package's inductances: the channel behind them
@@ -210,6 +208,7 @@ class Plant:
                     vth, ron = diode_line(VT * math.log(1e12), 1.0, 1.0, m.get('diode_R_ohm', 0.02))
                     self.di.append(dict(ref=ref + ':body', a=b, b=a, vth=vth, g=1 / ron))
                     body = len(self.di) - 1
+                    self._stored(body, m.get('diode_TT_s'))
                 self.sw.append(dict(ref=ref, a=a, b=b, g=1 / m.get('Ron_ohm', 0.008 if kind_m != 'ideal' else 1e-6),
                                     on=(delay + tr / 2) % T, span=width + (tr + tf) / 2, T=T, body=body,
                                     gate=m.get('gate_V', 10.0)))
@@ -356,6 +355,21 @@ class Plant:
         cap = self._junction(ref, a, b, C)
         self.parts.append((ref, 'inductor', a, b, ('winding', len(self.inds) - 1, mid, g, cap)))
 
+    def _stored(self, k, tt):
+        """Diode k's stored charge, of its transit time tt (SPICE's diffusion charge, TT times the junction's
+        current): while it conducts, a capacitance TT g across its line, whose charge over vth is TT times the
+        line's current g (v - vth). The diode turns off where that current reaches zero, so a current that reverses
+        through it flows on, out of the charge, until the charge is out: its reverse recovery, at the rate the
+        circuit draws it (a switch turning on against it, its loop's inductance). Off, it holds none: the state
+        rests at vth (Plant.matrices' jump)."""
+        tt = float(tt or 0.0)
+        if tt <= 0:
+            return
+        d = self.di[k]
+        self.caps.append(dict(ref=d['ref'] + ':Qd', a=d['a'], b=d['b'], g=1 / R_MIN, C=tt * d['g'], diode=k,
+                              rest=d['vth']))
+        d['stored'] = len(self.caps) - 1
+
     def _junction(self, ref, a, b, value):
         """A part's own capacitance between its pins (a switch's Cds, a diode's Cj): a capacitor of the plant, its
         index; None where there is none."""
@@ -416,7 +430,10 @@ class Plant:
             stamp(a, b, g)
         for q in self.pl:
             stamp(q['a'], q['b'], q['g'])
+        holds = lambda q: 'diode' not in q or diodes[q['diode']]    # (a diode's stored charge: while it conducts)
         for k, q in enumerate(self.caps):                   # i = g (v_a - v_b - x)
+            if not holds(q):
+                continue
             stamp(q['a'], q['b'], q['g'])
             col = np.zeros(n)
             inject(col, q['a'], q['b'], -q['g'])
@@ -524,8 +541,17 @@ class Plant:
                 lam = N @ Sp
                 kick = np.array([(lam[d['a']] if d['a'] >= 0 else 0) - (lam[d['b']] if d['b'] >= 0 else 0)
                                  for d in self.di]).reshape(len(self.di), F)
+        empty = [k for k, q in enumerate(self.caps) if not holds(q)]     # an off diode's charge: none, at its rest
+        if empty:
+            rest = np.eye(nx + 1)
+            for k in empty:
+                rest[k] = 0.0
+                rest[k, nx] = self.caps[k]['rest']
+            jump = rest if jump is None else rest @ jump
         A, c = np.zeros((nx, nx)), np.zeros(nx)
         for k, q in enumerate(self.caps):                   # C x' = g (v_a - v_b - x)
+            if not holds(q):
+                continue
             (ra, ca), (rb, cb) = row(q['a']), row(q['b'])
             A[k] = q['g'] * (ra - rb) / q['C']
             A[k, k] -= q['g'] / q['C']
@@ -882,6 +908,10 @@ class Plant:
             if name in named:                               # (not a pad's own node, nor a part's inner one)
                 out['node.' + name] = V[:, k]
         own = lambda cap, v: 0.0 if cap is None else self.caps[cap]['g'] * (v - X[:, cap])
+
+        def stored(k, v):                                   # a diode's stored charge's current, while it conducts
+            q = self.di[k].get('stored')
+            return 0.0 if q is None else np.where(diodes[:, k], self.caps[q]['g'] * (v - X[:, q]), 0.0)
         for ref, kind, a, b, how in self.parts:
             v = at(a) - at(b)
             out[ref + '.V'] = v
@@ -901,14 +931,14 @@ class Plant:
                 i = X[:, self.nc + how[1]]
             elif how[0] == 'diode':
                 d = self.di[how[1]]
-                i = np.where(diodes[:, how[1]], d['g'] * (v - d['vth']), G_OFF * v) + own(how[2], v)
+                i = np.where(diodes[:, how[1]], d['g'] * (v - d['vth']), G_OFF * v) + own(how[2], v) + stored(how[1], v)
             elif how[0] == 'switch':
                 s = self.sw[how[1]]
                 vc = at(how[3]) - at(how[4])                # across the channel (inside its package)
                 i = np.where(gates[:, how[1]], s['g'], G_OFF) * vc + own(how[2], vc)
                 if s['body'] is not None:                   # its body diode, source to drain
                     d = self.di[s['body']]
-                    i = i - np.where(diodes[:, s['body']], d['g'] * (-vc - d['vth']), G_OFF * -vc)
+                    i = i - np.where(diodes[:, s['body']], d['g'] * (-vc - d['vth']), G_OFF * -vc) - stored(s['body'], -vc)
                 if how[5] is not None:                      # (its drain's inductance carries it all)
                     i = X[:, self.nc + how[5]]
                 out[ref + '.gate_V'] = np.where(gates[:, how[1]], s['gate'], 0.0)
