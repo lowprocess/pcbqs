@@ -17,7 +17,7 @@ import sys
 
 from kicad2ems.api.analysis import Analysis
 
-API = (2, 6)
+API = (2, 11)                       # kicad2ems.api it is written against: 2.10 several, 2.11 pick
 
 
 def argv(module, options, values, board, out):

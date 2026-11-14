@@ -309,7 +309,7 @@ def test_the_tools_are_engines_of_the_questions_they_answer(tmp_path):
     pdn, mqs, circuit, thermal = A.PowerIntegrity(), A.NearField(), A.Circuit(), A.Thermal()
     assert [a.provides for a in (pdn, mqs, circuit, thermal)] == [('dc', 'pdn'), ('nearfield',), ('circuit',), ('thermal',)]
     assert all(q in study.QUESTIONS for a in (pdn, mqs, circuit, thermal) for q in a.provides)
-    assert {a.engine for a in (pdn, mqs, circuit, thermal)} == {'pcbqs'} and pdn.api == (2, 6)
+    assert {a.engine for a in (pdn, mqs, circuit, thermal)} == {'pcbqs'} and pdn.api == (2, 11)
     assert circuit.fields == 'fields' and any(o['key'] == 'fields' and o['kind'] == 'bool' for o in circuit.options())
     assert pdn.for_questions(dict(rail='P'), ('dc',)) == dict(rail='P', no_pdn=True)
     assert pdn.for_questions(dict(rail='P'), ('dc', 'pdn')) == dict(rail='P')
