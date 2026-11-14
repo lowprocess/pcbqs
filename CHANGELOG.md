@@ -211,6 +211,8 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   (`pdn.rail.field_loads`).
 
 ### Added
+- **The near field's compressed solve** (R-D14): `--backend hierarchical` (GMRES in the loop basis), which `MQS` had
+  and `pcbqs.mqs` could not choose; the same field as the dense solve to 1e-3, for a crop too large to factorise.
 - **A coupling named by its inductors** in a path: `couplings.L1+L2.k` (`--set`, a proposal), whatever its place in
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 

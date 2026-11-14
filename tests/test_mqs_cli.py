@@ -164,3 +164,18 @@ def test_a_discrete_cell_is_selected_and_solved(tmp_path):
     assert rep['summary'] == 'Near field, Q1 and D1 on in: 1 harmonic' and 'the switch node sw and D1' in rep['sections'][0]['text']
     layout = json.loads((tmp_path / 'nf' / 'layout.json').read_text()) if (tmp_path / 'nf' / 'layout.json').exists() else None
     assert mqs_suggest(res, str(tmp_path / 'nf'))[0]['values']['ground_source'] == 'D1'   # the cell's ground pad
+
+
+def test_the_compressed_solve_gives_the_dense_one_s_field(tmp_path):
+    """--backend hierarchical: the near field's compressed solve (GMRES in the loop basis), which MQS had and the
+    command could not choose (a whole plane needs it: ~20 GB dense)."""
+    b = tmp_path / 'board.json'
+    b.write_text(json.dumps(board()))
+    out = {}
+    for be in ('dense', 'hierarchical'):
+        a = parser().parse_args([str(b), '--out', str(tmp_path / be), '--harmonics', '1,2', '--scan-points', '5',
+                                 '--heights', '1', '--dmax', '1', '--fine', '1', '--fill-backend', 'numpy',
+                                 '--backend', be])
+        out[be] = run(a)
+    assert np.allclose(out['hierarchical']['peak_H_Am'], out['dense']['peak_H_Am'], rtol=1e-3)
+    assert np.allclose(out['hierarchical']['copper_L_H'], out['dense']['copper_L_H'], rtol=1e-3)

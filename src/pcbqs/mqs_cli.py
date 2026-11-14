@@ -40,6 +40,8 @@ OPTIONS = [
     ('fill_workers', 'int', 0, 'CPU fill workers (0 chooses automatically)', 'Mesh'),
     ('fill_chunk', 'int', 16384, 'Maximum triangle pairs per fill tile', 'Mesh'),
     ('fill_device', 'int', 0, 'CuPy device index', 'Mesh'),
+    ('backend', 'str', 'dense', "The solve: dense (a factor a frequency) or hierarchical (compressed, GMRES in the loop "
+     "basis: a whole plane's 50k triangles in ~2 GB, where dense needs ~20 GB)", 'Mesh'),
     ('esr', 'float', .003, 'Assumed ESR per input capacitor, ohms', 'Parts'),
     ('esl', 'float', .4e-9, 'Assumed ESL per input capacitor, H', 'Parts'),
     ('part_height', 'float', .5, 'Assumed part filament height above pads, mm', 'Parts'),
@@ -330,7 +332,8 @@ def run(a):
           +f", {selected['vin']}, capacitors {', '.join(selected['capacitors'])}",flush=True)
     q=MQS(board,{selected['vin'],a.ground,*([selected['switch']] if selected.get('low') else [])},terminals=terms,region=crop,dmax=a.dmax,
           fine=extent.buffer(1).envelope,dmax_fine=a.fine,fill_backend=a.fill_backend,
-          fill_workers=a.fill_workers or None,fill_chunk=a.fill_chunk,fill_device=a.fill_device if a.fill_backend=='cupy' else None)
+          fill_workers=a.fill_workers or None,fill_chunk=a.fill_chunk,fill_device=a.fill_device if a.fill_backend=='cupy' else None,
+          matrix_backend=a.backend)
     if preview:
         from .mqs_layout import save_layout, mesh_stats
         out=Path(a.out)
