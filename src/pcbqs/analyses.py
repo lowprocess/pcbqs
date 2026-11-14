@@ -451,7 +451,7 @@ class QuasiStatic(Solver):
     basic = ('qs_dmax',)                                # what a run is set up with (kicad2ems 2.9: Solver.basic)
     consumes, previewed, rank, order = 'board', False, 1, 60
     dumps = False                                       # its current maps are always written: nothing to ask for
-    POINTS = 31                                         # solved on at most this many frequencies, a log scale
+    POINTS = 31                                         # solved on at most this many frequencies (sparams.sweep)
     capabilities = dict(
         ports='yes: a source and its termination between the trace and the copper under it', gap_ports='no',
         diff_pairs="yes: the legs as single-ended ports, the modes from them",
@@ -493,17 +493,18 @@ class QuasiStatic(Solver):
         import numpy as np
         from . import sparams
         board = run.m.to_dict()
-        f = np.unique(np.geomspace(run.freq[0], run.freq[-1], min(len(run.freq), self.POINTS)))
-        r = sparams.solve(board, f, dmax=getattr(run.s, 'qs_dmax', None), fine=getattr(run.s, 'qs_fine', None),
+        r = sparams.sweep(board, np.asarray(run.freq, float), points=self.POINTS,
+                          dmax=getattr(run.s, 'qs_dmax', None), fine=getattr(run.s, 'qs_fine', None),
                           capacitance=getattr(run.s, 'qs_capacitance', None) or 'auto',
                           thickness=bool(getattr(run.s, 'qs_thickness', False)), log=lambda s: run.log(f"  {s}"))
-        lf, want = np.log(f), np.log(run.freq)              # smooth in log f: onto the run's own frequencies
-        S = np.empty((len(run.freq),) + r['S'].shape[1:], complex)
-        for j in range(S.shape[1]):
-            for k in range(S.shape[2]):
-                S[:, j, k] = np.interp(want, lf, r['S'][:, j, k].real) + 1j * np.interp(want, lf, r['S'][:, j, k].imag)
+        S, f = r['S_grid'], r['f']                          # on the run's frequencies; those solved
         self._last = (board, r)
         info = r['info']
+        sw = info['sweep']
+        if not sw['converged']:
+            run.log(f"  WARNING pcbqs: the sweep stopped at its {sw['solves']} solves before its models agreed (last "
+                    f"change {sw['change']:.1e} at {sw['f_change_Hz'] / 1e6:.4g} MHz): between the frequencies solved, S is "
+                    f"the last model's; a narrower band is solved closer")
         over = int((run.freq > info['valid_to_Hz']).sum())
         apart = [sparams.apart_note(p) for p in sparams.paths(f, r['S'], r['names'], r['zref']) if not p['joined']]
         if over:
@@ -522,7 +523,8 @@ class QuasiStatic(Solver):
                  + f"valid to about {info['valid_to_Hz'] / 1e6:.3g} MHz on this board.")
         return Result(Smm, names, zref, info['seconds'], comment=f"pcbqs quasi-static ({run.name})",
                       info=dict({k: v for k, v in info.items() if k != 'model'},
-                                kpi=f"{info['triangles']:,} triangles, {info['seconds']:.1f} s", about=about,
+                                kpi=f"{info['triangles']:,} triangles, {sw['solves']} solves, {info['seconds']:.1f} s",
+                                about=about,
                                 not_joined=apart))
 
     def outputs(self, run, prep, res):

@@ -31,6 +31,18 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `tools/benchmark_ports.py` runs on the new model.
 
 ### Changed
+- **The S-parameter solver sweeps where its model is least sure** (R-D15): `sparams.sweep` solves at most 31 of the
+  run's frequencies, where a rational model of all the ports' S (`emsdev.afs`, the AAA sweep mom25d's was) is least
+  sure, until two models agree to 2e-3, and gives S on the run's frequencies from it. The solver had solved 31
+  log-spaced points and interpolated linearly in log f, across a filter's resonance. A run of 31 points or fewer
+  is solved at each; a sweep that stops at 31 before its models agree is a warning. `sparams.model` builds the
+  ports' model once for both. A notch at 15.8 MHz on a 401-point band: 7 solves for 31, |S21| at it 0.0385 as the
+  direct solve's (the interpolation's 0.0408).
+- **The via matrix in blocks, the loop tree breadth first** (R-D16): the via segments' inductance from arrays
+  (2,500 segments: 0.35 s for a Python double loop's 19.5 s, the same entries); the loop basis's tree breadth first
+  over the copper from its middle, the parts joining only the islands the copper leaves apart as before. Mean loops
+  of 20-30 branches are 13-20 (CM5's converter 23.5 to 16.7, the wpthb ports 20.0 to 12.9, mom25d's demo board 29.7
+  to 19.9), the inductance's projection 18-24 % faster, the answers the same (to 1e-14 in S).
 - **The field export takes the copper's model the run made** (R-D3, its first part): the same copper had been meshed
   and filled again (the buck with copper and fields: 49.0 s for 54.5). Its charges' model (with capacitance) and the
   extraction at each harmonic are still the export's own.

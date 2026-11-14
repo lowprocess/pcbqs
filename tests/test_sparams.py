@@ -224,6 +224,28 @@ def test_the_board_s_parts_are_elements_between_their_pads(thru_rl):
     assert abs(link['S'][0, 1, 0]) == pytest.approx(100 / (100 + Rm * 29), abs=2e-4)
 
 
+def test_a_sweep_solves_a_notch_the_first_samples_step_over():
+    """sparams.sweep: a series LC to ground (a notch at 15.9 MHz, Q about 10) on a 401-point band, from at most 31
+    solves where a rational model of S is least sure; the solver's 31 log-spaced points had been interpolated
+    linearly in log f across it. Its S on the grid is the direct solve's; a grid of 31 points or fewer is solved
+    point by point."""
+    b = with_parts(series=dict(R=0.0, L=None, C=None), shunt=dict(R=1.0, L=100e-9, C=1e-9))
+    grid = np.linspace(1e6, 40e6, 401)
+    kw = dict(capacitance='off', **QUIET)
+    r = SP.sweep(b, grid, points=31, **kw)
+    sw = r['info']['sweep']
+    assert sw['converged'] and sw['solves'] == len(r['f']) <= 31 and r['S_grid'].shape == (401, 2, 2)
+    near = grid[np.argmin(np.abs(r['S_grid'][:, 1, 0]))]
+    assert near == pytest.approx(1 / (2 * np.pi * np.sqrt(100e-9 * 1e-9)), rel=0.03)
+    check = grid[[0, 150, int(np.argmin(np.abs(grid - near))), 250, 400]]
+    direct = SP.solve(b, check, **kw)['S']
+    at = [int(np.argmin(np.abs(grid - c))) for c in check]
+    assert np.abs(r['S_grid'][at] - direct).max() < 5e-3
+    assert len(r['drive']) == 2 and len(r['drive'][0][0].f) == sw['solves']     # (the maps: the frequencies solved)
+    few = SP.sweep(b, grid[:7], points=31, **kw)
+    assert few['info']['sweep']['solves'] == 7 and np.array_equal(few['f'], grid[:7])
+
+
 def test_what_it_refuses():
     b = thru()
     for change, msg in ((dict(ports=[]), 'no ports'), (dict(ports=[dict(b['ports'][0], kind='gap')]), 'no gap ports'),

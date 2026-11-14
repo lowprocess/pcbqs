@@ -45,6 +45,114 @@ def filament_mutual(z0a, z1a, z0b, z1b, s):
     return MU0 / (4 * np.pi) * (g(z1a - z0b) + g(z0a - z1b) - g(z1a - z1b) - g(z0a - z0b))
 
 
+def spanning_tree(n_nodes, ends, is_src, first=None):
+    """A spanning forest of the branches `ends` [(a, b)] but the sources (is_src): (tree (nb,) bool, comp (each
+    node's component), up, upb, ups (each node's parent in it, the branch to it and that branch's sense from the
+    parent), depth). The `first` branches (the copper) are a breadth-first forest, each island's from its most
+    central node; the rest (the parts) only join islands the copper leaves apart, as before, so a source's loop
+    crosses a part only where the copper has no way round it (its copper alone, Result.zc, is that loop's). The tree
+    had been the branches' order: a mean loop of 20-30 branches where breadth first gives 13-20 (the CM5's converter,
+    the wpthb ports, mom25d's demo board), the longest a third to two thirds as long, with the same answers."""
+    import collections
+    nb = len(ends)
+    first = nb if first is None else first
+    adj = [[] for _ in range(n_nodes)]
+    for k in range(first):
+        a, b = ends[k]
+        if not is_src[k] and a != b:
+            adj[a].append((b, k)); adj[b].append((a, k))
+    tree = np.zeros(nb, bool)
+
+    def sweep(root):
+        """Breadth first from root: the nodes in that order and their distances."""
+        dist = {root: 0}
+        q = collections.deque([root])
+        order = [root]
+        while q:
+            u = q.popleft()
+            for v, _ in adj[u]:
+                if v not in dist:
+                    dist[v] = dist[u] + 1
+                    q.append(v); order.append(v)
+        return order, dist
+    seen = np.zeros(n_nodes, bool)
+    for s in range(n_nodes):
+        if seen[s]:
+            continue
+        order, _ = sweep(s)
+        seen[order] = True
+        root = s
+        if len(order) > 2:                      # a central root: the middle of a double sweep's long path
+            _, d1 = sweep(order[-1])
+            _, d2 = sweep(max(d1, key=d1.get))
+            root = min(order, key=lambda v: max(d1[v], d2[v]))
+        mark = {root}
+        q = collections.deque([root])
+        while q:
+            u = q.popleft()
+            for v, k in adj[u]:
+                if v not in mark:
+                    mark.add(v); tree[k] = True; q.append(v)
+    parent = list(range(n_nodes))                   # the parts join the copper's islands, in their order
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+    for k in np.flatnonzero(tree):
+        a, b = ends[k]
+        parent[find(b)] = find(a)
+    for k in range(first, nb):
+        a, b = ends[k]
+        if not is_src[k] and find(a) != find(b):
+            parent[find(b)] = find(a)
+            tree[k] = True
+    tadj = [[] for _ in range(n_nodes)]
+    for k in np.flatnonzero(tree):
+        a, b = ends[k]
+        tadj[a].append((b, k)); tadj[b].append((a, k))
+    up = np.full(n_nodes, -1); upb = np.full(n_nodes, -1); ups = np.zeros(n_nodes, int)
+    depth = np.full(n_nodes, -1); comp = np.full(n_nodes, -1)
+    for root in range(n_nodes):
+        if depth[root] >= 0:
+            continue
+        depth[root] = 0; comp[root] = root
+        stack = [root]
+        while stack:
+            u = stack.pop()
+            for v, k in tadj[u]:
+                if depth[v] < 0:
+                    depth[v], up[v], upb[v], comp[v] = depth[u] + 1, u, k, root
+                    ups[v] = 1 if ends[k][0] == u else -1
+                    stack.append(v)
+    return tree, comp, up, upb, ups, depth
+
+
+def via_resistance(vseg, sigma, plating):
+    """Each via segment's DC resistance (ohm): its barrel's plated ring, (x, y, r, z0, z1) a row (m)."""
+    v = np.asarray(vseg, float).reshape(-1, 5)
+    rr = v[:, 2]
+    ri = np.maximum(rr - plating, 0.0)
+    return (v[:, 4] - v[:, 3]) / (sigma * np.pi * (rr ** 2 - ri ** 2))
+
+
+def via_inductance(vseg, rows=512):
+    """The via segments' partial inductance matrix (H): filaments along z, (x, y, r, z0, z1) a row (m). Segments
+    of one barrel (coaxial, i == j included) take the barrel's radius, so stacked segments add up to the whole
+    barrel. In blocks of `rows` (a Python double loop had taken ~15 s at 2,500 segments)."""
+    v = np.asarray(vseg, float).reshape(-1, 5)
+    x, y, rr, z0, z1 = v.T
+    n = len(v)
+    L = np.empty((n, n))
+    for a in range(0, n, rows):
+        b = min(a + rows, n)
+        s = np.hypot(x[a:b, None] - x[None], y[a:b, None] - y[None])
+        s = np.where(s < 1e-9, np.maximum(rr[a:b, None], rr[None]), s)
+        L[a:b] = filament_mutual(z0[a:b, None], z1[a:b, None], z0[None], z1[None], s)
+    return L
+
+
 @dataclass
 class Result:
     f: np.ndarray
@@ -466,8 +574,7 @@ class MQS:
             from .hmatrix import HMatrix
             v=np.asarray(self.vseg,float).reshape(-1,5)
             x,y,rr,z0,z1=v.T
-            ri=np.maximum(rr-self.plating,0.)
-            R=(z1-z0)/(self.sigma*np.pi*(rr**2-ri**2))
+            R=via_resistance(v,self.sigma,self.plating)
             lo=np.c_[x-rr,y-rr,z0];hi=np.c_[x+rr,y+rr,z1]
             def entry(a,b):
                 aa,bb=np.meshgrid(a,b,indexing='ij')
@@ -480,57 +587,14 @@ class MQS:
             L=HMatrix(entry,lo,hi,**self._compression_options)
             self.fill_info['vias']=dict(L.info,matrix_backend='hierarchical')
             return diags(R).tocsr(),L
-        n = self.nv
-        R, L = np.zeros(n), np.zeros((n, n))
-        for i, (x, y, rr, z0, z1) in enumerate(self.vseg):
-            ri = max(rr - self.plating, 0.0)
-            R[i] = (z1 - z0) / (self.sigma * np.pi * (rr ** 2 - ri ** 2))
-            for j, (x2, y2, r2, z02, z12) in enumerate(self.vseg):
-                # Coaxial segments (the same barrel, including i == j) use the
-                # barrel radius, so stacked segments add up to the whole barrel.
-                s = np.hypot(x - x2, y - y2)
-                L[i, j] = filament_mutual(z0, z1, z02, z12, s if s >= 1e-9 else max(rr, r2))
-        return diags(R).tocsr(), L
+        return diags(via_resistance(self.vseg, self.sigma, self.plating)).tocsr(), via_inductance(self.vseg)
 
     def _loops(self, allow_open=False, return_tree=False):
         """The loop basis: C (nbranch x nloop), the source loops' columns separate (sources' branches in no tree)."""
         nb = len(self.br) + len(self.parts)
         ends = list(self.br) + [(self.term_node[p['a']], self.term_node[p['b']]) for p in self.parts]
         is_src = np.array([False] * len(self.br) + [p['kind'] == 'I' for p in self.parts])
-        parent = list(range(self.n_nodes))
-
-        def find(a):
-            while parent[a] != a:
-                parent[a] = parent[parent[a]]
-                a = parent[a]
-            return a
-        tree = np.zeros(nb, bool)
-        order = [k for k in range(nb) if not is_src[k]] + [k for k in range(nb) if is_src[k]]
-        for k in order:
-            if is_src[k]:
-                continue
-            a, b = ends[k]
-            ra, rb = find(a), find(b)
-            if ra != rb:
-                parent[rb] = ra
-                tree[k] = True
-        adj = [[] for _ in range(self.n_nodes)]
-        for k in np.flatnonzero(tree):
-            a, b = ends[k]
-            adj[a].append((b, k, +1)); adj[b].append((a, k, -1))
-        up = np.full(self.n_nodes, -1); upb = np.full(self.n_nodes, -1); ups = np.zeros(self.n_nodes, int)
-        depth = np.full(self.n_nodes, -1)
-        for root in range(self.n_nodes):
-            if depth[root] >= 0:
-                continue
-            depth[root] = 0
-            stack = [root]
-            while stack:
-                u = stack.pop()
-                for v, k, sgn in adj[u]:
-                    if depth[v] < 0:
-                        depth[v], up[v], upb[v], ups[v] = depth[u] + 1, u, k, sgn
-                        stack.append(v)
+        tree, comp, up, upb, ups, depth = spanning_tree(self.n_nodes, ends, is_src, len(self.br))
         rows, cols, vals, src_cols, dead = [], [], [], {}, []
         col = 0
         n_rwg = getattr(self, 'n_rwg', len(self.br))
@@ -543,7 +607,7 @@ class MQS:
                 # With capacitance too: both ends are one node, so the edge's incidence column is zero and charge
                 # continuity does not see it.
                 continue
-            if find(a) != find(b):                                # its ends on copper joined only through it
+            if comp[a] != comp[b]:                                # its ends on copper joined only through it
                 dead.append(k)
                 continue
             # the loop: branch k from a to b, then the tree from b back to a

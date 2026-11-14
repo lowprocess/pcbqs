@@ -6,7 +6,7 @@ import pytest
 from shapely.geometry import box, mapping, Point
 
 from pcbqs._numerics.base import MU0
-from pcbqs.mqs import MQS, filament_mutual
+from pcbqs.mqs import MQS, filament_mutual, spanning_tree, via_inductance
 
 H_TR, W_TR = 0.5, 0.5                     # mm: the trace's height over the plane, its width
 
@@ -84,6 +84,39 @@ def test_via_partial_inductance_is_rosas():
     rosa = MU0 / (2 * np.pi) * (h * np.log((h + np.sqrt(h * h + a * a)) / a) - np.sqrt(h * h + a * a) + a)
     assert L == pytest.approx(rosa, rel=1e-9)
     assert filament_mutual(0, h, 0, h, 1e-3) < L
+
+
+def test_the_via_matrix_is_each_pair_s_filaments():
+    """The via segments' matrix in blocks (a Python double loop had taken ~15 s at 2,500 segments): each entry the
+    two filaments', one barrel's stacked segments at its radius."""
+    v = np.array([(0, 0, 1.5e-4, 0, 3e-4), (0, 0, 1.5e-4, 3e-4, 6e-4), (2e-3, 1e-3, 2e-4, 0, 6e-4)])
+    L = via_inductance(v, rows=2)                                   # (two blocks)
+    for i, (x, y, r, z0, z1) in enumerate(v):
+        for j, (x2, y2, r2, z02, z12) in enumerate(v):
+            s = np.hypot(x - x2, y - y2)
+            assert L[i, j] == pytest.approx(filament_mutual(z0, z1, z02, z12, s if s >= 1e-9 else max(r, r2)), rel=1e-12)
+    assert L == pytest.approx(L.T, rel=1e-12) and via_inductance(np.zeros((0, 5))).shape == (0, 0)
+
+
+def test_the_loop_tree_is_breadth_first_over_the_copper_and_parts_join_islands():
+    """A 12 x 12 grid of copper: the tree spans it; a part beside copper stays out of the tree (a source's loop then
+    runs through copper, which its zc is), one joining two islands is in it, and a source is never. (Its loops are
+    shorter than the branch order's on a board's mesh, not on a grid: the same there.)"""
+    n = 12
+    node = lambda i, j: i * n + j
+    ends = [(node(i, j), node(i, j + 1)) for i in range(n) for j in range(n - 1)] + \
+           [(node(i, j), node(i + 1, j)) for i in range(n - 1) for j in range(n)]
+    copper = len(ends)
+    island = n * n                                                  # a node of its own, joined by a part alone
+    ends += [(node(0, 0), node(0, 1)), (node(5, 5), island), (node(0, 0), node(11, 11))]
+    is_src = np.array([False] * (copper + 2) + [True])
+    tree, comp, up, upb, ups, depth = spanning_tree(n * n + 1, ends, is_src, copper)
+    assert tree.sum() == n * n and not tree[copper] and tree[copper + 1] and not tree[copper + 2]
+    assert len(set(comp)) == 1 and depth.min() == 0
+    for v in range(n * n + 1):                                      # each node's parent: the branch to it, its sense
+        if up[v] >= 0:
+            a, b = ends[upb[v]]
+            assert (a, b) == ((up[v], v) if ups[v] == 1 else (v, up[v]))
 
 
 def test_open_boundary_fft_grid_matches_biot_savart(solved):

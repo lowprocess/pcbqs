@@ -188,6 +188,13 @@ def limits(board, ports):
     return f_wave, (0.01 / (np.pi * z0 * cap) if cap else np.inf), cap
 
 
+def _freqs(freqs):
+    f = np.atleast_1d(np.asarray(freqs, float))
+    if f.ndim != 1 or not len(f) or not np.isfinite(f).all() or (f <= 0).any():
+        raise ValueError('frequencies must be finite and positive')
+    return f
+
+
 def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto', capacitance='auto',
           thickness=False, log=print, edge_rings=None):
     """The S-parameters of a board's ports at freqs (Hz, all positive): dict(f, S (nf, n, n), names, zref, q, drive,
@@ -199,11 +206,86 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
     edge_rings: with the charge, the graded cells across the copper's edges (default EDGE_RINGS; 1: none).
     drive[k]: the solve with port k driven (pcbqs.mqs.Result) and the current that entered the port, for the
     maps. A mesh left to the defaults is made coarser until the dense solve takes it."""
+    f = _freqs(freqs)
+    m = model(board, f.max(), ports, z0, dmax, fine, backend, capacitance, thickness, log, edge_rings)
+    log(f"sparams: {len(m['ports'])} port(s) driven in turn, {len(f)} frequencies, "
+        + ('currents and charge (R, L, C)' if m['charge'] else 'currents (R, L)'))
+    return _result(m, f, *_solve_at(m, f))
+
+
+def sweep(board, grid, points=31, tol=2e-3, log=print, **kw):
+    """The S-parameters on `grid` (Hz, ascending) from at most `points` solves: where a rational model of all the
+    ports' S (emsdev.afs, mom25d's sweep) is least sure, until two models agree to `tol` on the grid (a filter's
+    resonance between log-spaced samples had been interpolated across, linearly in log f). solve()'s dict, its f and S
+    the frequencies solved, with grid and S_grid (on it) and info['sweep'] = dict(solves, converged, change: the
+    last two models' largest difference). A grid of `points` or fewer: each solved. kw: solve()'s."""
+    grid = _freqs(grid)
+    if len(grid) <= points:
+        r = solve(board, grid, log=log, **kw)
+        r['info']['sweep'] = dict(solves=len(grid), converged=True, change=0.0)
+        return dict(r, grid=grid, S_grid=r['S'])
+    try:
+        from emsdev.afs import adaptive_sweep
+    except ImportError as e:                                # an emsdev from before it had the sweep
+        raise RuntimeError(f"pcbqs's sweep needs emsdev.afs ({e}): reinstall emsdev (pip install --force-reinstall "
+                           f"https://github.com/lowprocess/emsdev/archive/refs/heads/main.zip)") from None
+    m = model(board, grid.max(), log=log, **kw)
+    log(f"sparams: {len(m['ports'])} port(s) driven in turn, at most {points} of {len(grid)} frequencies, where a "
+        f"rational model is least sure; " + ('currents and charge (R, L, C)' if m['charge'] else 'currents (R, L)'))
+    drives = {}
+
+    def one(fr):
+        S, drive = _solve_at(m, np.array([fr]))
+        drives[float(fr)] = drive
+        return S[0]
+    grid, S_grid, fs, Ss, hist = adaptive_sweep(one, grid[0], grid[-1], grid=grid, tol=tol, max_points=points,
+                                                log=lambda s: log(f"sparams: {s.strip()}"))
+    drive = [(_joined([drives[float(fr)][k][0] for fr in fs]), np.concatenate([drives[float(fr)][k][1] for fr in fs]))
+             for k in range(len(m['ports']))]
+    last = hist[-1] if hist else {}
+    r = _result(m, fs, Ss, drive)
+    r['info']['sweep'] = dict(solves=len(fs), converged=bool(last.get('converged', True)),
+                              change=float(last.get('change', 0.0)), f_change_Hz=last.get('f_change'))
+    return dict(r, grid=grid, S_grid=S_grid)
+
+
+def _joined(results):
+    """pcbqs.mqs.Result of one frequency each as one of all of them."""
+    from .mqs import Result
+    cat = lambda get: None if get(results[0]) is None else np.concatenate([get(r) for r in results])
+    keys = lambda get: None if get(results[0]) is None else {n: np.concatenate([get(r)[n] for r in results])
+                                                             for n in get(results[0])}
+    return Result(cat(lambda r: r.f), cat(lambda r: r.i), keys(lambda r: r.z), results[0].names,
+                  keys(lambda r: r.zc), cat(lambda r: r.charge), cat(lambda r: r.potential))
+
+
+def _solve_at(m, f):
+    """S (nf, n, n) of model m at f, and each port's drive: [(pcbqs.mqs.Result, the current into the port)]."""
+    q, ports = m['q'], m['ports']
+    n = len(ports)
+    S = np.zeros((len(f), n, n), complex)
+    drive = []
+    results = q.solve(f, amps=[{p['name'] + '.I': float(j == k) for j, p in enumerate(ports)} for k in range(n)])
+    for k, (pk, r) in enumerate(zip(ports, results)):
+        part = {x['name']: r.i.shape[1] - len(q.parts) + i for i, x in enumerate(q.parts)}     # the parts: last
+        for j, pj in enumerate(ports):
+            S[:, j, k] = 2 * r.i[:, part[pj['name'] + '.Z']] * np.sqrt(pj['z0'] / pk['z0']) - (j == k)
+        drive.append((r, 1.0 - r.i[:, part[pk['name'] + '.Z']]))                    # what went into the board
+    return S, drive
+
+
+def _result(m, f, S, drive):
+    info = dict(m['info'], seconds=round(time.perf_counter() - m['t0'], 2))
+    return dict(f=f, S=S, names=[p['name'] for p in m['ports']], zref=[p['z0'] for p in m['ports']],
+                ports=m['ports'], q=m['q'], drive=drive, info=info)
+
+
+def model(board, fmax, ports=None, z0=None, dmax=None, fine=None, backend='auto', capacitance='auto',
+          thickness=False, log=print, edge_rings=None):
+    """The ports' model for a band to fmax (Hz), which solve() and sweep() solve: dict(q (pcbqs.mqs.MQS, the ports
+    a source and a termination each, the parts elements), ports, charge, info, t0). Arguments: solve()'s."""
     from shapely.geometry import shape
     from .mqs import MQS
-    f = np.atleast_1d(np.asarray(freqs, float))
-    if f.ndim != 1 or not len(f) or not np.isfinite(f).all() or (f <= 0).any():
-        raise ValueError('frequencies must be finite and positive')
     ports = [dict(p) for p in (board.get('ports') if ports is None else ports)]
     if not ports:
         raise ValueError('the board has no ports: S-parameters need at least one')
@@ -218,7 +300,6 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
         raise ValueError(f"capacitance {capacitance!r}: auto, on or off")
     for p in ports:
         p['z0'] = float(z0 if z0 else p.get('z0') or 50.0)
-    names = [p['name'] for p in ports]
     terms = {}
     for p in ports:
         patch = terminal_box(p)
@@ -231,7 +312,7 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
         for i, patch in enumerate(e['patches']):
             terms[f"{e['ref']}:{i + 1}"] = [(e['layer'], patch)]
     f_wave, f_cap, cap = limits(board, ports)
-    charge = capacitance == 'on' or (capacitance == 'auto' and f.max() > f_cap)
+    charge = capacitance == 'on' or (capacitance == 'auto' and fmax > f_cap)
     sig = _signal(board, ports)
     zs = {c['name']: c['z'] for c in board['stack']['copper']}
     height = min(abs(zs[p['layer']] - zs[p['ref_layer']]) for p in ports)
@@ -265,24 +346,12 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
     if parts or left_out:
         log(f"sparams: {len(parts)} part(s) between their pads"
             + (f"; left out: {', '.join(f'{ref} ({why})' for ref, why in left_out)}" if left_out else ''))
-    n = len(ports)
-    S = np.zeros((len(f), n, n), complex)
-    drive = []
-    log(f"sparams: {n} port(s) driven in turn, {len(f)} frequencies, "
-        + ('currents and charge (R, L, C)' if charge else 'currents (R, L)'))
-    results = q.solve(f, amps=[{p['name'] + '.I': float(j == k) for j, p in enumerate(ports)} for k in range(n)])
-    for k, (pk, r) in enumerate(zip(ports, results)):
-        part = {x['name']: r.i.shape[1] - len(q.parts) + i for i, x in enumerate(q.parts)}     # the parts: last
-        for j, pj in enumerate(ports):
-            S[:, j, k] = 2 * r.i[:, part[pj['name'] + '.Z']] * np.sqrt(pj['z0'] / pk['z0']) - (j == k)
-        drive.append((r, 1.0 - r.i[:, part[pk['name'] + '.Z']]))                    # what went into the board
     coarsened = None if (dmax, fine) == chosen else (f"the mesh was made {dmax / chosen[0]:.2g} times coarser "
                                                      f"({dmax:.2g} mm, {min(fine, dmax):.2g} mm at the ports' nets, "
                                                      f"for {chosen[0]:.2g} and {min(chosen[1], chosen[0]):.2g}) to "
                                                      f"stay under {limit:,} triangles: set dmax and fine to choose it")
     info = dict(triangles=int(len(q.tris)), backend=q.matrix_backend, dmax_mm=dmax, fine_mm=min(fine, dmax),
-                coarsened=coarsened,
-                seconds=round(time.perf_counter() - t0, 2), capacitance=bool(charge), thickness=bool(thickness),
+                coarsened=coarsened, capacitance=bool(charge), thickness=bool(thickness),
                 edge_rings=int(kw.get('edge_rings', 1)),
                 valid_to_Hz=float(f_wave if charge else min(f_wave, f_cap)),
                 tenth_wavelength_Hz=float(f_wave), capacitance_limit_Hz=float(f_cap), capacitance_F=float(cap),
@@ -292,7 +361,7 @@ def solve(board, freqs, ports=None, z0=None, dmax=None, fine=None, backend='auto
                        'copper resistance and inductance (magneto-quasistatic); no capacitance, no radiation')
                 + ("; the copper's two faces, the skin effect between them" if thickness else
                    '; the copper as one sheet of its DC resistance'))
-    return dict(f=f, S=S, names=names, zref=[p['z0'] for p in ports], ports=ports, q=q, drive=drive, info=info)
+    return dict(q=q, ports=ports, charge=charge, info=info, t0=t0)
 
 
 OPEN = 1e-9             # |S| between two ports below this: no current gets from one to the other
