@@ -593,6 +593,12 @@ def run_case(model, point, out, log=print, copper=None):
         f.unlink()
     (out / 'model.json').write_text(json.dumps(resolved, indent=1))
     notes += plausibility(stats)
+    ramps = [pt['ref'] for pt in resolved.get('parts', []) if pt.get('type') == 'switch'
+             and (pt.get('model') or {}).get('type', 'switch') == 'switch'
+             and not any((pt.get('model') or {}).get(k) for k in ('Cgd_F', 'Cgs_F', 'Qg_C', 'Qgd_C'))]
+    if ramps:                                                       # (its loss had read as a device's)
+        notes.append(f"{', '.join(ramps)}: switched by the drive's own ramp (rise_s, fall_s), with no gate charge: "
+                     f"the switching loss is the ramp's, not a device's (a vdmos or vendor model gives that)")
     if copper:
         stats['copper'] = dict(stats['copper'] or dict(loss_W=0.0, ports=[]), board=Path(copper['file']).name,
                                fit_error=copper['fit_error'])

@@ -225,6 +225,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   the list; kicad2ems-fem's coils propose each coupling so, for any model.
 
 ### Fixed
+- **A switch with ideal edges is said** (R-A18, its first part): a `switch` with no gate charge switches by its drive's
+  ramp, so its switching loss is the ramp's, not a device's: each case says which switches are so (a board's circuit
+  and 9 of the 10 examples). Their default stays; a vdmos or vendor model gives a device's.
 - **Errors that said nothing** (the review of 2026-11-14, R-B8, B9, B12):
   - an ngspice run past `analysis.timeout_s` fails its own point, saying so, and the sweep goes on (TimeoutExpired
     had escaped: a traceback and no circuit.json);
