@@ -13,7 +13,7 @@ authors = [{ name = "Claude" }, { name = "lowprocess" }]
 dependencies = [
     "numpy>=1.24", "scipy>=1.10", "shapely>=2.0", "triangle>=20230923",
     "matplotlib>=3.7", "threadpoolctl>=3.1", "pillow>=9",
-    "emsdev @ https://github.com/lowprocess/emsdev/archive/refs/heads/main.zip",
+    "emsdev @ https://github.com/lowprocess/emsdev/archive/refs/tags/v0.3.0.zip",
 ]
 
 [project.optional-dependencies]
