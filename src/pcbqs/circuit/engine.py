@@ -432,8 +432,13 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
         n = max(cycles, 3 if start is not None else 20)
         f = 1 / period
         stop = n / f                                                # as Circuit.run works it out
-        mark = deck.node('WINDOW:')
-        deck.lines += [f"VWINDOW_MARK {mark} 0 PWL(0 0 {stop - 1 / f:.17g} 0 {stop:.17g} 0)", f"RWINDOW_MARK {mark} 0 1k"]
+        # a time point on the last period's start, which the stored energy's count-out needs (a high-Q tank: a
+        # 7e-4 error in its current there is 4 % of its loss) - unless a pulse's own edge is already there: the
+        # two a few ulps apart had stopped ngspice 45 with a 5e-20 s step ("timestep too small" at stop - T)
+        if not edge_at(deck.lines, stop - 1 / f):
+            mark = deck.node('WINDOW:')
+            deck.lines += [f"VWINDOW_MARK {mark} 0 PWL(0 0 {stop - 1 / f:.17g} 0 {stop:.17g} 0)",
+                           f"RWINDOW_MARK {mark} 0 1k"]
         deck.measure_lead = 1e-6 * period
         try:
             result = deck.run(folder, f, cycles=n, samples_per_cycle=spc,
@@ -453,6 +458,24 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
         save_port_spectrum(folder, list(deck.signals), f, harmonics=max(31, int((model.get('fields') or {}).get('harmonics', 16))))
     (folder / 'adaptive-ports.raw').unlink(missing_ok=True)
     return result, deck, count_out_storage(collect(result['_measures'], deck), result, model, deck), k
+
+
+def edge_at(lines, t, tol=1e-9):
+    """Whether a PULSE of the deck's lines has an edge's corner (its start or end of rise, of fall) at time t: then
+    ngspice has a breakpoint there of its own."""
+    for m in re.finditer(r'PULSE\(([^)]*)\)', '\n'.join(lines)):
+        try:
+            v = [float(x) for x in m.group(1).split()]
+        except ValueError:
+            continue
+        if len(v) < 7 or v[6] <= 0:
+            continue
+        td, tr, tf, pw, per = v[2], v[3], v[4], v[5], v[6]
+        for e in (td, td + tr, td + tr + pw, td + tr + pw + tf):
+            k = (t - e) / per
+            if abs(k - round(k)) * per <= tol * per:
+                return True
+    return False
 
 
 _NGSPICE = []

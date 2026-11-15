@@ -44,6 +44,16 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   `core_loss_W`, `added_loss_W`) for the thermal model and the report, and in the case's loss and efficiency as
   drawn on top of the run's. Checked against Steinmetz's sine, the iGSE's triangle and a buck's flat AC resistance.
 
+### Fixed
+- **The flyback example on ngspice 45 (CI's).** Its search never settled there: at reltol 1e-3 the windings'
+  currents differed by 0.3-0.5 % from period to period however long it ran (lightly damped ringing at the
+  diodes' turn-off, 0.11 % at reltol 1e-4), and the longest run then stopped on "timestep too small" at the
+  last period's start. A run twice as long that repeats no better now moves the search to the reported run's
+  reltol, and the measuring window's mark at the last period's start is left out where a pulse's edge is
+  already there (the two a few ulps apart had made ngspice take a 5e-20 s step); a resonant tank, with no edge
+  there, keeps it (its stored energy is counted out at that instant: its loss within 0.14 % of I²R). Found on
+  CI's ngspice 45.2 by a run of the example and five variants there, each trial's worst signals printed.
+
 ### Changed
 - **A map for each case of a sweep (R-E11).** `thermal --case all` solves each case of a circuit run on its own
   (`<out>/<case>`), writes `thermal-cases.json` (each part's temperature, margin and loss at each case, each case's
