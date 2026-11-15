@@ -31,6 +31,7 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 | Jetson +1V15, In4.Cu over In3.Cu | \|Z21\| | Palace | ≤ 0.25% |
 | Temperature: ten demo boards, 48 parts (2026-11-11) | each part, grid 0.5 mm | Elmer (h 0.3 mm) | ≤ 2.0 K (≤ 5.5% of rise); 43 within 1 K |
 | Temperature: wpthb, Q1 / Q2 / L3 at 1 W | 53.74 / 52.28 / 54.04 C | Elmer 53.71 / 52.20 / 53.17 C | +0.03 / +0.08 / +0.87 K |
+| Heating from cold: wpthb, the same, to 2000 s (2026-11-15) | 63 % of the rise at 89 / 97 / 88 s; 48.63 / 47.18 / 48.94 C at 200 s | Elmer (BDF2, the same steps) 82 / 90 / 85 s; 49.01 / 47.51 / 48.47 C | +9 / +8 / +3%; within 0.5 K |
 
 ![DC, Jetson +1V15](images/dc_jetson_1v15.png) ![DC, wpthb VHB](images/dc_wpthb_vhb.png)
 ![Strip loop](images/mqs_loop.png)
@@ -52,6 +53,11 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
   - Its PDN impedance peak, which uses the same pad-to-via conduction for mounting inductance: +5.7%.
   - wpthb: −0.05%, because its series parts dominate.
 - DC loss is now the terminals' input power, not V·G·V, which cancelled across the stiffer ties.
+- **A transient's heat capacity counted an inner layer's copper twice** (`thermal/grid.py`). An inner layer's
+  share of the laminate (half the distance to each neighbour) takes in its own thickness; where it is copper,
+  that volume was laminate and copper both. On wpthb 8.25 J/K against Elmer's mesh's 7.87, the parts 13% late
+  to 63% of their rise; now 7.93 J/K and 3 to 9% (`thermal_elmer.py --transient 2000`). The rest is the sheets
+  against the 3D model: four times the time steps moves it 1%.
 
 ## What remains different, and why
 
@@ -218,7 +224,7 @@ python validation/pdn_palace.py [rect lshape jetson_1v15]                       
 python validation/mqs_palace.py [loop plane_return]
 python validation/mqs_fasthenry.py [loop plane_return]                             # after mqs_palace.py
 python validation/mqs_cm5.py geometry|pcbqs DMAX [SHEETS] [hier] [overlap]|palace H...|fasthenry P...|figure|report
-python validation/thermal_elmer.py [05_buck_synchronous ...] | --wpthb          # + ../kicad2ems-fem/src
+python validation/thermal_elmer.py [05_buck_synchronous ...] | --wpthb [--transient 2000]   # + ../kicad2ems-fem/src
 python validation/dc_elmer.py --plot        # redraw from saved results (also mqs_palace.py --plot)
 python validation/edge_rings_gap.py traces_air 0.5: 0.5:edge_rings=6    # the edge-ring scripts (no other solver)
 ```

@@ -279,7 +279,12 @@ def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print, transient=None
         from .problem import RHO_C_CU, RHO_C_FR4
         cap = np.zeros(A.shape[0])                                  # J/K: the laminate's share and the copper
         for l, lay in enumerate(p.layers):
-            cap[idx[l][live]] = area[live] * lay.edge * 1e-3 * RHO_C_FR4 + cu_area[l][live] * lay.t * 1e-3 * RHO_C_CU
+            # an inner layer's share of the laminate (half the distance to each neighbour) takes in its own
+            # thickness: where it is copper, that is copper's, not the laminate's (it had been both, 4.8 % too much
+            # heat capacity on wpthb against Elmer's 3D mesh; R-E21)
+            inner = 0 < l < len(p.layers) - 1
+            cap[idx[l][live]] = (area[live] * lay.edge * 1e-3 * RHO_C_FR4 +
+                                 cu_area[l][live] * lay.t * 1e-3 * (RHO_C_CU - (RHO_C_FR4 if inner else 0.0)))
 
         def parts_at(x):
             r = x[:n]

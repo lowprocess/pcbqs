@@ -52,6 +52,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   drawn on top of the run's. Checked against Steinmetz's sine, the iGSE's triangle and a buck's flat AC resistance.
 
 ### Fixed
+- **A transient's heat capacity on boards with inner layers.** An inner layer's share of the laminate (half the
+  distance to each neighbour) takes in its own thickness, and where it is copper that volume was counted as laminate
+  and as copper: 4.8 % too much heat capacity on wpthb against Elmer's 3D mesh (8.25 against 7.87 J/K), its parts
+  reaching 63 % of their rise 13 % late. Now 7.93 J/K and 3 to 9 % late (the sheets against the 3D model; four
+  times the steps moves it 1 %), within 0.5 K at 200 s. Checked by `validation/thermal_elmer.py --transient`,
+  against kicad2ems-fem's new Elmer transient (R-E21).
 - **A coupled winding's books.** The change of coupled windings' mutual energy over the reported period came off
   the loss alone, not off the windings' powers as their own energies' did, so the parts added up short of the loss
   on a run not quite settled (the flyback on CI's ngspice 45: 1.072 W of parts against 1.101 W of loss). Each

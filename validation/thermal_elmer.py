@@ -4,11 +4,15 @@
     python validation/thermal_elmer.py [example ...]      # circuit examples, e.g. 05_buck_synchronous (default: all)
     python validation/thermal_elmer.py --wpthb            # the as-built 24 V bridge, 4 layers, Q1 Q2 L3
 
+    python validation/thermal_elmer.py --wpthb --transient 2000     # the heating from cold too, over 2000 s
+
 Each example's circuit is run (python -m pcbqs.circuit) and its lossiest case's part losses go to both tools, with
 the same film (10 W/m2/K), ambient (25 C) and conductivities. Twice: as each tool models a board by default (a film
 on the faces and on the edges), and with the edges insulated (pcbqs edge_film=0, Elmer's side faces given no
 boundary condition), which isolates the edges from the rest. Compared: each part's temperature (the mean under its
-pads). Needs kicad2ems-fem on the path and ElmerSolver.
+pads). With --transient S, also the heating from cold over S seconds (with the edges' film): the grid's backward
+Euler against Elmer's BDF2 on the same steps (kicad2ems-fem's R-E21), each part's time to 63 % of its rise and its
+temperature at a tenth of S. Needs kicad2ems-fem on the path and ElmerSolver.
 """
 import json
 import subprocess
@@ -63,7 +67,7 @@ def circuit_losses(name):
     return model['board']['file'], losses
 
 
-def compare(name, board_file, losses, pitch=0.5, dmax=0.5, h=0.3, hmax=2.0):
+def compare(name, board_file, losses, pitch=0.5, dmax=0.5, h=0.3, hmax=2.0, transient=0.0):
     et = elmer_module()
     layered = et.layered_mesh
     board = load_board(board_file)
@@ -74,17 +78,26 @@ def compare(name, board_file, losses, pitch=0.5, dmax=0.5, h=0.3, hmax=2.0):
             p = Problem.of(board, losses, film=FILM, ambient=AMBIENT, edge_film=None if edges else 0.0)
             heat = {k: w for k, w in p.powers.items() if w > 0}
             r = row[key] = dict(watts=p.watts, layers=len(p.layers))
+            tr = transient if edges else 0.0
             for method, size in (('grid', pitch), ('mesh', dmax)):
                 t = time.perf_counter()
-                s = solve(p, method, size, log=quiet)
+                s = solve(p, method, size, log=quiet, **(dict(transient=tr) if tr and method == 'grid' else {}))
                 r[method] = dict(seconds=time.perf_counter() - t, unknowns=s.unknowns, edge_W=s.edge_W,
                                  parts={k: v['board_C'] for k, v in s.parts.items()})
+                if tr and method == 'grid':
+                    r['grid_transient'] = dict(times_s=s.transient['times_s'], parts=s.transient['parts'],
+                                               to_63_s=s.transient['to_63_s'])
             et.layered_mesh = layered if edges else insulated_sides(layered)
             t = time.perf_counter()
-            e = et.solve(board, str(OUT / 'thermal' / 'elmer' / f'{name}_{key}'), heat=heat, htc=FILM,
-                         ambient=AMBIENT, h=h, hmax=hmax, log=quiet)
+            folder = OUT / 'thermal' / 'elmer' / f'{name}_{key}'
+            e = et.solve(board, str(folder), heat=heat, htc=FILM, ambient=AMBIENT, h=h, hmax=hmax, log=quiet,
+                         transient=tr)
             r['elmer'] = dict(seconds=time.perf_counter() - t, wedges=e['wedges'], parts=e['parts'],
                               balance=e['balance']['error'])
+            if tr:
+                et_tr = json.loads((folder / 'thermal-transient.json').read_text())
+                r['elmer_transient'] = dict(times_s=et_tr['times_s'], parts=et_tr['parts'], to_63_s=et_tr['to_63_s'],
+                                            seconds=et_tr['seconds'])
     finally:
         et.layered_mesh = layered
     return row
@@ -102,6 +115,18 @@ def report(rows):
             d0 = n['grid']['parts'][ref] - n['elmer']['parts'][ref]
             print(f"  {ref:6s} {te:7.2f} {g:7.2f} {m:7.2f} {g - te:+6.2f} K {100 * (g - te) / (te - AMBIENT):+5.1f}%"
                   f"   {d0:+6.2f} K")
+        if 'elmer_transient' in r:
+            import numpy as np
+            g, e = r['grid_transient'], r['elmer_transient']
+            end = e['times_s'][-1]
+            print(f"  transient to {end:g} s (Elmer {e['seconds']:.0f} s): time to 63 % of the rise, and at {end / 10:g} s")
+            print(f"  {'part':6s} {'elmer':>9s} {'grid':>9s} {'':6s} {'elmer':>8s} {'grid':>8s}")
+            for ref in sorted(e['to_63_s'], key=lambda k: -r['elmer']['parts'][k]):
+                te, tg = e['to_63_s'][ref], g['to_63_s'].get(ref)
+                ce = np.interp(end / 10, e['times_s'], e['parts'][ref])
+                cg = np.interp(end / 10, g['times_s'], g['parts'][ref]) if ref in g['parts'] else float('nan')
+                print(f"  {ref:6s} {te:8.1f}s {tg if tg is not None else float('nan'):8.1f}s "
+                      f"{100 * ((tg or np.nan) - te) / te:+5.1f}%  {ce:7.2f}C {cg:7.2f}C")
     worst = max(((abs(r['edges']['grid']['parts'][k] - v), r['name'], k) for r in rows
                  for k, v in r['edges']['elmer']['parts'].items()), default=None)
     if worst:
@@ -111,12 +136,15 @@ def report(rows):
 def main(argv):
     names = [a for a in argv if not a.startswith('-')] or sorted(f.stem for f in EXAMPLES.glob('*.json'))
     rows = []
+    tr = float(argv[argv.index('--transient') + 1]) if '--transient' in argv else 0.0
+    if tr:
+        names = [a for a in names if a != argv[argv.index('--transient') + 1]]
     if '--wpthb' in argv:
-        rows.append(compare('wpthb', WPTHB, {'Q1': 0.3, 'Q2': 0.3, 'L3': 0.4}))
+        rows.append(compare('wpthb', WPTHB, {'Q1': 0.3, 'Q2': 0.3, 'L3': 0.4}, transient=tr))
     else:
         for name in names:
             board_file, losses = circuit_losses(name)
-            rows.append(compare(name, board_file, losses))
+            rows.append(compare(name, board_file, losses, transient=tr))
             print(f'{name}: done', flush=True)
     write_json(OUT / 'thermal' / ('wpthb.json' if '--wpthb' in argv else 'examples.json'), rows)
     report(rows)
