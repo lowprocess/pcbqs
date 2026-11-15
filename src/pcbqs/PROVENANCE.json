@@ -109,8 +109,8 @@
       "origin": "Pre-split source snapshot and independent full-wave reference, 2026-11-07"
     },
     "copper-reference.npz": {
-      "sha256": "5ec3e503df10ea667fd1d61696486a3ba392ed3e26347a365580ad8225f47ab8",
-      "origin": "pcbqs on its CDT mesh, 2026-11-15 (the Triangle-era reference of 2026-11-07, from the pre-split pipeline, read impedances within 0.05 % of it: test_standalone)"
+      "sha256": "c372c76fd9cc09531fed0799491d4287a2c4997f31eda5cfd77fabbf66fb5182",
+      "origin": "pcbqs on its mesh (CDT, hexagonal seed), 2026-11-15 (the Triangle-era reference of 2026-11-07, from the pre-split pipeline: impedances within 1 % of it, test_standalone)"
     }
   },
   "vendored": {

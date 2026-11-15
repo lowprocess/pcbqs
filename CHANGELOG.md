@@ -10,6 +10,12 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **The mesher's interior is equilateral cells (2026-11-15).** `_numerics/cdtmesh.py` (mom25d's file) seeds the points
+  inside the copper on a hexagonal lattice at the local cell size and smooths them (ODT), in place of rounds of
+  circumcentres alone: fewer triangles for the same limits (the FastHenry plane case 9,826 for 13,194, reading the
+  same: L +0.5 %, R -6.1 % at 1 MHz; the strip loop L -1.4 %, R -3.7 %). The real boards' answers moved up to 1.6 %
+  (the circuits' copper loss; near-field L 1.3 %), the copper fixture is regenerated (within 1 % of the pre-split
+  pipeline's impedances).
 - **The mesher triangulates with CDT, not Triangle (2026-11-15).** `geo.mesh_polygons` keeps its outlines, rings
   and limits; the triangulation is CDT 2.0.1's (MPL-2.0, vendored in `core/CDT`, `core/cdt_mesh.hpp`:
   `_core.cdt_triangulate`) and the points inside the copper are placed by `_numerics/cdtmesh.py` (rounds of
