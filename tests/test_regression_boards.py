@@ -21,7 +21,7 @@ DATA = Path(__file__).parent / 'data' / 'regression_boards.json'
 CM5 = Path('/usr/share/kicad/demos/cm5_minima/CM5_MINIMA_3.kicad_pcb')
 WPTHB = Path.home() / 'Desktop' / 'wpthb' / 'wpthb.kicad_pcb'
 RTOL = 1e-3
-RTOL_CIRCUIT = 1e-2     # a transient's answers move ~0.2% between ngspice versions (42 in CI, 47 here)
+RTOL_CIRCUIT = 1e-2     # a transient's answers move ~0.2% between ngspice versions (45 in CI, 47 here)
 
 
 def cm5_near_field(out):

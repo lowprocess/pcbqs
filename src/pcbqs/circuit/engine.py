@@ -544,6 +544,17 @@ def run_case(model, point, out, log=print, copper=None):
                      measures=stats['measures'])
         history.append(entry)
         if worst > a['periodic_tolerance'] or drifting > a['energy_tolerance']:
+            # a run twice as long that repeats no better is at the search tolerance's own floor (the solver's
+            # error, period to period, on lightly damped ringing: the flyback example, 0.3-0.5 % at reltol 1e-3
+            # on ngspice 45, 0.11 % at 1e-4): the search goes on at the reported run's reltol
+            before = history[-2] if len(history) > 1 else None
+            strict_rt = a['solver'].get('reltol', 1e-4)
+            if (before is not None and before['knobs'] == entry['knobs'] and worst > a['periodic_tolerance']
+                    and worst > 0.7 * before['periodic_error'] and a['search_reltol'] > strict_rt):
+                log(label + f"run {trial + 1} repeats no better than the one before ({100 * worst:.2g} % period to "
+                    f"period): searching on at reltol {strict_rt:g}")
+                a['search_reltol'] = strict_rt
+                entry['search_reltol'] = strict_rt
             state = end_state(result, resolved, deck, deck.period)  # ringing: start the next run from its middle
             cycles = min(cycles * 2, 8 * int(a['cycles']))          # slow to settle: longer runs, fewer of them
             if total >= a['max_cycles']:
