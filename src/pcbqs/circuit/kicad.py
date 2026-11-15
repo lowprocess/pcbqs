@@ -12,6 +12,11 @@ What is taken over, each a part between the two nets its pins are on:
     a diode         reference D<n> or a D symbol: anode to cathode by its pins' names (A, K), else pad 2 to pad 1 as
                     KiCad numbers them; Vf from a field Vf, 0.45 V for a Schottky, else 0.7 V
     a MOSFET        pins named D, G, S: a switch from its drain's net to its source's, on the model's first drive
+    KiCad's Sim.*   Sim.Library and Sim.Name (a vendor's .subckt or .model in that library; the path from the
+                    schematic's folder, ${KIPRJMOD} and other variables expanded) make a diode's or a MOSFET's model
+                    the vendor's: Sim.Pins (symbol pin = model pin) puts D, G, S (or A, K) in the subcircuit's
+                    order, its other pins on their nets or, unconnected, on their own; Sim.Params of a built-in
+                    VDMOS or diode are its SPICE parameters
 A node is the net's name (without KiCad's leading '/'); the board's own name is kept in board.nets where it
 differs, and a board that was read becomes the model's board, so its copper can be put in (circuit/copper.py).
 
@@ -125,8 +130,70 @@ def node_of(net):
     return net[1:] if net.startswith('/') and len(net) > 1 else net
 
 
-def part_of(c, drives=()):
-    """A document's component as a part of the general model, or why it is not one: (part | None, reason)."""
+def _sim_pairs(text):
+    """KiCad's 'a=b c=d' (Sim.Pins, Sim.Params) as {a: b}, quotes taken off."""
+    return {k: v.strip('"') for k, v in re.findall(r'([^\s=]+)\s*=\s*("[^"]*"|\S+)', text or '')}
+
+
+def _numbers_of(pairs):
+    out = {}
+    for k, v in pairs.items():
+        try:
+            out[k.upper()] = engineering_value(v)
+        except ValueError:
+            pass                                                    # (type=VDMOS and the like)
+    return out
+
+
+def sim_model(c, fields, roles, folder=None):
+    """A component's Sim.* fields as its model's vendor fields: (fields to add, why not | ''). roles: {model role:
+    the symbol pin names that are it}, D G S or A K."""
+    import os
+    from ..power_spice import library_entry
+    lib, name = fields.get('sim.library'), fields.get('sim.name')
+    params = _numbers_of(_sim_pairs(fields.get('sim.params')))
+    if not (lib and name):
+        if params:
+            kind = 'vdmos_parameters' if 'D' in roles else 'spice_parameters'
+            return {kind: params}, ''
+        return {}, ''
+    env = dict(os.environ, KIPRJMOD=str(folder or '.'))
+    path = Path(re.sub(r'\$\{(\w+)\}', lambda m: env.get(m[1], m[0]), lib)).expanduser()
+    if not path.is_absolute() and folder:
+        path = Path(folder) / path
+    entry = library_entry(path, name)
+    if entry and entry[0] == 'model':
+        return dict(library=str(path), model_name=name, **({'type': 'vdmos'} if 'D' in roles else {})), ''
+    mapping = _sim_pairs(fields.get('sim.pins'))                     # symbol pin number: model pin
+    pins = {p['number']: p for p in c['pins']}
+    order = entry[1] if entry else list(dict.fromkeys(mapping.values()))
+    if not order:
+        order = [mapping.get(p['number'], p['number']) for p in c['pins']]
+    by_model = {v: pins.get(k) for k, v in mapping.items()} if mapping else dict(zip(order, c['pins']))
+    pin_order, extra = [], {}
+    for pin in order:
+        sym = by_model.get(pin)
+        role = next((r for r, names in roles.items() if sym and sym['name'].upper() in names), None)
+        if role:
+            pin_order.append(role)
+        else:
+            pin_order.append(pin)
+            on = sym and sym['net'] and not sym['net'].startswith('unconnected-')
+            extra[pin] = node_of(sym['net']) if on else None
+    missing = [r for r in roles if r not in pin_order]
+    if missing:
+        return {}, f"its Sim.Pins do not say which of {name}'s pins is {', '.join(missing)}"
+    out = dict(library=str(path), subcircuit=name, pin_order=pin_order)
+    if any(v is not None for v in extra.values()):
+        out['pins'] = {k: v for k, v in extra.items() if v is not None}
+    if 'D' in roles:
+        out['type'] = 'subcircuit'
+    return out, ''
+
+
+def part_of(c, drives=(), folder=None):
+    """A document's component as a part of the general model, or why it is not one: (part | None, reason). folder:
+    where the document is (a Sim.Library's path is from it)."""
     ref = c['ref']
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', ref):
         return None, 'its reference is not letters, digits and _'
@@ -155,6 +222,13 @@ def part_of(c, drives=()):
         model = dict(type='vdmos', Ron_ohm=field('rds', 'rdson', 'ron', 'sim.ron') or 0.02,
                      **{k: v for k, v in [('Cds_F', field('coss', 'cds')), ('Cgd_F', field('crss', 'cgd')),
                                           ('Cgs_F', field('cgs'))] if v})
+        vendor, why = sim_model(c, fields, {'D': ('D',), 'G': ('G',), 'S': ('S',)}, folder)
+        if why:
+            return None, why
+        if vendor.get('type') in ('subcircuit',) or vendor.get('model_name'):
+            model = dict(vendor, Ron_ohm=model['Ron_ohm'])
+        else:
+            model.update(vendor)
         return dict(ref=ref, type='switch', nodes=ends, drive=next(iter(drives), 'pwm'), model=model), ''
     nets = list(dict.fromkeys(p['net'] for p in pins))
     if len(nets) != 2:
@@ -176,8 +250,11 @@ def part_of(c, drives=()):
         if anode is None or cathode is None or anode['net'] == cathode['net']:
             return None, 'which pin is its anode is not told (pins A and K, or pads 2 and 1)'
         vf = field('vf', 'sim.vf') or (0.45 if 'schottky' in text or re.search(r'\b(ss|sk|mbr|b[0-9]{3})', text) else 0.7)
-        return dict(ref=ref, type='diode', nodes=[node_of(anode['net']), node_of(cathode['net'])],
-                    model=dict(Vf_V=vf, Cj_F=field('cj') or '100p')), ''
+        vendor, why = sim_model(c, fields, {'A': ('A', 'ANODE'), 'K': ('K', 'C', 'CATHODE')}, folder)
+        if why:
+            return None, why
+        model = vendor if vendor.get('library') else dict(Vf_V=vf, Cj_F=field('cj') or '100p', **vendor)
+        return dict(ref=ref, type='diode', nodes=[node_of(anode['net']), node_of(cathode['net'])], model=model), ''
     return None, 'not a resistor, capacitor, inductor, diode or MOSFET: add it as a source or a load if it is one'
 
 
@@ -209,7 +286,7 @@ def apply(model, document, refs, update_connections=True):
         if ref not in source:
             raise ValueError('the KiCad file has no ' + ref)
         c = source[ref]
-        part, why = part_of(c, out.get('drives', {}))
+        part, why = part_of(c, out.get('drives', {}), Path(document['path']).parent if document.get('path') else None)
         if part is None:
             raise ValueError(f"{ref}: {why}")
         for p in c['pins']:

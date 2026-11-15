@@ -10,6 +10,7 @@ duty, phase and dead time. Every two-terminal part is sensed the same way: <ref>
 node to its second, <ref>.I the current entering its first node, so V x I is the power it absorbs.
 """
 import math
+import re
 
 from ..power_spice import Circuit, _positive
 
@@ -89,9 +90,11 @@ class Deck(Circuit):
             else:
                 self.passive(ref, a, b, {**part, **saved})
         elif kind == 'diode':
-            self.diode(ref, a, b, part.get('model', {}), saved.get('initial_V'))
+            self.diode(ref, a, b, dict(part.get('model', {}), temperature_C=part.get('temperature_C', 25.0)),
+                       saved.get('initial_V'))
         elif kind == 'switch':
             m = dict(part.get('model', {}))
+            m.setdefault('temperature_C', part.get('temperature_C', 25.0))     # (a vendor's thermal pin)
             m.setdefault('diode_TT_s', 0.0)                         # reverse recovery only where the model asks
             if 'initial_A' in saved:
                 m['initial_A'] = saved['initial_A']
@@ -126,10 +129,30 @@ class Deck(Circuit):
         sat = i_f / math.expm1(min(junction / (n * VT), 600.0))
         d = self.sense(ref, anode)
         k = self.node(cathode)
-        self.lines.extend([
-            f".model DM_{ref} D(IS={sat:.17g} N={n:.17g} RS={rs:.17g} CJO={model.get('Cj_F', 0.0):.17g} "
-            f"TT={model.get('TT_s', 0.0):.17g})",
-            f"D_{ref} {d} {k} DM_{ref}" + ('' if initial_V is None else f" IC={initial_V:.17g}")])
+        ic = '' if initial_V is None else f" IC={initial_V:.17g}"
+        if model.get('subcircuit'):                                 # a vendor's subcircuit (a SiC diode's, often)
+            from ..power_spice import NAME, include_line
+            name = str(model['subcircuit'])
+            if not NAME.fullmatch(name):
+                raise ValueError(f'{ref}: invalid subcircuit name')
+            nodes = self.pin_nodes(ref, model.get('pin_order', ['A', 'K']), {'A': d, 'K': k}, model.get('pins'),
+                                   model.get('temperature_C', 25.0))
+            self.lines += [include_line(model['library'], 'diode'), f"X_{ref} {' '.join(nodes)} {name}"]
+        elif model.get('model_name'):                               # a vendor's .model card
+            from ..power_spice import NAME, include_line
+            name = str(model['model_name'])
+            if not NAME.fullmatch(name):
+                raise ValueError(f'{ref}: invalid model_name')
+            self.lines += [include_line(model['library'], 'diode'), f"D_{ref} {d} {k} {name}{ic}"]
+        else:
+            params = dict(IS=sat, N=n, RS=rs, CJO=model.get('Cj_F', 0.0), TT=model.get('TT_s', 0.0))
+            for key, v in (model.get('spice_parameters') or {}).items():     # KiCad's Sim.Params, or the user's
+                if not re.fullmatch('[A-Za-z][A-Za-z0-9_]*', str(key)) or not isinstance(v, (int, float)):
+                    raise ValueError(f'{ref}.model.spice_parameters: named numbers ({key!r})')
+                params[str(key).upper()] = v
+            self.lines.extend([
+                f".model DM_{ref} D(" + ' '.join(f"{k_}={v:.17g}" for k_, v in params.items()) + ")",
+                f"D_{ref} {d} {k} DM_{ref}{ic}"])
         self.voltage(ref + '.V', anode, cathode)
 
     def source(self, ref, plus, minus, part, saved=None):

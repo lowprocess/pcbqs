@@ -94,6 +94,48 @@ def reset_runs():
         _cancelled.clear()
 
 
+NAME = re.compile('[A-Za-z_][A-Za-z0-9_.+-]*')
+
+
+def library_entry(path, name):
+    """What a SPICE library calls `name`: ('subckt', [its pins in order]), ('model', its type), or None. Lines
+    continued with '+' are joined; a subcircuit's params: are not pins."""
+    try:
+        text = Path(path).expanduser().read_text(errors='replace')
+    except OSError:
+        return None
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('+') and lines:
+            lines[-1] += ' ' + line[1:]
+        elif line and not line.startswith('*'):
+            lines.append(line)
+    for line in lines:
+        words = line.replace('(', ' ( ').split()
+        if len(words) < 3 or words[1].lower() != name.lower():
+            continue
+        head = words[0].lower()
+        if head == '.subckt':
+            pins = []
+            for w in words[2:]:
+                if '=' in w or w.lower() in ('params:', 'param:'):
+                    break
+                pins.append(w)
+            return 'subckt', pins
+        if head == '.model':
+            return 'model', words[2].lower()
+    return None
+
+
+def include_line(path, what):
+    """The .include of a part's library, which must exist."""
+    lib = Path(path).expanduser().resolve()
+    if not lib.is_file():
+        raise ValueError(f'missing {what} model library: {lib}')
+    return f'.include "{lib}"'
+
+
 def _positive(value, name, zero=False):
     if not np.isfinite(value) or value < 0 or (value == 0 and not zero):
         raise ValueError(f'{name} must be finite and ' + ('nonnegative' if zero else 'positive'))
@@ -296,25 +338,26 @@ class Circuit:
                 for key, value in params.items()
             ):
                 raise ValueError('VDMOS parameters must be named finite numbers')
-            self.lines.extend(
-                [
-                    f'.model NM_{ref} VDMOS(' + ' '.join(f'{key}={value:.17g}' for key, value in params.items()) + ')',
-                    f'M_{ref} {d} {g} {s} NM_{ref}',
-                ]
-            )
+            if model.get('model_name'):                             # a vendor's VDMOS .model, from its library
+                name = str(model['model_name'])
+                if not NAME.fullmatch(name):
+                    raise ValueError(f'{ref}: invalid model_name')
+                self.lines.extend([include_line(model['library'], 'switch'), f'M_{ref} {d} {g} {s} {name}'])
+            else:
+                self.lines.extend(
+                    [
+                        f'.model NM_{ref} VDMOS(' + ' '.join(f'{key}={value:.17g}' for key, value in params.items()) + ')',
+                        f'M_{ref} {d} {g} {s} NM_{ref}',
+                    ]
+                )
         else:
-            path = Path(model['library']).expanduser().resolve()
-            if not path.is_file():
-                raise ValueError('missing switch model library: ' + str(path))
             name = model['subcircuit']
-            if not re.fullmatch('[A-Za-z_][A-Za-z0-9_]*', name):
+            if not NAME.fullmatch(name):
                 raise ValueError('invalid subcircuit name')
-            # Explicit D,G,S contract, with optional order for vendor libraries.
-            pins = {'D': d, 'G': g, 'S': s}
-            order = model.get('pin_order', ['D', 'G', 'S'])
-            if sorted(order) != ['D', 'G', 'S']:
-                raise ValueError('subcircuit pin_order must contain D,G,S once')
-            self.lines.extend([f'.include "{path}"', f'X_{ref} ' + ' '.join(pins[k] for k in order) + ' ' + name])
+            # D, G and S by their places in the vendor's pins (pin_order), and its other pins (pins)
+            nodes = self.pin_nodes(ref, model.get('pin_order', ['D', 'G', 'S']), {'D': d, 'G': g, 'S': s},
+                                   model.get('pins'), model.get('temperature_C', 25.0))
+            self.lines.extend([include_line(model['library'], 'switch'), f'X_{ref} ' + ' '.join(nodes) + ' ' + name])
         if kind not in ('ideal', 'vdmos') and (kind != 'subcircuit' or model.get('external_capacitance', False)):
             for key, pins in [('Cds_F', (d, s)), ('Cgd_F', (d, g)), ('Cgs_F', (g, s))]:
                 val = model.get(key, 0)
@@ -333,6 +376,35 @@ class Circuit:
         self.voltage(ref + '.V', a, b)
         self.signals[ref + '.gate_I'] = f'i(VG_{ref})'
         self.voltage(ref + '.gate_V', 'DRIVE:' + ref, b)
+
+    def pin_nodes(self, ref, order, roles, extra, temperature_C=25.0):
+        """A vendor subcircuit's nodes in its pins' order: a role's (roles {name: node}, D G S or A K, each at least
+        once; a name may repeat, a Kelvin source tied to S) or one of `extra` {pin: value}: a node of the circuit
+        (its name), a voltage it is held at (a number: a thermal pin's temperature, as vendors' Tcase take it),
+        'temperature' (held at the part's temperature_C), or none given: a node of its own, 1 Gohm to ground."""
+        if not set(roles) <= set(order):
+            raise ValueError(f"{ref}: pin_order must name {', '.join(roles)}")
+        out = []
+        for pin in order:
+            if pin in roles:
+                out.append(roles[pin])
+                continue
+            if not NAME.fullmatch(str(pin)):
+                raise ValueError(f'{ref}: pin {pin!r} is not a name')
+            v = (extra or {}).get(pin)
+            if isinstance(v, str) and v != 'temperature':
+                out.append(self.node(v))
+                continue
+            n = self.node(f'PIN:{ref}:{pin}')
+            if v is None:
+                self.lines.append(f'R_{ref}_{pin} {n} 0 1e9')
+            else:
+                level = temperature_C if v == 'temperature' else v
+                if not isinstance(level, (int, float)) or not np.isfinite(level):
+                    raise ValueError(f'{ref}: pins.{pin} must be a node, a number or temperature')
+                self.lines.append(f'V_{ref}_{pin} {n} 0 {float(level):.17g}')
+            out.append(n)
+        return out
 
     def copper(self, model, term_nodes, initial_currents=None, initial_modes=None):
         """initial_modes (a previous run's MODE<k>.I, in mode order) restores every modal inductor exactly;

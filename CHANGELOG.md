@@ -10,6 +10,11 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **Vendor models through a wider door (R-E12).** A switch's subcircuit takes any pins in its own order: D, G and S
+  where they are (S twice for a Kelvin source), the others on a node of the circuit, held at a voltage (a thermal
+  pin's temperature, or the part's own `temperature_C`) or on their own. A VDMOS and a diode take a library's
+  `.model` card (`model_name`), and a diode a subcircuit; a built-in diode takes `spice_parameters`. KiCad's
+  `Sim.Library`, `Sim.Name`, `Sim.Pins` and `Sim.Params` make the imported part's model the vendor's.
 - **Thermal surroundings beyond one film (R-E13).** `--air REF=K/W` (or the footprint's `thermal.air`) gives a
   part its own path to the air, a body's or a heatsink's, so its heat splits between that and its pads through
   its theta; `--hold REF=C` holds a footprint's pads at a temperature (a cold plate, a chassis screw) and reports

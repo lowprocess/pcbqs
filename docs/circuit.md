@@ -42,8 +42,8 @@ model: `parameters.vin`, `drives.pwm.duty`, `R1.resistance_ohm`, `Q1.model.Ron_o
 | `resistor` | a, b | `value` |
 | `capacitor` | a, b | `value`, `ESR_ohm`, `ESL_H`, `leakage_ohm`, `bias_factor` |
 | `inductor` | a, b | `value`, `DCR_ohm`; with `SRF_Hz` / `Cp_F` / `core_R_ohm`, a winding with self-capacitance and core loss (`pcbqs.wpt.fit_core_resistance` gives a `core_R_ohm` from a measured AC resistance at a frequency); `AC_R_ohm` and `core_loss`: [losses after the run](#an-inductors-ac-and-core-losses) |
-| `diode` | anode, cathode | `model`: `Vf_V` at `If_A` (0.7 V at 1 A), `n`, `R_ohm`, `Cj_F`, `TT_s` |
-| `switch` | drain, source | `drive`, `invert`; `model`: `type` (`vdmos`, the default; `switch`, `ideal`, `mosfet`, `subcircuit`), `Ron_ohm`, `Cgs_F`, `Cgd_F`, `Cds_F` (a vdmos without them: 1 nF, 50 pF, 500 pF), `body_diode`, `diode_TT_s`, ... |
+| `diode` | anode, cathode | `model`: `Vf_V` at `If_A` (0.7 V at 1 A), `n`, `R_ohm`, `Cj_F`, `TT_s`, `spice_parameters` (over them); or a [vendor's](#vendor-models) |
+| `switch` | drain, source | `drive`, `invert`; `model`: `type` (`vdmos`, the default; `switch`, `ideal`, `mosfet`, `subcircuit`), `Ron_ohm`, `Cgs_F`, `Cgd_F`, `Cds_F` (a vdmos without them: 1 nF, 50 pF, 500 pF), `body_diode`, `diode_TT_s`, `vdmos_parameters`, ...; or a [vendor's](#vendor-models) |
 | `source` | +, − | `dc_V`, or `wave` (`pulse`, `sine`, `pwl`), or `dc_A`; `R_ohm`, `L_H` in series |
 | `load` | a, b | `resistance_ohm`, or `power_W`, or `current_A` (a resistor below `min_V`, so it starts) |
 
@@ -168,6 +168,30 @@ a MOSFET's and a winding's rise, so a few runs settle (the buck example: 77, 70,
 run's largest move, its hottest part, whether it settled) and each case its `temperatures_C`; `<out>/thermal` is
 the thermal model of the last run's losses, its tables in `thermal.log`.
 
+## Vendor models
+
+A vendor's SPICE library gives a part its own model, `library` the file (beside the model, or a path):
+
+```json
+{"ref": "Q1", "type": "switch", "nodes": ["in", "sw"], "drive": "pwm",
+ "model": {"type": "subcircuit", "library": "IPB017N10N5.lib", "subcircuit": "IPB017N10N5_L1",
+           "pin_order": ["D", "G", "S", "Tj", "Tcase"], "pins": {"Tcase": "temperature"}}}
+{"ref": "Q2", "model": {"type": "vdmos", "library": "vendor.lib", "model_name": "SIR880ADP"}, ...}
+{"ref": "D1", "type": "diode", "model": {"library": "diodes.lib", "model_name": "MBRS340"}, ...}
+{"ref": "D2", "type": "diode", "model": {"library": "C4D10120A.lib", "subcircuit": "C4D10120A", "pin_order": ["A", "K"]}, ...}
+```
+
+- A switch's `subcircuit`: `pin_order` names the subcircuit's pins in its own order, `D`, `G` and `S` where those
+  are (each at least once; `S` twice for a Kelvin source tied to the source) and any other by a name of its own,
+  which `pins` gives: a node of the circuit (its name), a voltage it is held at (a number: vendors' thermal pins
+  take a temperature in °C as a voltage), `"temperature"` (held at the part's `temperature_C`, which `--warm`
+  sets), or nothing: a node of its own, 1 GΩ to ground (a `Tj` the model drives).
+- A switch's `vdmos` with `model_name`: the library's VDMOS `.model` card in place of the one pcbqs makes.
+- A diode's `model_name` (a `.model` card) or `subcircuit` (`pin_order` of `A` and `K`, and `pins` as above).
+
+A vendor's model has its own capacitances, reverse recovery and temperature, so none of pcbqs's are added, and
+`temperature_C` does not move its values (a thermal pin is how it takes one).
+
 ## What to give the parts
 
 A switch or a diode with no capacitance, cutting off the current of an inductance that has nowhere else to go,
@@ -273,7 +297,11 @@ netlist and prints a model of what it can tell, each part between the two nets i
 - resistors, capacitors and inductors, by symbol, reference or the footprint's library, with the value as KiCad
   writes it (`4k7`, `22u`, `0R01`) and `ESR`, `ESL`, `DCR` fields;
 - diodes, anode to cathode by pin names (`A`, `K`), else pad 2 to pad 1;
-- MOSFETs with pins `D`, `G`, `S`, as switches from drain to source.
+- MOSFETs with pins `D`, `G`, `S`, as switches from drain to source;
+- KiCad's simulation fields: `Sim.Library` and `Sim.Name` make a diode's or a MOSFET's model the vendor's (a
+  `.subckt` or a `.model` in that library, the path from the schematic's folder with `${KIPRJMOD}` and other
+  variables expanded), `Sim.Pins` (symbol pin = model pin) its `pin_order` and `pins`, and `Sim.Params` of a
+  built-in VDMOS or diode its `vdmos_parameters` or `spice_parameters`.
 
 A node is the net's name. A board that was read becomes the model's `board`. Left to add, since KiCad does not
 say: which connector is the source and which the load, the drives, and what to measure. `pcbqs.circuit.kicad`

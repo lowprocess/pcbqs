@@ -650,7 +650,7 @@ def run_case(model, point, out, log=print, copper=None):
         notes.append(f"{', '.join(ramps)}: switched by the drive's own ramp (rise_s, fall_s), with no gate charge: "
                      f"the switching loss is the ramp's, not a device's (a vdmos or vendor model gives that)")
     generic = [pt['ref'] for pt in resolved.get('parts', []) if pt.get('type') == 'switch'
-               and (pt.get('model') or {}).get('type', 'vdmos') == 'vdmos'
+               and (pt.get('model') or {}).get('type', 'vdmos') == 'vdmos' and not (pt.get('model') or {}).get('model_name')
                and not all(k in (pt.get('model') or {}) for k in ('Cgd_F', 'Cgs_F', 'Cds_F'))]
     if generic:                                                     # its switching loss is a generic part's
         from ..power_spice import VDMOS_C
