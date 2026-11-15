@@ -517,7 +517,10 @@ class Circuit:
         (out / 'ngspice.log').write_text(stdout + '\n' + stderr)
         data = out / 'transient.dat'
         if child.returncode or not data.is_file() or 'simulation(s) aborted' in stderr:
-            raise RuntimeError('ngspice transient failed; see ' + str(out / 'ngspice.log'))
+            said = [l.strip() for l in (stdout + '\n' + stderr).splitlines()          # why, in its own words
+                    if any(w in l.lower() for w in ('error', 'timestep too small', 'singular', 'abort', 'fatal'))]
+            raise RuntimeError('ngspice transient failed; see ' + str(out / 'ngspice.log')
+                               + (': ' + ' | '.join(dict.fromkeys(said))[-600:] if said else ''))
         table = np.loadtxt(data, skiprows=1)
         if (
             table.ndim != 2
