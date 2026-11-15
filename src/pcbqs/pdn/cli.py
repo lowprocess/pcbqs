@@ -47,6 +47,11 @@ OPTIONS = [
      "assumed default", G_RAIL),
     ('cap', 'list', [], "a capacitor's datasheet values: REF=C[,ESR[,ESL]] in F, ohms, H (repeat); overrides "
      "its value field and the package defaults", G_PDN),
+    ('cap_file', 'list', [], "a capacitor's vendor model: REF=FILE[:shunt|series], a .s2p measured through it (shunt or "
+     "series, told by its |S21| unless given), a .s1p / .z1p, or a CSV of f, Re, Im (or f, |Z|, deg); its impedance "
+     "replaces C, ESR and ESL (a vendor's file at the DC bias is an MLCC's derating too) (repeat)", G_PDN),
+    ('cap_derate', 'list', [], "an MLCC's capacitance at its DC bias, a share of its value: REF=0.6, or all=0.6 for "
+     "every decap without a file (repeat)", G_PDN),
     ('stop', 'str', '', "parts the tree never follows, comma-separated", G_RAIL),
     ('plating', 'float', 0.025, "via plating thickness, mm", G_DC),
     ('dmax', 'float', 1.0, "the largest mesh cell, mm (finer at the source and the loads)", G_MESH),
@@ -54,6 +59,8 @@ OPTIONS = [
      "(0: a tenth of the board's area; small rails need less)", G_PDN),
     ('vrm_r', 'float', 1e-3, "the regulator's output resistance, ohms", G_PDN),
     ('vrm_l', 'float', 30e-9, "the regulator's output inductance (its loop's bandwidth), H", G_PDN),
+    ('vrm_file', 'str', '', "the regulator's output impedance over frequency in place of --vrm-r and --vrm-l: a .s1p / "
+     ".z1p, or a CSV of f, Re, Im (or f, |Z|, deg)", G_PDN),
     ('fmin', 'float', 1e4, "lowest frequency, Hz", G_PDN),
     ('fmax', 'float', 2e9, "highest frequency, Hz", G_PDN),
     ('points', 'int', 160, "frequencies (log-spaced)", G_PDN),
@@ -66,6 +73,11 @@ OPTIONS = [
     ('rise', 'float', 1e-9, "the load step's rise time, s: the droop in time at each load (droop.png, pdn.json's "
      "droop)", G_PDN),
     ('touchstone', 'bool', False, "also the loads' impedance matrix, self and transfer, as Touchstone (pdn.zNp)", G_PDN),
+    ('ports_touchstone', 'bool', False, "also the bare PDN (the planes, their ties and the series parts, no decap, "
+     "regulator or load) between every part's port, as Touchstone (pdn_ports.zNp): the decap sites, the regulator and "
+     "the loads as ports, to attach other models to in a circuit tool", G_PDN),
+    ('spice', 'bool', False, "also that port matrix as a SPICE subcircuit (pdn_ports.sub; vector fitted and made "
+     "passive: needs scikit-rf)", G_PDN),
     ('no_pdn', 'bool', False, "the DC drop only", G_PDN),
 ]
 
@@ -141,6 +153,27 @@ def run(a):
     dcr = {r: v[0] for r, v in ref_values(a.dcr, '--dcr', 'REF=OHMS').items()}
     load_targets = {r: v[0] for r, v in ref_values(a.load_target, '--load-target', 'REF=OHMS').items()}
     caps = {r: dict(zip(('C', 'ESR', 'ESL'), v)) for r, v in ref_values(a.cap, '--cap', 'REF=C[,ESR[,ESL]]', 3).items()}
+    from .models import read_impedance
+    for item in a.cap_file:                             # REF=FILE[:shunt|series] (R-E14)
+        ref, _, rest = item.partition('=')
+        path, _, mode = rest.rpartition(':') if rest.endswith((':shunt', ':series')) else (rest, '', 'auto')
+        if not ref.strip() or not path.strip():
+            raise SystemExit(f'pdn: error: --cap-file {item!r}: expected REF=FILE[:shunt|series]')
+        try:
+            ft, Zt, taken = read_impedance(path.strip(), mode or 'auto')
+        except (OSError, ValueError) as e:
+            raise SystemExit(f'pdn: error: --cap-file {ref.strip()}: {e}')
+        caps.setdefault(ref.strip(), {}).update(Zf=(ft, Zt), file=os.path.basename(path.strip()) + (f' ({taken})' if taken else ''))
+    derate = {r: v[0] for r, v in ref_values(a.cap_derate, '--cap-derate', 'REF=SHARE').items()}
+    if any(v > 1 for v in derate.values()):
+        raise SystemExit('pdn: error: --cap-derate: a share of the value, at most 1')
+    vrm = dict(R=a.vrm_r, L=a.vrm_l)
+    if a.vrm_file:
+        try:
+            ft, Zt, _ = read_impedance(a.vrm_file)
+        except (OSError, ValueError) as e:
+            raise SystemExit(f'pdn: error: --vrm-file: {e}')
+        vrm = dict(Zf=(ft, Zt), file=os.path.basename(a.vrm_file))
     spectra = {}
     for item in a.load_spectrum:                        # REF=FILE
         ref, _, file = item.partition('=')
@@ -211,7 +244,11 @@ def run(a):
         say('PDN: plane pairs, parts, mesh')
         t = time.time()
         try:
-            pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=dict(R=a.vrm_r, L=a.vrm_l), caps=caps,
+            for d in rail.decaps:                           # --cap-derate: every decap (all=) or the one named
+                share = derate.get(d.ref, derate.get('all') if 'Zf' not in caps.get(d.ref, {}) else None)
+                if share:
+                    caps.setdefault(d.ref, {})['derate'] = share
+            pdn = RailPDN(rail, dmax=a.dmax, plane_min=a.plane_min or None, vrm=vrm, caps=caps,
                           log=say)
         except ValueError as e:                         # (no plane pair: the DC drop solved above had been lost too)
             out['notes'].append(f"PDN impedance not computed: {e}")
@@ -240,7 +277,7 @@ def run(a):
                           parts={n: dict(role=i['role'], mount_nH=i['mount'] * 1e9,
                                          mount_mohm=i.get('mount_R', 0.0) * 1e3, node=i['rail'].node,
                                          rail=i['rail'].why, gnd=i['gnd'].why,
-                                         element={k: v for k, v in (i['el'] or {}).items() if k != 'defaulted'},
+                                         element={k: v for k, v in (i['el'] or {}).items() if k not in ('defaulted', 'Zf')},
                                          defaulted=bool((i['el'] or {}).get('defaulted')))
                                  for n, i in pdn.parts.items()},
                           vertices=pdn.nv)
@@ -255,6 +292,26 @@ def run(a):
             d = out['pdn']['droop'][worst]
             say(f"droop of a {step:g} A step rising in {a.rise * 1e9:g} ns: {d['peak_V'] * 1e3:.3g} mV at {worst}, "
                 f"{d['at_s'] * 1e6:.3g} us after it ({a.volts * a.ripple * 1e3:.3g} mV allowed)")
+        if a.ports_touchstone or a.spice:                       # the bare PDN between every part's port (R-E14)
+            from .models import coverage_note, spice_subcircuit
+            pn, Zp = pdn.port_matrix(f)
+            name = os.path.join(a.out, f'pdn_ports.z{len(pn)}p')
+            write_z(name, f, Zp, pn, what="the bare PDN (planes, ties, series parts) between its parts' ports")
+            out['pdn']['ports'] = dict(touchstone=os.path.basename(name), names=pn,
+                                       roles={n: pdn.parts[n]['role'] for n in pn})
+            say(f"PDN: the bare network between {len(pn)} ports -> {os.path.basename(name)}")
+            if a.spice:
+                try:
+                    fit = spice_subcircuit(os.path.join(a.out, 'pdn_ports.sub'), f, Zp, pn, log=say)
+                    out['pdn']['ports'].update(spice='pdn_ports.sub', fit=fit)
+                except (RuntimeError, ValueError, np.linalg.LinAlgError) as e:
+                    out['notes'].append(f"the SPICE subcircuit was not written: {e}")
+        for n, info in pdn.parts.items():                       # a model file's band against the sweep's
+            if info['el'] is not None and 'Zf' in info['el']:
+                from .models import coverage_note
+                note = coverage_note(n, info['el']['Zf'][0], f)
+                if note:
+                    out['notes'].append(note)
         if a.touchstone and obs:                                # (R-E14: the port matrix for a circuit or PI tool)
             zt = pdn.transfer(f, obs, obs)
             name = os.path.join(a.out, f'pdn.z{len(obs)}p')
@@ -287,12 +344,12 @@ def run(a):
     return out
 
 
-def write_z(path, f, Z, names):
+def write_z(path, f, Z, names, what="the rail's impedance between the loads' connections to it"):
     """Touchstone v1 of the impedance matrices Z (nf, n, n) at f Hz: '# HZ Z RI R 1', its rows as Touchstone has
     them (a 2-port 11 21 12 22, more ports row by row, four pairs a line)."""
     n = Z.shape[1]
     with open(path, 'w') as fh:
-        fh.write(f"! pcbqs.pdn: the rail's impedance between the loads' connections to it ({', '.join(names)})\n")
+        fh.write(f"! pcbqs.pdn: {what} ({', '.join(names)})\n")
         fh.write("# HZ Z RI R 1\n")
         for i, fi in enumerate(f):
             order = [(0, 0), (1, 0), (0, 1), (1, 1)] if n == 2 else [(r, c) for r in range(n) for c in range(n)]

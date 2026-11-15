@@ -42,8 +42,10 @@ OPTIONS = [
     ('fill_device', 'int', 0, 'CuPy device index', 'Mesh'),
     ('backend', 'str', 'dense', "The solve: dense (a factor a frequency, or one for a long sweep) or hierarchical (compressed, GMRES in the loop "
      "basis: a whole plane's 50k triangles in ~2 GB, where dense needs ~20 GB)", 'Mesh'),
-    ('esr', 'float', .003, 'Assumed ESR per input capacitor, ohms', 'Parts'),
-    ('esl', 'float', .4e-9, 'Assumed ESL per input capacitor, H', 'Parts'),
+    ('esr', 'float', .003, "An input capacitor's ESR, ohms, where neither its fields (ESR, Sim.esr) nor its package "
+     "give one", 'Parts'),
+    ('esl', 'float', .4e-9, "An input capacitor's ESL, H, where neither its fields (ESL) nor its package (0402: "
+     "0.35 nH ...) give one", 'Parts'),
     ('part_height', 'float', .5, 'Assumed part filament height above pads, mm', 'Parts'),
     ('pad_contact', 'str', 'termination', 'Where a part meets its pads: termination (end-cap band), pad or edge', 'Parts'),
 ]
@@ -351,8 +353,12 @@ def run(a):
         q.element(low,f'{low}:{sw}',f'{low}:{a.ground}',R=LOW_SIDE_R,part_h=a.part_height)
     else:
         q.source(ref,f'{ref}:{vin}',f'{ref}:{a.ground}',part_h=a.part_height)
-    for cap,value in selected['values'].items():
-        q.element(cap,f'{cap}:{vin}',f'{cap}:{a.ground}',C=value,ESR=a.esr,ESL=a.esl,part_h=a.part_height)
+    from .pdn.rail import parts_of
+    from .pdn.stack import cap_parasitics
+    own={p.ref:p for p in parts_of(board)}               # each its own ESR and ESL (fields, else its package's;
+    for cap,value in selected['values'].items():         # else --esr / --esl), as the PDN takes them (R-E14)
+        esr,esl=cap_parasitics(own.get(cap),a.esr,a.esl)
+        q.element(cap,f'{cap}:{vin}',f'{cap}:{a.ground}',C=value,ESR=float(esr),ESL=float(esl),part_h=a.part_height)
     r=q.solve(n*fsw)
     impedance=r.zc[ref].copy()
     assumed=2*a.current*duty*np.abs(np.sinc(n*duty))*np.abs(np.sinc(n*fsw*a.edge_time))

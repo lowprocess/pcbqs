@@ -55,6 +55,25 @@ impedance seen by each load.
   matrix, self and transfer, as `pdn.zNp` for a circuit or PI tool.
 - Small rails: lower `--plane-min` (mm²). Input filters: `--through L3 --dcr L3=0.03`
   keeps the inductor's L and DCR. Bulk polymers/electrolytics: `--cap CA1=47e-6,0.02,1e-9`.
+- **Vendor models.** `--cap-file C12=GRM155R61A105.s2p` takes a capacitor's measured impedance
+  in place of C, ESR and ESL: a `.s2p` measured through it (shunt-through, as most vendors give
+  a capacitor, or series-through; told by its |S21| unless `:shunt` or `:series` follows), a
+  `.s1p` / `.z1p`, or a CSV of f, Re, Im (or f, |Z|, deg). A vendor's file at the rail's DC
+  bias is an MLCC's derating too; without one, `--cap-derate all=0.6` (or `C12=0.5`) takes that
+  share of each value. `--vrm-file vrm.csv` is the regulator's output impedance over frequency
+  in place of `--vrm-r` and `--vrm-l` (its loop's gain, its output capacitors: whatever its
+  maker's model gives). Where the sweep reaches past a file's band, its end values hold and the
+  notes say so.
+- **The decap sites as ports.** `--ports-touchstone` writes the bare PDN (the planes, their ties
+  and the series parts, without the decaps, the regulator or the loads) between every part's
+  port as `pdn_ports.zNp`, each port at its part's pads: attach any capacitor or regulator
+  model to it in a circuit tool, and the loads see what this tool gives them. `--spice` writes
+  it as a SPICE subcircuit too (`pdn_ports.sub`, vector fitted by scikit-rf and made passive;
+  its pins the ports in order); a fit that misses by more than 0.05 (RMS, in S) is refused with
+  a note: more `--points`.
+- **The near field's input capacitors** take their own ESR and ESL as the PDN does (their
+  fields, else their package's: 0.35 nH for an 0402 ...); `--esr` / `--esl` stand for the
+  others.
 - **Loads kept with the design.** A part's `pdn.load` field (a symbol field in KiCad, which
   the board carries) is the current it draws, so a rail runs with no `--load` typed:
   `0.5`, `500m` or `2 A` from the rail the part is on; `+3V3=0.4, +1V8=100m` for a part on

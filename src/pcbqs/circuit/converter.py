@@ -52,6 +52,16 @@ def _ref(name, taken):
     return name
 
 
+def _input_cap(parts, esr, esl):
+    """An input capacitor of the model: its own ESR and ESL (fields, else its package's, as the PDN takes them),
+    else the settings' --esr / --esl (R-E14)."""
+    from ..pdn.stack import cap_parasitics
+    def cap(ref, node, value):
+        r, l = cap_parasitics(parts.get(ref), esr, esl)
+        return dict(ref=ref, type='capacitor', nodes=[node, '0'], value=value, ESR_ohm=float(r), ESL_H=float(l))
+    return cap
+
+
 def model_of(board, path, a):
     """The circuit model (format 2) of the converter the settings `a` select on `board` (pcbqs._cli.load_board's;
     path: its file, the model's board). ValueError: no converter, an ambiguous one (as the near-field tool says
@@ -94,7 +104,7 @@ def model_of(board, path, a):
     taken = set(parts)
     qh, ql, v1, rl = (_ref(n, taken) for n in ('QH', 'QL', 'V1', 'RL'))
     esr, esl = float(getattr(a, 'esr', 0.003)), float(getattr(a, 'esl', 0.4e-9))
-    cap = lambda r, node, value: dict(ref=r, type='capacitor', nodes=[node, '0'], value=value, ESR_ohm=esr, ESL_H=esl)
+    cap = _input_cap(parts, esr, esl)
     model_parts = [dict(ref=v1, type='source', nodes=['in', '0'], dc_V='vin', R_ohm=0.02)]
     model_parts += [cap(c, 'in', selected['values'][c]) for c in selected['capacitors']]
     switch = dict(type='vdmos', Ron_ohm=RON)
@@ -184,7 +194,7 @@ def boost_of(board, path, a, selected, found, parts):
     taken = set(parts)
     v1, rl = (_ref(n, taken) for n in ('V1', 'RL'))
     esr, esl = float(getattr(a, 'esr', 0.003)), float(getattr(a, 'esl', 0.4e-9))
-    cap = lambda r, node, value: dict(ref=r, type='capacitor', nodes=[node, '0'], value=value, ESR_ohm=esr, ESL_H=esl)
+    cap = _input_cap(parts, esr, esl)
     model_parts = [dict(ref=v1, type='source', nodes=['in', '0'], dc_V='vin', R_ohm=0.02)]
     centre = unary_union([p.geom for p in ind.pads + parts[low].pads])
     on_in = sorted((p for p in parts.values() if p.ref.upper().startswith('C') and p.nets() == {vin, ground}

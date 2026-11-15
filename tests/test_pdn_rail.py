@@ -416,3 +416,93 @@ def test_cli_writes_the_droop_and_the_port_matrix(tmp_path):
     z11 = complex(float(rows[0][1]), float(rows[0][2]))
     assert abs(z11) == pytest.approx(r['pdn']['z']['U1']['mag'][0], rel=1e-6)
     assert float(rows[0][3]) == pytest.approx(float(rows[0][5]))          # Z21 = Z12: reciprocal
+
+
+def _rlc(f, R=5e-3, L=0.5e-9, C=1e-6):
+    w = 2 * np.pi * np.asarray(f)
+    return R + 1j * w * L + 1 / (1j * w * C)
+
+
+def test_a_parts_impedance_from_its_file(tmp_path):
+    """R-E14: a capacitor's model from a .s2p measured through it (shunt or series, told by |S21|), a .s1p / .z1p or a
+    CSV, read back to its impedance; a table interpolated in log f, its ends held."""
+    from pcbqs.pdn.models import read_impedance, table_z, two_port_z
+    f = np.logspace(4, 9, 41)
+    Z = _rlc(f)
+    z0 = 50.0
+    def s2p(path, s21):
+        S = np.zeros((len(f), 2, 2), complex)
+        S[:, 1, 0] = S[:, 0, 1] = s21
+        S[:, 0, 0] = S[:, 1, 1] = s21 - 1 if 'shunt' in path.name else 1 - s21
+        with open(path, 'w') as fh:
+            fh.write('# Hz S RI R 50\n')
+            for i, x in enumerate(f):
+                fh.write(f"{x:.9g} " + ' '.join(f"{S[i, r, c].real:.12g} {S[i, r, c].imag:.12g}"
+                                                 for r, c in ((0, 0), (1, 0), (0, 1), (1, 1))) + '\n')
+    s2p(tmp_path / 'shunt.s2p', 2 * Z / (2 * Z + z0))
+    s2p(tmp_path / 'series.s2p', 2 * z0 / (2 * z0 + Z))
+    for name, mode in (('shunt.s2p', 'shunt'), ('series.s2p', 'series')):
+        ft, Zt, taken = read_impedance(str(tmp_path / name))
+        assert taken == mode and np.allclose(Zt, Z, rtol=1e-6)
+    with open(tmp_path / 'c.z1p', 'w') as fh:
+        fh.write('# MHz Z MA R 50\n' + ''.join(f"{x / 1e6:.9g} {abs(z):.12g} {np.degrees(np.angle(z)):.12g}\n"
+                                              for x, z in zip(f, Z)))
+    assert np.allclose(read_impedance(str(tmp_path / 'c.z1p'))[1], Z, rtol=1e-6)
+    with open(tmp_path / 'vrm.csv', 'w') as fh:
+        fh.write('f, mag, deg\n' + ''.join(f"{x}, {abs(z)}, {np.degrees(np.angle(z))}\n" for x, z in zip(f, Z)))
+    assert np.allclose(read_impedance(str(tmp_path / 'vrm.csv'))[1], Z, rtol=1e-9)
+    assert table_z(f, Z, f[3]) == pytest.approx(Z[3]) and table_z(f, Z, 1.0) == pytest.approx(Z[0])
+    with pytest.raises(ValueError, match='shunt, series or auto'):
+        two_port_z(np.zeros((1, 2, 2)), 50.0, 'sideways')
+
+
+def test_the_bare_port_matrix_closed_by_the_parts_is_the_loaded_rail():
+    """R-E14: the bare PDN between every part's port, each part's own impedance attached at its port: what each load
+    sees with everything attached (RailPDN.z)."""
+    from pcbqs.pdn.cavity import element_z
+    r = Rail(board(), 'P', loads={'U1': 2.0, 'U2': 0.5})
+    pdn = RailPDN(r, dmax=1.0, vrm=dict(R=2e-3, L=20e-9), log=lambda *a: None)
+    f = np.logspace(4, 9, 9)
+    names, Zp = pdn.port_matrix(f)
+    assert set(names) == {n for n in pdn.parts if pdn.dof(n) is not None} and {'U1', 'C1'} <= set(names)
+    z = pdn.z(f)
+    o = names.index('U1')
+    parts = [k for k, n in enumerate(names) if pdn.parts[n]['el'] is not None]
+    for i, fi in enumerate(f):
+        zp = np.diag([element_z(pdn.parts[names[k]]['el'], 2 * np.pi * fi) for k in parts])
+        Zl = Zp[i, o, o] - Zp[i, o, parts] @ np.linalg.solve(Zp[i][np.ix_(parts, parts)] + zp, Zp[i, parts, o])
+        assert Zl == pytest.approx(z['U1'][i], rel=1e-6)
+
+
+def test_cli_vendor_models_derating_ports_and_spice(tmp_path):
+    """R-E14 through the CLI: a decap's vendor file and the regulator's in place of their RLC give the same rail;
+    --cap-derate halves every decap's C; --ports-touchstone and --spice write the bare PDN's port matrix and its
+    subcircuit."""
+    import json
+    from pcbqs.pdn.cli import main
+    path = tmp_path / 'b_board.json'
+    path.write_text(json.dumps(board()))
+    f = np.logspace(3, 10, 200)
+    with open(tmp_path / 'vrm.csv', 'w') as fh:
+        fh.write(''.join(f"{x}, {z.real}, {z.imag}\n" for x, z in zip(f, 2e-3 + 1j * 2 * np.pi * f * 20e-9)))
+    common = [str(path), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--dmax', '1', '--points', '60',
+              '--vrm-r', '2e-3', '--vrm-l', '20e-9', '--cap', 'C1=1e-6,5e-3,0.5e-9']
+    main(common + ['--out', str(tmp_path / 'a')])
+    with open(tmp_path / 'c1.z1p', 'w') as fh:
+        fh.write('# Hz Z RI R 50\n' + ''.join(f"{x:.9g} {z.real:.12g} {z.imag:.12g}\n" for x, z in zip(f, _rlc(f))))
+    main(common + ['--cap-file', f"C1={tmp_path / 'c1.z1p'}", '--vrm-file', str(tmp_path / 'vrm.csv'),
+                   '--ports-touchstone', '--spice', '--out', str(tmp_path / 'b')])
+    a, b = (json.loads((tmp_path / x / 'pdn.json').read_text()) for x in 'ab')
+    assert np.allclose(a['pdn']['z']['U1']['mag'], b['pdn']['z']['U1']['mag'], rtol=1e-2)       # (the tables: 0.2 %)
+    assert b['pdn']['parts']['C1']['element']['file'] == 'c1.z1p'
+    ports = b['pdn']['ports']
+    assert (tmp_path / 'b' / ports['touchstone']).exists() and 'U1' in ports['names'] and ports['roles']['C1'] == 'decap'
+    sub = (tmp_path / 'b' / 'pdn_ports.sub').read_text()
+    assert sub.startswith('* pcbqs.pdn: the bare PDN') and '.SUBCKT' in sub.upper() and ports['fit']['rms'] < 0.05
+    main(common + ['--cap-derate', 'all=0.5', '--out', str(tmp_path / 'c')])
+    c = json.loads((tmp_path / 'c' / 'pdn.json').read_text())
+    assert c['pdn']['parts']['C1']['element']['C'] == pytest.approx(0.5e-6)
+    main([str(path), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--dmax', '1', '--points', '9', '--spice',
+          '--out', str(tmp_path / 'd')])                                   # too few points for a fit: said, not written
+    d = json.loads((tmp_path / 'd' / 'pdn.json').read_text())
+    assert not (tmp_path / 'd' / 'pdn_ports.sub').exists() and any('vector fit missed' in n for n in d['notes'])

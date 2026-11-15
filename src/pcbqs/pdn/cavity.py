@@ -85,8 +85,12 @@ def plane_admittance(K, M, f, d, er, tand, t, sigma=SIGMA_CU):
 
 
 def element_z(p, w, mount=0.0):
-    """The series impedance of a port's element at angular frequency w (np.inf: none), plus `mount` H."""
+    """The series impedance of a port's element at angular frequency w (np.inf: none), plus `mount` H. An element
+    with a table (Zf: (f Hz, Z), a vendor's model or a regulator's file, models.py) takes it in place of C, R, L."""
     mount += p.get('mount', 0.0)
+    if 'Zf' in p:
+        from .models import table_z
+        return table_z(*p['Zf'], w / (2 * np.pi)) + 1j * w * mount
     if 'C' in p:
         return p.get('ESR', 0.0) + 1j * w * (p.get('ESL', 0.0) + mount) + 1.0 / (1j * w * p['C'])
     if 'R' in p or 'L' in p:

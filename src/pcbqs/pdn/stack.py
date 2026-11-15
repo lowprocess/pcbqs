@@ -41,6 +41,16 @@ ESR_PKG = {'elec_smd': 0.05, 'radial': 0.05}        # an electrolytic's ESR with
 CLEAR = 0.3                 # mm beyond a via's radius: its antipad, filled in the cavity (a via through it is a port)
 
 
+def cap_parasitics(p, esr=None, esl=None):
+    """(ESR, ESL) of a capacitor part p: its own fields (ESR, ESL, Sim.esr ...), else its package's (ESL_PKG, an
+    electrolytic's ESR_PKG), else esr / esl (a tool's assumed values; R-E14: the near field's input capacitors had all
+    taken one ESR and ESL)."""
+    pkg = package(getattr(p, 'lib', '')) if p is not None else None
+    r = field_value(p, 'ESR', 'esr') if p is not None else None
+    l = field_value(p, 'ESL', 'esl') if p is not None else None
+    return (r if r is not None else ESR_PKG.get(pkg, esr)), (l if l is not None else ESL_PKG.get(pkg, esl))
+
+
 def package(lib):
     if re.search(r'CP_Radial|C_Radial|Radial_D', lib or ''):
         return 'radial'
@@ -143,6 +153,10 @@ class RailPDN:
             esr_default = ESR_PKG.get(pkg, 0.02 if C < 1e-6 else 0.005)
             el = dict(C=C, ESR=esr if esr is not None else esr_default,
                       ESL=esl if esl is not None else ESL_PKG.get(pkg, 0.5e-9), defaulted=esr is None or esl is None, pkg=pkg)
+            if 'derate' in given:                           # its capacitance at its DC bias (R-E14)
+                el['C'], el['derate'] = el['C'] * given['derate'], given['derate']
+            if 'Zf' in given:                               # a vendor's model: its impedance in place of C, ESR, ESL
+                el.update(Zf=given['Zf'], file=given.get('file'), defaulted=False)
             self.parts[p.ref] = dict(role='decap', el=el, part=p)
         for p in rail.source_parts:
             self.parts[p.ref] = dict(role='source', el=dict(self.vrm), part=p)
@@ -451,6 +465,29 @@ class RailPDN:
                            if pads and m == k and info['rail'].vias else 0.0)
                     out[(m, k)][i] = X[self.dof(m), j] + own
         return out
+
+    def port_matrix(self, f, names=None):
+        """(names, Z (nf, n, n)): the bare network (the planes, their ties and the series parts; no decap, regulator
+        or load) between the parts' ports (default every part: the sources, the decaps, the loads), each port at its
+        part's pads (its own connection to the planes on the diagonal): the PDN to attach other models to (R-E14)."""
+        names = [n for n in (names or list(self.parts)) if self.dof(n) is not None and n not in self.isolated]
+        f = np.atleast_1d(np.asarray(f, float))
+        Z = np.zeros((len(f), len(names), len(names)), complex)
+        E = np.zeros((self.n, len(names)))
+        for k, n in enumerate(names):
+            E[self.dof(n), k] = 1.0
+        rows = [self.dof(n) for n in names]
+        for i, fi in enumerate(f):
+            X = splu(self.matrix(fi, bare=True)).solve(E.astype(complex))[rows]
+            w = 2 * np.pi * fi
+            for k, n in enumerate(names):                       # what matrix() and z() put in series with each
+                info = self.parts[n]
+                if info['el'] is not None:                      # a part: its mount (a lumped node's: 0.5 nH more)
+                    X[k, k] += 1j * w * (info['mount'] + (0.5e-9 if info['rail'].node else 0.0)) + info.get('mount_R', 0.0)
+                elif info['rail'].vias:                         # a load: its own pads' connection to the planes
+                    X[k, k] += 1j * w * info['mount'] + info.get('mount_R', 0.0)
+            Z[i] = X
+        return names, Z
 
     def describe(self):
         lines = [f"{c.rail_layer} over {c.ground_layer}: {c.d:.3g} mm, er {c.er:.3g}, {c.geom.area:.0f} mm2"
