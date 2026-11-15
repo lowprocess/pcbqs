@@ -192,6 +192,77 @@ def _mixed_fits(a):
     return free is None or free > 2 * (a.size * 8) + 2e9
 
 
+def _rmul(G, v):
+    """G @ v for a real G and a complex v, without making G complex (numpy would copy it as complex)."""
+    v = np.asarray(v)
+    if not np.iscomplexobj(v):
+        return G @ v
+    w = G @ np.concatenate([v.real, v.imag], axis=1)
+    k = v.shape[1]
+    return w[:, :k] + 1j * w[:, k:]
+
+
+class Pencil:
+    """(R + s L + P^T diag(z) P)^-1 for any s from one generalized eigendecomposition (R-D13.2): R and L real
+    symmetric, R positive definite (the loops' DC resistance), P sparse (k, n) (the loops through k parts of
+    impedance z(s)). With R = C C^T and C^-1 L C^-T = W diag(lam) W^T, G = C^-T W puts both on the diagonal:
+    (R + s L)^-1 = G diag(1 / (1 + s lam)) G^T, and the parts come in by Woodbury, a k x k solve. The
+    eigendecomposition costs about PENCIL_LUS(n) complex LUs, after which a frequency costs three products with
+    G: a sweep of more frequencies than that is quicker (pencil_pays). Raises numpy.linalg.LinAlgError where R
+    is not positive definite."""
+
+    def __init__(self, R, L, P=None):
+        from scipy.linalg import cholesky, eigh, solve_triangular
+        with blas_threads():
+            c = cholesky(R, lower=True, check_finite=False)
+            X = solve_triangular(c, L, lower=True, check_finite=False)
+            X = solve_triangular(c, np.ascontiguousarray(X.T), lower=True, check_finite=False, overwrite_b=True)
+            X = (X + X.T) / 2
+            self.lam, W = eigh(X, overwrite_a=True, check_finite=False, driver='evd')
+            del X
+            self.G = solve_triangular(c, W, lower=True, trans='T', check_finite=False, overwrite_b=True)
+        self.P = None if P is None or P.shape[0] == 0 else P.tocsr()
+        self.PG = None if self.P is None else np.asarray(self.P @ self.G)
+
+    def solve(self, s, z, b):
+        """x of (R + s L + P^T diag(z) P) x = b (b: (n,) or (n, m))."""
+        b = np.asarray(b, complex)
+        one = b.ndim == 1
+        b = b.reshape(len(b), -1)
+        d = 1 / (1 + complex(s) * self.lam)
+        with blas_threads():
+            u = d[:, None] * _rmul(self.G.T, b)
+            x = _rmul(self.G, u)
+            if self.P is not None and np.any(z):
+                z = np.asarray(z, complex)
+                S = (self.PG * d) @ self.PG.T                       # P Z0^-1 P^T
+                t = np.linalg.solve(np.eye(len(z)) + z[:, None] * S, z[:, None] * (self.PG @ u))
+                x -= _rmul(self.G, d[:, None] * (self.PG.T @ t))
+        return x[:, 0] if one else x
+
+
+def pencil_lus(n):
+    """About how many complex LUs of n unknowns the Pencil's eigendecomposition costs (measured on a Ryzen/
+    Core desktop: 7 at 2,000, 10.5 at 4,000, 13.6 at 6,000), and a frequency's three products."""
+    return 4.0 + 1.6 * n / 1000
+
+
+def pencil_pays(n, frequencies):
+    """Whether a sweep of `frequencies` on n loops is quicker by one Pencil than by an LU each, and fits in the
+    memory free (four real matrices of n x n at once). PCBQS_PENCIL=always or never decides it."""
+    choice = os.environ.get('PCBQS_PENCIL', '').lower()
+    if choice in ('always', 'never'):
+        return choice == 'always'
+    if n < 200 or frequencies < 1.25 * pencil_lus(n) + 1:
+        return False
+    try:
+        from emsdev.memory import available
+        free = available()
+    except Exception:                                           # noqa: BLE001  (no probe: assume it does)
+        return True
+    return free is None or free > 4 * n * n * 8 + 2e9
+
+
 def lu_factor_rows(a, mixed='auto'):
     """LAPACK's LU of the square row-major matrix `a`: what lu_solve_rows takes. A complex one of MIXED_MIN
     unknowns or more is factored in single precision and refined (MixedLU: a is kept, not destroyed) where the

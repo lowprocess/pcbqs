@@ -742,7 +742,7 @@ class MQS:
 
     def _solve_dense(self, freqs, drives):
         """The dense magnetic solve for each of `drives` ({source: A} or None): [Result]."""
-        from .kernels import loop_system, lu_factor_rows, lu_solve_rows
+        from .kernels import loop_system, lu_factor_rows, lu_solve_rows, Pencil, pencil_pays
         f = np.atleast_1d(np.asarray(freqs, float))
         if f.ndim != 1 or not np.isfinite(f).all() or (f <= 0).any():
             raise ValueError('frequencies must be finite and positive')
@@ -753,6 +753,17 @@ class MQS:
         free = [c for c in range(Cd.shape[1]) if c not in src.values()]
         sc = list(src.values())
         nd = len(drives)
+        # a long sweep with the copper's DC resistance: one eigendecomposition for every frequency (R-D13.2)
+        pencil = None
+        zparts = [ne + nv + k for k, p in enumerate(self.parts) if p['kind'] == 'Z']
+        if free and self.conductor_loss == 'dc' and pencil_pays(len(free), len(f)):
+            ix = np.ix_(free, free)
+            try:
+                pencil = Pencil(m['Rl'][ix], m['Ll'][ix], Cd[zparts][:, free] if zparts else None)
+            except np.linalg.LinAlgError:                        # (a loop with no resistance: an LU each)
+                pencil = None
+        self.solve_info = [dict(frequency_Hz=float(fi), iterations=0, method='pencil' if pencil is not None else 'direct')
+                           for fi in f]
         I = np.zeros((nd, len(f), nb), complex)
         Z = [{n: np.zeros(len(f), complex) for n in src} for _ in drives]
         Zc = [{n: np.zeros(len(f), complex) for n in src} for _ in drives]
@@ -778,8 +789,11 @@ class MQS:
             every = np.arange(Cd.shape[1])
             if free:
                 rhs = -loop_system(m['Rl'], m['Ll'], 1j * w, free, sc, both[free][:, sc]) @ x[sc]
-                x[free] = lu_solve_rows(lu_factor_rows(
-                    loop_system(m['Rl'], m['Ll'], 1j * w, free, free, both[free][:, free])), rhs)
+                if pencil is not None:
+                    x[free] = pencil.solve(1j * w, zp[zparts], rhs)
+                else:
+                    x[free] = lu_solve_rows(lu_factor_rows(
+                        loop_system(m['Rl'], m['Ll'], 1j * w, free, free, both[free][:, free])), rhs)
             I[:, i] = (Cd @ x).T
             # Kirchhoff's voltage law round each source's loop, in loop space:
             # C^T v = Zl x, where v holds every branch drop (the copper's mutual

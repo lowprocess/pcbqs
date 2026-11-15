@@ -40,7 +40,7 @@ OPTIONS = [
     ('fill_workers', 'int', 0, 'CPU fill workers (0 chooses automatically)', 'Mesh'),
     ('fill_chunk', 'int', 16384, 'Maximum triangle pairs per fill tile', 'Mesh'),
     ('fill_device', 'int', 0, 'CuPy device index', 'Mesh'),
-    ('backend', 'str', 'dense', "The solve: dense (a factor a frequency) or hierarchical (compressed, GMRES in the loop "
+    ('backend', 'str', 'dense', "The solve: dense (a factor a frequency, or one for a long sweep) or hierarchical (compressed, GMRES in the loop "
      "basis: a whole plane's 50k triangles in ~2 GB, where dense needs ~20 GB)", 'Mesh'),
     ('esr', 'float', .003, 'Assumed ESR per input capacitor, ohms', 'Parts'),
     ('esl', 'float', .4e-9, 'Assumed ESL per input capacitor, H', 'Parts'),

@@ -211,3 +211,21 @@ def test_shared_kernels_keep_the_faces_skin_loss():
     assert np.allclose(other.solve([1e3, 30e6]).z['I'], z, rtol=1e-9)
     with pytest.raises(ValueError, match='another mesh'):
         _strip_model(conductor_faces=1).share_kernels(q)
+
+
+def test_a_long_sweep_by_one_eigendecomposition_is_the_lu_s(monkeypatch):
+    """R-D13.2: the dense sweep with the copper's DC resistance and a capacitor as a part, by Pencil and by an LU a
+    frequency, to round-off."""
+    out = {}
+    for mode in ('never', 'always'):
+        monkeypatch.setenv('PCBQS_PENCIL', mode)
+        q = MQS(trace_board(), 'N', terminals={'s': [('F.Cu', box(2.0, 9.6, 2.6, 10.4))],
+                                               'g': [('F.Cu', box(2.0, 7.7, 2.6, 8.5))]}, dmax=1.0, log=lambda *a: None)
+        q.source('I', 's', 'g', part_h=0.0)
+        q.element('C1', 's', 'g', C=1e-6, ESR=0.01, ESL=1e-9, part_h=0.0)
+        r = q.solve(np.geomspace(1e3, 1e8, 9))
+        assert {i['method'] for i in q.solve_info} == {'pencil' if mode == 'always' else 'direct'}
+        out[mode] = r
+    a, b = out['never'], out['always']
+    assert np.max(np.abs(a.i - b.i)) < 1e-10 * np.max(np.abs(a.i))
+    assert np.max(np.abs(a.zc['I'] - b.zc['I'])) < 1e-10 * np.max(np.abs(a.zc['I']))

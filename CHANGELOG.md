@@ -10,6 +10,14 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **One factorisation for a long sweep (R-D13.2).** The dense magnetic solve with the copper's DC resistance (the
+  near field's) takes one generalized eigendecomposition of its loops' R and L for every frequency, (R + sL)^-1 =
+  G diag(1/(1 + s lam)) G^T, with its parts (the capacitors) by Woodbury, a solve of their count; where the sweep
+  has more frequencies than the eigendecomposition costs LUs (`kernels.pencil_pays`: 11 at 1,400 loops, 15 at
+  4,700). The CM5 near field at 4,694 loops: 40 harmonics' solve 17.9 s to 7.3 s, 16 harmonics' 8.7 s to 6.7 s,
+  the answers within 5e-14; six (the default) stay an LU each. `PCBQS_PENCIL=always` or `never` decides it. The
+  copper's port extraction for the circuit (`conductor_loss='slab'`, a resistance that changes with frequency)
+  and the charge's system (quadratic in s) are not pencils, and keep an LU a frequency.
 - **Vendor models through a wider door (R-E12).** A switch's subcircuit takes any pins in its own order: D, G and S
   where they are (S twice for a Kelvin source), the others on a node of the circuit, held at a voltage (a thermal
   pin's temperature, or the part's own `temperature_C`) or on their own. A VDMOS and a diode take a library's

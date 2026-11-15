@@ -174,3 +174,36 @@ def test_the_single_precision_lu_is_refined_to_double_and_falls_back_when_it_can
     assert lu.double is not None and lu.a is None                       # in double now, in the matrix's memory
     assert np.linalg.norm(bad @ got - b) <= 10 * np.linalg.norm(bad @ want - b)     # as good as a double solve
     assert not isinstance(lu_factor_rows(a.copy()), MixedLU)            # below MIXED_MIN: double, as before
+
+
+def test_one_eigendecomposition_solves_the_pencil_at_every_frequency_with_its_parts():
+    """R-D13.2: (R + s L + P^T diag(z) P)^-1 b from one Pencil, against a dense solve, for s from DC up, with parts
+    of no impedance (a short) and of an impedance, and several right-hand sides."""
+    from scipy.sparse import csr_matrix
+    from pcbqs.kernels import Pencil
+    rng = np.random.default_rng(3)
+    n, k = 120, 4
+    A = rng.standard_normal((n, n)); R = A @ A.T / n + 0.1 * np.eye(n)
+    B = rng.standard_normal((n, n)); L = (B @ B.T / n + np.eye(n)) * 1e-9
+    P = np.zeros((k, n)); P[np.arange(k), rng.choice(n, k, replace=False)] = 1.0; P[1, 7] = -1.0
+    pencil = Pencil(R, L, csr_matrix(P))
+    b = rng.standard_normal((n, 3)) + 1j * rng.standard_normal((n, 3))
+    for f in (0.0, 1e3, 1e6, 1e9):
+        s = 2j * np.pi * f
+        for z in (np.zeros(k), np.array([0.0, 1e-3, 5.0 + s * 1e-9, 1 / (s * 1e-6) if f else 1e6])):
+            want = np.linalg.solve(R + s * L + P.T @ np.diag(z) @ P, b)
+            got = pencil.solve(s, z, b)
+            assert np.max(np.abs(got - want)) < 1e-10 * np.max(np.abs(want))
+    assert pencil.solve(0.0, np.zeros(k), b[:, 0]).shape == (n,)
+    with pytest.raises(np.linalg.LinAlgError):
+        Pencil(-R, L)
+
+
+def test_the_pencil_is_taken_for_a_long_sweep_only(monkeypatch):
+    from pcbqs.kernels import pencil_pays
+    monkeypatch.delenv('PCBQS_PENCIL', raising=False)
+    assert not pencil_pays(4000, 6) and pencil_pays(4000, 40) and not pencil_pays(100, 400)
+    monkeypatch.setenv('PCBQS_PENCIL', 'never')
+    assert not pencil_pays(4000, 400)
+    monkeypatch.setenv('PCBQS_PENCIL', 'always')
+    assert pencil_pays(100, 2)
