@@ -14,8 +14,14 @@ over its pads by their area.
 
 A part's temperature is the mean temperature of the copper under its pads plus its loss times its theta.
 
-What this leaves out: the heat the bodies of the parts give to the air themselves, air warmed by one part reaching
-another, and any change of the film with temperature. The first two make it read high, never low.
+Beyond the films (R-E13): a part may have its own path to the air (p.air {part: K/W}: its body's, or a heatsink's
+on it), which makes it a node of its own, joined to its pads through its theta and to the air through that, so its
+heat splits between the two; a footprint may be held at a temperature (p.hold(board, {ref: C}): bolted to a cold
+plate or a chassis), its pads tied to it. forced_film gives the faces' coefficient in moving air. grid.py also
+gives the heating from cold (its transient), from the board's own heat capacity.
+
+What this leaves out: air warmed by one part reaching another, any change of the film with temperature, and the
+heat the parts' bodies hold (a transient's first seconds). The first makes it read high, never low.
 """
 from dataclasses import dataclass, field
 
@@ -30,6 +36,21 @@ FILM = 10.0             # W/m2/K, still air and radiation off a board near 50 C
 AMBIENT = 25.0          # C
 PLATING = 0.025         # mm, via barrel
 OFF_BOARD = ('J', 'P', 'X', 'TP', 'CN')     # reference letters of connectors: what is bound to one is off the board
+RADIATION = 6.0         # W/m2/K of FILM: radiation off a board near 50 C (emissivity 0.9); the rest is convection
+HOLD = 1e4              # W/K: a held footprint's tie to its temperature (a board's square of copper: about 0.01)
+RHO_C_CU = 3.45e6       # J/m3/K: copper's heat capacity per volume
+RHO_C_FR4 = 2.0e6       # J/m3/K: FR-4's (1850 kg/m3, 1100 J/kg/K)
+
+
+def forced_film(speed, length_mm, still=FILM):
+    """W/m2/K off a face in air moving at `speed` m/s along `length_mm` of board: radiation (RADIATION) and the
+    convection of a laminar flat plate, 3.84 sqrt(v / L) (Nu = 0.664 Re^1/2 Pr^1/3, air near 40 C), joined to the
+    still air's (`still` less its radiation) as assisting flows join, (h_n^3 + h_f^3)^(1/3)."""
+    if speed < 0 or length_mm <= 0:
+        raise ValueError('the air speed cannot be negative and the length must be positive')
+    natural = max(still - RADIATION, 0.0)
+    forced = 3.84 * np.sqrt(speed / (length_mm * 1e-3))
+    return float(RADIATION + (natural ** 3 + forced ** 3) ** (1 / 3))
 
 
 @dataclass
@@ -51,6 +72,14 @@ class Source:
 
 
 @dataclass
+class Held:
+    name: str               # the footprint
+    layer: int
+    geom: object            # shapely, mm
+    temperature: float      # C
+
+
+@dataclass
 class Problem:
     outline: object                         # shapely, mm
     layers: list                            # [Layer], bottom first
@@ -60,6 +89,8 @@ class Problem:
     powers: dict = field(default_factory=dict)      # {part: W}
     theta: dict = field(default_factory=dict)       # {part: K/W, its pads to the part}
     tmax: dict = field(default_factory=dict)        # {part: C, the most it may reach (its junction's limit)}
+    air: dict = field(default_factory=dict)         # {part: K/W, from the part itself to the air: its body, a sink}
+    held: list = field(default_factory=list)        # [Held]: pads tied to a temperature (Problem.hold)
     film: tuple = (FILM, FILM)              # W/m2/K: bottom face, top face
     edge_film: float = FILM                 # W/m2/K: the board's edges (0: insulated)
     ambient: float = AMBIENT
@@ -165,16 +196,93 @@ class Problem:
             pads = [(lay, pad.geom.intersection(self.outline)) for pad in parts[ref].pads for lay in pad.layers]
             self.heat(ref, pads, float(w))
 
+    def hold(self, board, temperatures):
+        """Each footprint's pads {reference: C} held at that temperature (a cold plate, a chassis screw)."""
+        from ..pdn.rail import parts_of
+        parts = {p.ref: p for p in parts_of(board)}
+        names = [l.name for l in self.layers]
+        for ref, c in temperatures.items():
+            if ref not in parts:
+                self.notes.append(f'{ref}: not a footprint of the board; not held at {c:g} C')
+                continue
+            pads = [(lay, pad.geom.intersection(self.outline)) for pad in parts[ref].pads for lay in pad.layers]
+            pads = [(names.index(lay), g) for lay, g in pads if lay in names and g.area > 0]
+            if not pads:
+                self.notes.append(f'{ref}: no pad on a copper layer to hold at {c:g} C')
+            self.held += [Held(ref, i, g, float(c)) for i, g in pads]
+
+    def extend(self, A, q, covers, spot):
+        """The surroundings beyond the films added to a solver's system A x = q (x: the rise over ambient of its n
+        unknowns): each part of self.air a node of its own (n, n + 1, ...), its heat put there rather than on its
+        pads, joined to its pads through its theta (by their shares of its heat) and to the air through its own
+        resistance; each held footprint's pads tied to their temperature by HOLD. covers {id(source): (unknowns,
+        weights summing to 1) or None}: where the solver put each source's heat; spot(layer, geom) -> the same for
+        a held pad. Returns (A, q, read): read(x) -> dict(parts={part: rise of its node}, air_W={part: W},
+        held_W={footprint: W out through it})."""
+        from scipy.sparse import coo_matrix
+        n = A.shape[0]
+        own = [name for name in self.air if name in self.powers]
+        for name in self.air:
+            if name not in self.powers:
+                self.notes.append(f'{name}: a path to the air but no loss on the board; left out')
+        rows, cols, vals = [], [], []
+        q = np.r_[q, np.zeros(len(own))]
+        diag = np.zeros(n + len(own))
+
+        def link(a, b, g):
+            rows.append(np.r_[a, b, a, b]); cols.append(np.r_[a, b, b, a]); vals.append(np.r_[g, g, -g, -g])
+        for j, name in enumerate(own):
+            k = n + j
+            total = self.powers[name]
+            theta = max(float(self.theta.get(name) or 0.0), 1e-3)  # (none given: the part is at its pads')
+            for s in self.sources:
+                if s.name != name or covers.get(id(s)) is None:
+                    continue
+                idx, w = covers[id(s)]
+                np.subtract.at(q, idx, s.watts * w)
+                link(np.full(len(idx), k), idx, (s.watts / total) * w / theta)
+            q[k] += total
+            r = float(self.air[name])
+            if r <= 0:
+                raise ValueError(f'{name}: its path to the air must be a positive K/W')
+            diag[k] += 1.0 / r
+        ties = []
+        for h in self.held:
+            idx, w = spot(h.layer, h.geom)
+            if len(idx):
+                np.add.at(diag, idx, HOLD * w)
+                np.add.at(q, idx, HOLD * w * (h.temperature - self.ambient))
+                ties.append((h, idx, w))
+        m = n + len(own)
+        A = A.tocoo()
+        B = coo_matrix((np.concatenate([A.data, *vals, diag]),
+                        (np.concatenate([A.row, *rows, np.arange(m)]), np.concatenate([A.col, *cols, np.arange(m)]))),
+                       shape=(m, m)).tocsc()
+
+        def read(x):
+            held = {}
+            for h, idx, w in ties:
+                held[h.name] = held.get(h.name, 0.0) + float(HOLD * w @ (x[idx] - (h.temperature - self.ambient)))
+            return dict(parts={name: float(x[n + j]) for j, name in enumerate(own)},
+                        air_W={name: float(x[n + j]) / float(self.air[name]) for j, name in enumerate(own)},
+                        held_W=held)
+        return B, q, read
+
     @property
     def watts(self):
         return float(sum(s.watts for s in self.sources))
 
 
-def solve_spd(A, q):
-    """A x = q for the symmetric positive definite A (sparse): SuperLU ordered for a symmetric matrix, which on these
-    sheets is two to three times quicker than its default ordering."""
+def factor_spd(A):
+    """The factor of the symmetric positive definite A (sparse): SuperLU ordered for a symmetric matrix, which on
+    these sheets is two to three times quicker than its default ordering."""
     from scipy.sparse.linalg import splu
-    return splu(A.tocsc(), permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=0.0, options=dict(SymmetricMode=True)).solve(q)
+    return splu(A.tocsc(), permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=0.0, options=dict(SymmetricMode=True))
+
+
+def solve_spd(A, q):
+    """A x = q for the symmetric positive definite A (sparse), by factor_spd."""
+    return factor_spd(A).solve(q)
 
 
 def losses_of(case, model):
@@ -241,6 +349,8 @@ class Result:
     tris: np.ndarray = None
     notes: list = field(default_factory=list)
     edge_W: float = 0.0             # of out_W, the heat leaving through the edges
+    extra: dict = None              # Problem.extend's read: the parts' own paths to the air, the held footprints
+    transient: dict = None          # grid.py's heating from cold, when asked
 
     @property
     def hottest(self):
@@ -283,14 +393,20 @@ class Result:
                     seconds={k: round(v, 4) for k, v in self.seconds.items()},
                     ambient_C=p.ambient, film_W_m2K=list(p.film), edge_film_W_m2K=p.edge_film,
                     heat_in_W=p.watts, heat_out_W=self.out_W, heat_out_edges_W=self.edge_W,
+                    **({} if not self.extra else dict(
+                        heat_out_parts_air_W=float(sum(self.extra['air_W'].values())),
+                        held={h: dict(C=next(x.temperature for x in p.held if x.name == h), out_W=w)
+                              for h, w in self.extra['held_W'].items()})),
                     hottest_C=self.hottest,
                     layers={l.name: dict(hottest_C=float(np.nanmax(t)), mean_C=float(np.nanmean(t)))
                             for l, t in zip(p.layers, self.T)},
                     parts=self.parts, notes=p.notes + self.notes)
 
 
-def part_temperatures(problem, board_of):
-    """{part: dict(power_W, board_C, part_C)} from board_of(source) -> the mean temperature under that source."""
+def part_temperatures(problem, board_of, extra=None):
+    """{part: dict(power_W, board_C, part_C)} from board_of(source) -> the mean temperature under that source;
+    extra (Problem.extend's read): a part with its own path to the air at its node's temperature, with the heat
+    that path takes (to_air_W)."""
     acc = {}
     for s in problem.sources:
         a = acc.setdefault(s.name, [0.0, 0.0])
@@ -302,6 +418,9 @@ def part_temperatures(problem, board_of):
         part = float(tb + problem.powers[name] * problem.theta.get(name, 0.0))
         out[name] = dict(power_W=problem.powers[name], board_C=float(tb), part_C=part,
                          theta_K_W=problem.theta.get(name))     # None: part_C is its pads' (no theta given)
+        if extra and name in extra['parts']:
+            part = problem.ambient + extra['parts'][name]
+            out[name].update(part_C=float(part), to_air_W=extra['air_W'][name], air_K_W=float(problem.air[name]))
         if name in problem.tmax:
             out[name].update(tmax_C=float(problem.tmax[name]), margin_K=float(problem.tmax[name] - part))
     return out

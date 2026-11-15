@@ -41,7 +41,7 @@ def solve(problem, dmax=1.0, simplify=None, coarsen=None, quality=25, log=print)
     for g in copper:
         if g is not None:
             lines += _segments(g)
-    for s in p.sources:
+    for s in [*p.sources, *p.held]:
         lines += _segments(s.geom)
     pts = [(v['x'], v['y'], v['r']) for v in p.vias]
     gone = overlapping_vias(pts)                        # drilled into one another: one ring
@@ -97,30 +97,43 @@ def solve(problem, dmax=1.0, simplify=None, coarsen=None, quality=25, log=print)
             edge[l * N:(l + 1) * N] += p.edge_conductance(l) * run
     film += edge
     q = np.zeros(L * N)
-    weights = []
-    for s in p.sources:
-        inside = shapely.contains_xy(s.geom.buffer(1e-6), cen[:, 0], cen[:, 1])
+
+    def weigh(geom):
+        inside = shapely.contains_xy(geom.buffer(1e-6), cen[:, 0], cen[:, 1])
         w = np.zeros(N)
         if inside.any():
             np.add.at(w, tris[inside].ravel(), np.repeat(tri_area[inside] / 3, 3))
         else:                                       # a pad smaller than a triangle: the vertex nearest its middle
-            c = s.geom.representative_point()
+            c = geom.representative_point()
             w[int(np.argmin(np.hypot(nodes[:, 0] - c.x, nodes[:, 1] - c.y)))] = 1.0
-        w /= w.sum()
+        return w / w.sum()
+    weights = []
+    for s in p.sources:
+        w = weigh(s.geom)
         q[s.layer * N:(s.layer + 1) * N] += s.watts * w
         weights.append(w)
     r_ = np.concatenate([b[0] for b in blocks] + rows)
     c_ = np.concatenate([b[1] for b in blocks] + cols)
     d_ = np.concatenate([b[2] for b in blocks] + vals)
     A = (coo_matrix((d_, (r_, c_)), shape=(L * N, L * N)) + diags(film)).tocsc()
+    by = {id(s): w for s, w in zip(p.sources, weights)}
+    read = None
+    if p.air or p.held:                                 # the parts' own paths to the air, held pads
+
+        def spread(layer, w):
+            nz = np.flatnonzero(w)
+            return layer * N + nz, w[nz]
+        A, q, read = p.extend(A, q, {id(s): spread(s.layer, w) for s, w in zip(p.sources, weights)},
+                              lambda layer, geom: spread(layer, weigh(geom)))
     t1 = time.perf_counter()
-    rise = solve_spd(A, q)
+    whole = solve_spd(A, q)
+    rise = whole[:L * N]
     t2 = time.perf_counter()
     T = p.ambient + rise.reshape(L, N)
-    by = {id(s): w for s, w in zip(p.sources, weights)}
-    parts = part_temperatures(p, lambda s: float(T[s.layer] @ by[id(s)]))
+    extra = read(whole) if read else None
+    parts = part_temperatures(p, lambda s: float(T[s.layer] @ by[id(s)]), extra)
     res = Result('mesh', p, T, parts, L * N, dict(build=t1 - t0, solve=t2 - t1), float(film @ rise), dmax,
-                 nodes=nodes, tris=tris, edge_W=float(edge @ rise))
+                 nodes=nodes, tris=tris, edge_W=float(edge @ rise), extra=extra)
     log(f"thermal mesh: {N:,} vertices, {len(tris):,} triangles of up to {dmax:g} mm on {L} layer(s), "
         f"{L * N:,} unknowns, {t2 - t0:.2f} s; hottest {res.hottest:.1f} C")
     return res

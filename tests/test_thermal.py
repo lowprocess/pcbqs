@@ -314,7 +314,7 @@ def test_a_part_s_limit_and_its_theta_from_its_footprint(tmp_path):
     from pcbqs.reports import thermal_report
     board = dict(prims=dict(footprints=[dict(ref='Q1', props={'thermal.theta': '20', 'thermal.tmax': '125'}),
                                         dict(ref='C1', props={})]))
-    theta, tmax = part_fields(board)
+    theta, tmax, _air = part_fields(board)
     assert theta == {'Q1': 20.0} and tmax == {'Q1': 125.0}
     p = disc_problem(side=20.0, a=2.0, film=10.0)
     p.theta, p.tmax = {'disc': 300.0}, {'disc': 60.0}

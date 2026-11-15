@@ -9,6 +9,8 @@ Elmer through kicad2ems-fem, and the two agree within 2 K on eleven boards (belo
     python -m pcbqs.thermal --circuit circuit-results --method both # grid and mesh, with their difference
     python -m pcbqs.thermal board.kicad_pcb --loss U1=1.2 --theta U1=8 --film 12 --ambient 40
     python -m pcbqs.thermal board.kicad_pcb --loss Q1=0.35 --film-edge 0  # the edges insulated
+    python -m pcbqs.thermal board.kicad_pcb --loss Q1=2 --theta Q1=3 --air Q1=15    # a heatsink on Q1
+    python -m pcbqs.thermal board.kicad_pcb --loss Q1=2 --hold H1=40 --air-speed 1.5 --transient 1800
 
 In kicad2ems-gui it is the **Thermal** analysis (`pcbqs.analyses.Thermal`, a kicad2ems analysis plugin): its form
 is its options table, and with no losses typed it takes the latest circuit run's, on that run's board.
@@ -47,6 +49,28 @@ The board is a stack of sheets, one per copper layer (`problem.py`):
 
 It is the DC drop's equation with thermal conductivities and a sink over the whole face, and it is linear: one
 sparse solve.
+
+### Beyond the films
+
+- **A part's own path to the air**, `--air REF=K/W` or the footprint's field `thermal.air`: its body's convection
+  and radiation, or a heatsink on it (the sink's K/W, with its interface). The part becomes a node of its own,
+  joined to its pads through its theta (0.001 K/W where none is given: it is at its pads') and to the air through
+  this, so its heat splits between the board and the air; `parts[REF].to_air_W` is the air's share and
+  `heat_out_parts_air_W` the sum.
+- **A footprint held at a temperature**, `--hold REF=C`: its pads tied to it (a cold plate, a chassis screw, a
+  heatsink clamped to the board). `held[REF].out_W` is the heat that leaves through it (negative: it heats the
+  board).
+- **Moving air**, `--air-speed m/s` (and `--air-length mm` along the flow, the outline's longer side unless
+  given): both faces' coefficient from a laminar flat plate's convection, 3.84 √(v/L) W/m²/K, joined to the still
+  air's convection as assisting flows join ((h_n³ + h_f³)^⅓), with radiation (6 W/m²/K of the 10) on top.
+- **The heating from cold**, `--transient s` (the grid's): the board's own heat capacity (FR-4 2.0 MJ/m³/K,
+  copper 3.45) by backward Euler, 40 steps a decade from a thousandth of the time asked, to
+  `thermal-transient.json` (each part's temperature and the hottest copper against time, and `to_63_s`: when
+  each part is 63 % of the way there) and `thermal-transient.png`. The parts' bodies hold no heat here, so a
+  part's first seconds read quick. A single sheet's time constant comes out 2 % late.
+
+In code: `p.air = {'Q1': 15.0}`, `p.hold(board, {'H1': 40.0})`, `forced_film(1.5, 80.0)`, and
+`solve(p, 'grid', 0.5, transient=1800)` (its `r.transient`).
 
 With a circuit run on its board's copper and `--fields`, the copper's own loss heats the board where its currents
 are (the run's `copper-loss.npz`: each triangle's share, gathered into 1 mm squares); without `--fields` the
@@ -171,16 +195,17 @@ Two things the comparison found:
 
 ## What it does not do yet
 
-- **The parts' own cooling.** A part's body gives heat to the air itself; here all of it goes into the board.
-  It reads high for parts that stand tall (inductors, electrolytics).
-- **The film is one number.** Natural convection and radiation both grow with the temperature rise, and the
-  air warmed by one part reaches the next. A film that depends on the temperature is a few repeats of the same
-  solve.
+- **The parts' own cooling** is a number the user gives (`--air`); with none, all of a part's heat goes into the
+  board, which reads high for parts that stand tall (inductors, electrolytics).
+- **The film is one number** a face (or moving air's). Natural convection and radiation both grow with the
+  temperature rise, and the air warmed by one part reaches the next. A film that depends on the temperature is a
+  few repeats of the same solve.
 - **The copper's own loss** is not put in as a map. From the DC drop it is a loss per triangle; on the demo
   boards it is milliwatts.
-- **Resistance against temperature**: copper's resistivity rises 0.39 % per K, which feeds back into the DC
-  drop and the circuit's losses.
-- **Fixed-temperature points** (a chassis screw, a heatsink) and time (a thermal step) are not in.
+- **Resistance against temperature** feeds back into the circuit's losses with `pcbqs.circuit --warm`
+  ([circuit.md](circuit.md#parts-at-their-temperatures)); the DC drop's copper is still at 25 °C.
+- **A transient on the mesh**, and a transient of changing losses (a load step): the heating is from cold, at
+  the losses given.
 - **The laminate between the sheets.** Its in-plane conduction sits on the sheets (above); one more sheet per
   dielectric, at mid-thickness, would follow the 3D board more closely near hot parts, for 2L-1 unknowns per
   cell instead of L.

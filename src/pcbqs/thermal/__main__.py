@@ -29,10 +29,20 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
      "thermal.theta gives it too", 'Parts'),
     ('tmax', 'list', [], "The most a part may reach, REF=C (repeatable: its junction's limit); a footprint's field "
      "thermal.tmax gives it too", 'Parts'),
+    ('air', 'list', [], "From a part itself to the air, REF=K/W (repeatable): its body's own path, or a heatsink's "
+     "on it; its heat then splits between that and its pads (through its theta). A footprint's field thermal.air "
+     "gives it too", 'Parts'),
     ('ambient', 'float', AMBIENT, 'The air, C', 'Air'),
     ('film', 'float', FILM, 'Convection and radiation from the faces, W/m2/K (the top face, with film-bottom)', 'Air'),
     ('film_bottom', 'float', None, 'The bottom face, W/m2/K, when it differs', 'Air'),
     ('film_edge', 'float', None, "The board's edges and cut-outs, W/m2/K; empty: the faces' mean, 0: insulated", 'Air'),
+    ('air_speed', 'float', 0.0, "Forced air along both faces, m/s: their film from it (a flat plate's convection "
+     "and radiation, the film's still air joined), in place of film and film-bottom", 'Air'),
+    ('air_length', 'float', None, "mm of board along the moving air (default: the outline's longer side)", 'Air'),
+    ('hold', 'list', [], "A footprint's pads held at a temperature, REF=C (repeatable): bolted to a cold plate or a "
+     "chassis; the heat that leaves through it is reported", 'Surroundings'),
+    ('transient', 'float', 0.0, "s: also the heating from cold over this long (the grid's; the board's heat "
+     "capacity, not the parts' bodies'): thermal-transient.json and .png", 'Solver'),
     ('method', 'str', 'grid', 'grid, mesh, or both (and their difference)', 'Solver'),
     ('size', 'float', None, 'mm: the grid pitch (0.5) or the mesh\'s longest edge (1)', 'Solver'),
 ]
@@ -72,17 +82,19 @@ def add_copper_loss(p, case, board):
 
 
 def part_fields(board):
-    """({ref: K/W}, {ref: C}) from the footprints' fields thermal.theta and thermal.tmax (as pdn.load gives a part's
-    current): what the design holds of its parts' thermal limits."""
+    """({ref: K/W}, {ref: C}, {ref: K/W}) from the footprints' fields thermal.theta, thermal.tmax and thermal.air (as
+    pdn.load gives a part's current): what the design holds of its parts' thermal limits and paths."""
     from ..pdn.rail import field_value
-    theta, tmax = {}, {}
+    theta, tmax, air = {}, {}, {}
     for fp in (board.get('prims') or {}).get('footprints', []):
-        t, m = field_value(fp, 'thermal.theta'), field_value(fp, 'thermal.tmax')
+        t, m, r = field_value(fp, 'thermal.theta'), field_value(fp, 'thermal.tmax'), field_value(fp, 'thermal.air')
         if t is not None:
             theta[fp['ref']] = t
         if m is not None:
             tmax[fp['ref']] = m
-    return theta, tmax
+        if r is not None:
+            air[fp['ref']] = r
+    return theta, tmax, air
 
 
 def _pairs(items, what, ap):
@@ -142,12 +154,28 @@ def main(argv=None):
         board = load_board(board_file)
     except (OSError, RuntimeError, ValueError) as e:
         ap.error(str(e))
-    theta, tmax = part_fields(board)                                # the footprints' own, the options over them
+    theta, tmax, air = part_fields(board)                           # the footprints' own, the options over them
     theta.update(_pairs(a.theta, '--theta', ap))
     tmax.update(_pairs(a.tmax, '--tmax', ap))
-    p = Problem.of(board, losses, film=(a.film if a.film_bottom is None else a.film_bottom, a.film),
-                   ambient=a.ambient, theta=theta, edge_film=a.film_edge)
+    air.update(_pairs(a.air, '--air', ap))
+    film = (a.film if a.film_bottom is None else a.film_bottom, a.film)
+    if a.air_speed:                                                 # moving air: both faces' from it
+        from .problem import forced_film
+        from shapely.geometry import shape
+        length = a.air_length
+        if not length:
+            x0, y0, x1, y1 = shape(board['outline']).bounds if board.get('outline') else (0, 0, 100, 100)
+            length = max(x1 - x0, y1 - y0)
+        try:
+            film = tuple(forced_film(a.air_speed, length, still=f) for f in film)
+        except ValueError as e:
+            ap.error(str(e))
+    p = Problem.of(board, losses, film=film, ambient=a.ambient, theta=theta, edge_film=a.film_edge)
     p.tmax = tmax
+    p.air = {k: v for k, v in air.items() if v > 0}
+    held = _pairs(a.hold, '--hold', ap)
+    if held:
+        p.hold(board, held)
     p.notes += left
     if case is not None:
         add_copper_loss(p, case, board)
@@ -159,7 +187,12 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     from .picture import picture, compare, difference
     methods = ('grid', 'mesh') if a.method == 'both' else (a.method,)
-    res = {m: solve(p, m, a.size if len(methods) == 1 else None) for m in methods}
+    if a.transient < 0:
+        ap.error('--transient: seconds, positive')
+    res = {m: solve(p, m, a.size if len(methods) == 1 else None,
+                    **(dict(transient=a.transient) if a.transient and m == 'grid' else {})) for m in methods}
+    if a.transient and 'grid' not in res:
+        p.notes.append('--transient is the grid method\'s: none was worked out on the mesh')
     summary = {m: dict(r.summary(), board=str(Path(board_file).resolve()), circuit=str(a.circuit or ''),
                        case=case_name, figure=f'thermal-{m}.png' if len(res) > 1 else 'thermal.png')
                for m, r in res.items()}
@@ -172,13 +205,32 @@ def main(argv=None):
             arrays.update(grid_origin=np.array([r.x0, r.y0]), grid_pitch=np.array(r.size))
         picture(r, out / (f'thermal-{m}.png' if len(res) > 1 else 'thermal.png'))
     first = res[methods[0]]
+    extra = first.extra or {}
     print(f"{p.watts:.3f} W into the board, {first.out_W:.3f} W out through the films ({first.edge_W:.3f} W of it "
-          f"through the edges); ambient {p.ambient:g} C")
+          f"through the edges)" + (f", {sum(extra['air_W'].values()):.3f} W from the parts to the air" if extra.get('air_W') else '')
+          + (f", {sum(extra['held_W'].values()):.3f} W out through the held footprints" if extra.get('held_W') else '')
+          + f"; ambient {p.ambient:g} C")
     print(f"{'part':8s} {'W':>7s} " + ' '.join(f"{m + ' C':>9s}" for m in methods))
     for ref in sorted(first.parts, key=lambda k: -first.parts[k]['part_C']):
         print(f"{ref:8s} {first.parts[ref]['power_W']:7.3f} " +
               ' '.join(f"{res[m].parts[ref]['part_C']:9.1f}" for m in methods))
     print(f"{'hottest copper':16s} " + ' '.join(f"{res[m].hottest:9.1f}" for m in methods))
+    for name, d in first.parts.items():
+        if 'to_air_W' in d:
+            print(f"{name}: {d['to_air_W']:.3f} W of its {d['power_W']:.3f} W to the air directly ({d['air_K_W']:g} K/W)")
+    for name, w in ((first.extra or {}).get('held_W') or {}).items():
+        print(f"{name}: held, {w:.3f} W out through it")
+    if 'grid' in res and res['grid'].transient:
+        tr = res['grid'].transient
+        (out / 'thermal-transient.json').write_text(json.dumps(tr, indent=1))
+        from .picture import heating_picture
+        heating_picture(tr, out / 'thermal-transient.png')
+        slow = sorted(tr['to_63_s'].items(), key=lambda kv: -kv[1])[:3]
+        print(f"heating from cold: " + ', '.join(f"{k} 63 % in {v:.0f} s" for k, v in slow)
+              + f" (thermal-transient.json)")
+        for m in summary:
+            if m == 'grid':
+                summary[m]['transient'] = dict(file='thermal-transient.json', seconds=a.transient, to_63_s=tr['to_63_s'])
     if len(res) == 2:
         g, m = res['grid'], res['mesh']
         d = [difference(g, m, l) for l in range(len(p.layers))]

@@ -99,3 +99,22 @@ def compare(grid, mesh, path, dpi=150):
     fig.colorbar(im, ax=axs[2], shrink=0.85, label='K')
     fig.savefig(path, dpi=dpi)
     plt.close(fig)
+
+
+def heating_picture(transient, path, most=8):
+    """The heating from cold (grid.heating's): the hottest copper and the `most` hottest parts against time."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    t = np.asarray(transient['times_s'])
+    fig, ax = plt.subplots(figsize=(7, 4), constrained_layout=True)
+    ax.plot(t[1:], transient['hottest_C'][1:], 'k--', lw=1.2, label='hottest copper')
+    top = sorted(transient['parts'], key=lambda k: -transient['parts'][k][-1])[:most]
+    for name in top:
+        ax.plot(t[1:], transient['parts'][name][1:], lw=1.2, label=name)
+    ax.set_xscale('log')
+    ax.set(xlabel='time from cold, s', ylabel='C', title='Heating from cold')
+    ax.grid(alpha=0.3, which='both')
+    ax.legend(fontsize=8, ncol=2)
+    fig.savefig(path, dpi=110)
+    plt.close(fig)

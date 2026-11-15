@@ -138,9 +138,52 @@ def edge_lengths(problem, x0, y0, pitch, live, piece):
     return out
 
 
-def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
+STEPS = 40          # backward-Euler steps in each decade of a transient (2 % late at the time constant)
+
+
+def heating(A, q, cap, seconds, parts_at, steady, board_unknowns, log=print):
+    """The board heating from cold (every unknown at the ambient) over `seconds`: backward Euler, STEPS equal steps
+    in each decade from seconds / 1000, the system factored once a decade. cap: J/K at each unknown (0: none, a
+    part's own node). parts_at(x) -> part_temperatures' dict for the rise x; steady: the steady one; the board's
+    copper is the first board_unknowns of x. Returns dict(times_s, parts={part: [C]}, hottest_rise_K=[K],
+    to_63_s={part: s: when it is 63 % of the way to its steady temperature}, seconds)."""
+    from scipy.sparse import diags
+    from .problem import factor_spd
+    t0 = time.perf_counter()
+    x = np.zeros(A.shape[0])
+    times, hottest = [0.0], [0.0]
+    parts = {k: [d['board_C']] for k, d in parts_at(x).items()}        # (cold, before the power)
+    t, first = 0.0, seconds / 1000
+    for k in range(4):
+        end = first * 10 ** k
+        dt = (end - t) / STEPS
+        lu = factor_spd(diags(cap / dt) + A)
+        for _ in range(STEPS):
+            x = lu.solve(cap / dt * x + q)
+            t += dt
+            times.append(t)
+            for name, d in parts_at(x).items():
+                parts[name].append(d['part_C'])
+            hottest.append(float(x[:board_unknowns].max()))
+    rise0 = {name: c[0] for name, c in parts.items()}
+    to63 = {}
+    for name, c in parts.items():
+        if steady[name]['part_C'] - rise0[name] < 0.05:              # (held, or no rise to time)
+            continue
+        target = rise0[name] + 0.632 * (steady[name]['part_C'] - rise0[name])
+        hit = next((i for i, v in enumerate(c) if v >= target), None)
+        if hit:
+            a, b = c[hit - 1], c[hit]
+            to63[name] = float(times[hit - 1] + (times[hit] - times[hit - 1]) * (target - a) / max(b - a, 1e-12))
+    log(f"thermal transient: {len(times) - 1} steps to {seconds:g} s, {time.perf_counter() - t0:.2f} s")
+    return dict(times_s=times, parts=parts, hottest_rise_K=hottest, to_63_s=to63,
+                seconds=time.perf_counter() - t0)
+
+
+def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print, transient=None):
     """pitch: the cells, mm. sub: fine raster cells across one cell (default: enough for `detail` mm, the narrowest
-    gap or trace the conductances still see; fewer on a board too large for that)."""
+    gap or trace the conductances still see; fewer on a board too large for that). transient: seconds, also the
+    heating from cold over that long (heating; the board's own heat capacity, the parts' bodies' left out)."""
     p = problem
     t0 = time.perf_counter()
     if pitch <= 0 or (sub is not None and sub < 1) or detail <= 0:
@@ -166,10 +209,13 @@ def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
     def link(a, b, g):
         rows.append(np.r_[a, b, a, b]); cols.append(np.r_[a, b, b, a]); vals.append(np.r_[g, g, -g, -g])
     diag = np.zeros(n)
+    cu_area = np.zeros((L, ny, nx))                                 # m2 of copper in each cell (its heat capacity)
     for l, lay in enumerate(p.layers):
         g = lay.laminate * board
         if lay.copper is not None:
-            g = g + p.k_cu * lay.t * 1e-3 * raster(lay.copper, x0, y0, h, nx * sub, ny * sub) * board
+            rc = raster(lay.copper, x0, y0, h, nx * sub, ny * sub) * board
+            g = g + p.k_cu * lay.t * 1e-3 * rc
+            cu_area[l] = rc.reshape(ny, sub, nx, sub).mean(axis=(1, 3)) * pitch ** 2 * 1e-6
         gx, gy = _between(g, sub, 1), _between(g, sub, 0)
         a, b = idx[l][:, :-1], idx[l][:, 1:]
         m = (a >= 0) & (b >= 0) & (gx > 0)
@@ -208,17 +254,40 @@ def solve(problem, pitch=0.5, sub=None, detail=DETAIL, log=print):
         covers.append((idx[s.layer, r, c], f))
     A = coo_matrix((np.concatenate(vals + [diag]), (np.concatenate(rows + [np.arange(n)]),
                                                     np.concatenate(cols + [np.arange(n)]))), shape=(n, n)).tocsc()
+    by = {id(s): cv for s, cv in zip(p.sources, covers)}
+    read = None
+    if p.air or p.held:                                             # the parts' own paths to the air, held pads
+
+        def spot(layer, geom):
+            r, c, f = cover(geom, x0, y0, pitch, sub, nx, ny)
+            ok = live[r, c]
+            return (idx[layer, r[ok], c[ok]], f[ok] / f[ok].sum()) if ok.any() else (np.zeros(0, int), np.zeros(0))
+        A, q, read = p.extend(A, q, by, spot)
     t1 = time.perf_counter()
-    rise = solve_spd(A, q)
+    whole = solve_spd(A, q)
+    rise = whole[:n]
     t2 = time.perf_counter()
     T = np.full((L, ny, nx), np.nan)
     for l in range(L):
         T[l][live] = p.ambient + rise[idx[l][live]]
-    by = {id(s): cv for s, cv in zip(p.sources, covers)}
+    extra = read(whole) if read else None
     parts = part_temperatures(p, lambda s: p.ambient + (float(rise[by[id(s)][0]] @ by[id(s)][1])
-                                                        if by[id(s)] is not None else 0.0))
+                                                        if by[id(s)] is not None else 0.0), extra)
     res = Result('grid', p, T, parts, n, dict(build=t1 - t0, solve=t2 - t1), float(film @ rise), pitch, x0=x0, y0=y0,
-                 edge_W=float(edge @ rise))
+                 edge_W=float(edge @ rise), extra=extra)
+    if transient:
+        from .problem import RHO_C_CU, RHO_C_FR4
+        cap = np.zeros(A.shape[0])                                  # J/K: the laminate's share and the copper
+        for l, lay in enumerate(p.layers):
+            cap[idx[l][live]] = area[live] * lay.edge * 1e-3 * RHO_C_FR4 + cu_area[l][live] * lay.t * 1e-3 * RHO_C_CU
+
+        def parts_at(x):
+            r = x[:n]
+            return part_temperatures(p, lambda s: p.ambient + (float(r[by[id(s)][0]] @ by[id(s)][1])
+                                                               if by[id(s)] is not None else 0.0),
+                                     read(x) if read else None)
+        res.transient = heating(A, q, cap, float(transient), parts_at, parts, n, log)
+        res.transient['hottest_C'] = [p.ambient + v for v in res.transient.pop('hottest_rise_K')]
     log(f"thermal grid: {nx} x {ny} cells of {pitch:g} mm on {L} layer(s), {n:,} unknowns, "
         f"{t2 - t0:.2f} s; hottest {res.hottest:.1f} C")
     return res

@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **Thermal surroundings beyond one film (R-E13).** `--air REF=K/W` (or the footprint's `thermal.air`) gives a
+  part its own path to the air, a body's or a heatsink's, so its heat splits between that and its pads through
+  its theta; `--hold REF=C` holds a footprint's pads at a temperature (a cold plate, a chassis screw) and reports
+  the heat through it; `--air-speed` sets both faces' film from a flat plate's forced convection; `--transient s`
+  gives the heating from cold on the grid (the board's heat capacity, backward Euler), each part's curve and its
+  time to 63 %. Checked against the exact answers of a plate heated all over, on both solvers, and a sheet's time
+  constant.
 - **Electro-thermal runs (R-E9).** A part's `temperature_C` moves its resistances from their 25 °C values (copper's
   for a winding's, 0.6 %/K for a MOSFET's R_DS(on) and −2 mV/K for a diode's Vf unless the part gives its own) and
   `board.temperature_C` the board copper's (`pcbqs.circuit.temperature`). `pcbqs.circuit --warm N` runs the
