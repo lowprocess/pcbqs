@@ -40,7 +40,7 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
      "and radiation, the film's still air joined), in place of film and film-bottom", 'Air'),
     ('air_length', 'float', None, "mm of board along the moving air (default: the outline's longer side)", 'Air'),
     ('hold', 'list', [], "A footprint's pads held at a temperature, REF=C (repeatable): bolted to a cold plate or a "
-     "chassis; the heat that leaves through it is reported", 'Surroundings'),
+     "chassis; the heat that leaves through it is reported", 'Parts'),
     ('transient', 'float', 0.0, "s: also the heating from cold over this long (the grid's; the board's heat "
      "capacity, not the parts' bodies'): thermal-transient.json and .png", 'Solver'),
     ('method', 'str', 'grid', 'grid, mesh, or both (and their difference)', 'Solver'),
