@@ -205,6 +205,14 @@ class NearField(_Tool):
         from .mqs_cli import OPTIONS
         return OPTIONS
 
+    def figures(self, folder):
+        """The input loop's copper inductance at each harmonic, nH: the figures another engine of the loop gives too
+        (kicad2ems-fem's palace_loop, R-E22), so a study lays them side by side."""
+        r = self._read(folder)
+        f, L = r.get('frequencies_Hz') or [], r.get('copper_L_H') or []
+        return [dict(name=f"loop L at {fi / 1e6:g} MHz", value=li * 1e9, unit='nH') for fi, li in zip(f, L)
+                if isinstance(li, (int, float))]
+
     def tag(self, values):
         return str(values.get('converter') or 'auto').strip()
 

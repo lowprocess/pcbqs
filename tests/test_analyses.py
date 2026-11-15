@@ -406,3 +406,14 @@ def test_a_study_s_rails_are_a_run_each(tmp_path):
     assert (p['rail'], list(p['loads']), 'pdn' in p) == ('P', ['U1'], False)          # the drop alone was asked
     assert (pf['rail'], list(pf['loads']), pf['source']) == ('PF', ['U2'], ['FB1'])
     assert 0 < pf['loads']['U2']['drop'] < p['loads']['U1']['drop']
+
+
+def test_the_near_fields_loop_inductance_is_a_figure(tmp_path):
+    """R-E22: the input loop's copper L at each harmonic, named as kicad2ems-fem's palace_loop names its own, so a
+    study lays the two engines' answers side by side."""
+    import json
+    (tmp_path / 'mqs.json').write_text(json.dumps(dict(format=1, frequencies_Hz=[6e5, 1.2e7],
+                                                       copper_L_H=[3.74e-10, 2.78e-10])))
+    figs = {f['name']: (f['value'], f['unit']) for f in A.NearField().figures(str(tmp_path))}
+    assert figs == {'loop L at 0.6 MHz': (pytest.approx(0.374), 'nH'), 'loop L at 12 MHz': (pytest.approx(0.278), 'nH')}
+    assert A.NearField().figures(str(tmp_path / 'none')) == []
