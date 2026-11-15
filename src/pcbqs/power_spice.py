@@ -46,6 +46,7 @@ def _series_modes(R, L):
 
 
 # A switch's capacitances when its model gives none (a vdmos, the default): a generic power MOSFET's
+RON_OHM = 0.008          # a switch's on-resistance where its model gives none
 VDMOS_C = dict(Cgs_F=1e-9, Cgd_F=50e-12, Cds_F=500e-12)
 
 def solver_options(options=None):
@@ -255,7 +256,7 @@ class Circuit:
                     d = nxt
                 else:
                     s = nxt
-        ron = model.get('Ron_ohm', 0.008 if kind != 'ideal' else 1e-6)
+        ron = model.get('Ron_ohm', RON_OHM if kind != 'ideal' else 1e-6)
         roff = model.get('Roff_ohm', 1e10)
         _positive(ron, ref + '.Ron')
         _positive(roff, ref + '.Roff')

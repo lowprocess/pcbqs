@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **Electro-thermal runs (R-E9).** A part's `temperature_C` moves its resistances from their 25 °C values (copper's
+  for a winding's, 0.6 %/K for a MOSFET's R_DS(on) and −2 mV/K for a diode's Vf unless the part gives its own) and
+  `board.temperature_C` the board copper's (`pcbqs.circuit.temperature`). `pcbqs.circuit --warm N` runs the
+  thermal model on the run's losses, sets each part and the copper to what it gives them, case by case, and runs
+  again until no part moves by more than 1 K: the buck example settles in four runs (its diode 77 °C at 25 °C's
+  losses, 71.5 °C at its own), the boost on its copper in three, the copper's loss 6.7 % up at 43.5 °C. A
+  front end's string option that starts with a dash is passed joined to its flag.
 - **An inductor's AC and core losses (R-E10).** Two fields of an inductor, worked out from the reported run's last
   period (`pcbqs.circuit.windings`): `AC_R_ohm`, its resistance against frequency, gives each harmonic of its
   current the resistance above its DCR; `core_loss`, a Steinmetz fit with the core's turns, area and volume, gives

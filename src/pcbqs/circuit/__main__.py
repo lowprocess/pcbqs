@@ -14,6 +14,10 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
     ('board', 'str', None, 'the board (.kicad_pcb), when the model names none or another', 'Board'),
     ('set', 'list', [], "PATH=VALUE: a value of the model set before running, e.g. drives.pwm.duty=0.4 "
      "(repeatable)", 'Model'),
+    ('warm', 'int', 0, "electro-thermal runs: the parts and the copper set to the temperatures the board's thermal "
+     "model gives the run's losses, and run again, up to this many times until they settle (needs the board)", 'Board'),
+    ('thermal_args', 'str', '', "the thermal model's options for --warm, as python -m pcbqs.thermal takes them "
+     "(e.g. --thermal-args='--ambient 40 --film 12')", 'Board'),
     ('jobs', 'int', 1, 'sweep points run at once', 'Run'),
 ]
 
@@ -76,7 +80,15 @@ def main(argv=None):
         if a.board:
             model.setdefault('board', {})['file'] = a.board
         M.validate(model)
-        summary = run(model, a.out, jobs=a.jobs, log=lambda s: print(s, flush=True), copper=a.copper, fields=a.fields)
+        if a.warm < 0:
+            ap.error('--warm must be 0 or more')
+        say = lambda s: print(s, flush=True)                        # noqa: E731
+        if a.warm:
+            from . import warm
+            summary = warm.run(model, a.out, a.warm, log=say, thermal_args=a.thermal_args, jobs=a.jobs,
+                               copper=a.copper, fields=a.fields)
+        else:
+            summary = run(model, a.out, jobs=a.jobs, log=say, copper=a.copper, fields=a.fields)
     except (M.ModelError, BoardError, ValueError) as e:
         print(f"circuit: error: {e}", file=sys.stderr)
         return 2

@@ -35,6 +35,8 @@ entering it, so its voltage times its current is the power it absorbs):
                 in series
     load        resistance_ohm, or power_W (constant power), or current_A (constant current); below min_V it is
                 a resistor, so it starts
+Any part: temperature_C (25 unless given) moves its resistances (and a diode's Vf) from their values at 25 C, as
+temperature.py has it; board.temperature_C the board copper's. pcbqs.circuit --warm sets them from the thermal model.
 A path names a number: 'parameters.fsw', 'drives.pwm.duty', '<ref>.<field>' or 'parts.<ref>.<field>',
 '<ref>.model.<field>', 'couplings.0.k' (or 'couplings.L1+L2.k': the coupling of those two), 'analysis.cycles'.
 """
@@ -350,10 +352,11 @@ def resolve(model, point=None):
                 t[key] = number(t[key], names, f"targets[{i}].{key}")
         t['range'] = [number(v, names, f"targets[{i}].range") for v in t['range']]
         _need(t['range'][0] < t['range'][1], f"targets[{i}]: range must be [low, high], low below high")
-    from . import windings                                          # an inductor's AC_R_ohm and core_loss
+    from . import temperature, windings
     for p in m.get('parts', []):
+        temperature.apply(p)                                        # its values at its temperature_C
         if p.get('type') == 'inductor':
-            windings.check(p)
+            windings.check(p)                                       # an inductor's AC_R_ohm and core_loss
     return m
 
 

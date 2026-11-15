@@ -139,8 +139,11 @@ def test_the_circuit_command(tmp_path):
         c.command(dict(model=str(model)), None, 'out')
     assert c.tag(dict(model=str(model))) == 'm' and c.env
     opts = {o['key']: o for o in c.options()}                        # pcbqs.circuit's own table
-    assert list(opts) == ['model', 'copper', 'fields', 'set', 'jobs'] and opts['jobs']['default'] == 4
+    assert list(opts) == ['model', 'copper', 'fields', 'warm', 'thermal_args', 'set', 'jobs'] and opts['jobs']['default'] == 4
     assert 'board' not in opts
+    model.write_text(json.dumps(dict(format=2)))                    # --warm: the board for its thermal model; a
+    line = c.command(dict(model=str(model), warm='2', thermal_args='--ambient 40'), str(b), 'out')   # value with a
+    assert '--warm' in line and '--thermal-args=--ambient 40' in line and line[-2:] == ['--board', str(b)]  # dash: joined
 
 # ---- the circuit examples as configs -----------------------------------------------------------------------
 def test_the_examples_are_configs_beside_their_models(tmp_path):

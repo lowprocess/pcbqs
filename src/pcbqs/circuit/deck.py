@@ -231,7 +231,11 @@ def build(model, state=None, copper=None):
         if before is None and state is not None:                    # the first run on the board: each pad's copper
             before = dict(ports=C.port_currents(model, copper, state.get('__currents__', {})))    # carries its part's current
         before = before or {}
-        deck.copper(copper['model'], C.port_nodes(model, copper), before.get('ports'), before.get('modes'))
+        warm = (model.get('board') or {}).get('temperature_C')       # the copper at its temperature (R-E9)
+        if warm is not None:
+            from .temperature import copper_model
+        deck.copper(copper['model'] if warm is None else copper_model(copper['model'], warm),
+                    C.port_nodes(model, copper), before.get('ports'), before.get('modes'))
         deck.ports = copper['ports']
     for name, pr in model.get('probes', {}).items():
         if 'voltage' in pr:

@@ -39,8 +39,8 @@ def argv(module, options, values, board, out):
                 out_argv += [o['flag'], item]
         else:
             s = '' if v is None else str(v).strip()
-            if s and s != str(o['default']):
-                out_argv += [o['flag'], s]
+            if s and s != str(o['default']):                     # (a value that starts with a dash is joined
+                out_argv += [f"{o['flag']}={s}"] if s.startswith('-') else [o['flag'], s]    # to its flag)
     return out_argv
 
 
@@ -325,7 +325,11 @@ class Circuit(_Tool):
         opts = [dict(o, default=None) if o['key'] == 'jobs' else o for o in self.options() if o['key'] != 'model']
         cmd = argv('pcbqs.circuit', opts, {k: v for k, v in values.items() if k != 'model'}, model, out)
         cmd.insert(1, '-u')
-        if values['copper']:
+        try:
+            warm = int(str(values.get('warm') or 0).strip() or 0)
+        except ValueError:
+            raise ValueError(f"warm: a number of runs, not {values.get('warm')!r}") from None
+        if values['copper'] or warm > 0:                        # (the thermal model of --warm is on the board)
             cmd += ['--board', self._board(board)]
         return cmd
 

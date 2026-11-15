@@ -148,6 +148,26 @@ These losses are the part's for the thermal model (on its footprint) and the rep
 the case's `loss_W`. The efficiency counts them as drawn from the source on top of what the run drew: the run's
 currents are as they were without them, which holds while they are small against what the converter handles.
 
+## Parts at their temperatures
+
+A part's `temperature_C` (25 unless given) moves what it loses by, from its values at 25 °C (a datasheet's):
+an inductor's `DCR_ohm` and `AC_R_ohm` by copper's 0.39 %/K (or its `tempco_per_K`); a switch's `model.Ron_ohm`
+by `model.Ron_tempco_per_K`, 0.6 %/K unless given (a silicon MOSFET's R_DS(on), 1.6 times at 125 °C; a vendor
+subcircuit and an ideal switch are not moved); a diode's `model.Vf_V` by `model.Vf_tempco_V_per_K`, −2 mV/K unless
+given; a resistor's `value` by its `tempco_per_K` and a capacitor's `ESR_ohm` by its `ESR_tempco_per_K`, neither
+unless given. `board.temperature_C` puts the board copper's resistances at that temperature. The values at 25 °C
+are kept in each part's `nominal` in the case's `model.json`. A sweep can set them like any value
+(`"sweep": {"Q1.temperature_C": [25, 100]}`).
+
+`--warm N` sets them from the board's own thermal model: the run's losses go to `pcbqs.thermal` (each case its own
+map, `--case all`), each part is put at the temperature it reaches there (its pads', or its junction's where its
+footprint gives `thermal.theta`) and the copper at its mean (under the copper's own loss, with `--fields`), and
+the circuit runs again, up to N times, until no part moves by more than 1 K. A diode's loss falls as it warms and
+a MOSFET's and a winding's rise, so a few runs settle (the buck example: 77, 70, 71.6, 71.5 °C at its diode).
+`--thermal-args='--ambient 40 --film 12'` gives the thermal model its options. `circuit.json` has `warm` (each
+run's largest move, its hottest part, whether it settled) and each case its `temperatures_C`; `<out>/thermal` is
+the thermal model of the last run's losses, its tables in `thermal.log`.
+
 ## What to give the parts
 
 A switch or a diode with no capacitance, cutting off the current of an inductance that has nowhere else to go,

@@ -477,14 +477,15 @@ def fingerprint(model, copper=None):
     h = hashlib.sha256(json.dumps({k: v for k, v in model.items() if k not in ('name', 'description', 'sweep', 'schematic', 'board')},
                                   sort_keys=True).encode())
     h.update((copper or {}).get('fingerprint', 'no copper').encode())
+    h.update(json.dumps((model.get('board') or {}).get('temperature_C')).encode())     # (the board is left out above)
     for part in model.get('parts', []):                             # a vendor library's contents (an edited .lib had
         lib = (part.get('model') or {}).get('library')              # left a point "unchanged")
         if lib and Path(lib).expanduser().is_file():
             h.update(Path(lib).expanduser().read_bytes())
     h.update(ngspice_version().encode())
     from .. import power_spice
-    from . import deck as D, supply, windings
-    for module in (power_spice, D, M, supply, windings, __import__(__name__, fromlist=['x'])):
+    from . import deck as D, supply, temperature, windings
+    for module in (power_spice, D, M, supply, temperature, windings, __import__(__name__, fromlist=['x'])):
         h.update(Path(module.__file__).read_bytes())
     return h.hexdigest()
 
@@ -689,12 +690,13 @@ def run_case(model, point, out, log=print, copper=None):
     return row
 
 
-def run(model, out, jobs=1, log=print, copper=False, fields=False):
+def run(model, out, jobs=1, log=print, copper=False, fields=False, temperatures=None):
     """Every point of the model's sweep, `jobs` at a time; <out>/circuit.json has them all:
     {format, name, complete, cases: [run_case's rows], failed: [{sweep, error}]}. A point that fails is reported
     and the others still run. copper: with the model's board between the parts' pads (circuit/copper.py),
     extracted once for all the points. fields: with copper, and the H and E fields over the board for every
-    point (circuit/fields.py)."""
+    point (circuit/fields.py). temperatures: {case name: {'parts': {ref: C}, 'board': C}}, each case's parts at
+    those (circuit/temperature.py; --warm's)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     M.validate(model)
     out = Path(out).resolve()
@@ -719,7 +721,9 @@ def run(model, out, jobs=1, log=print, copper=False, fields=False):
 
     try:
         with ThreadPoolExecutor(max_workers=max(1, min(int(jobs), len(points)))) as pool:
-            pending = {pool.submit(run_case, model, p, f, log, copper or None): i for i, (p, f) in enumerate(zip(points, folders))}
+            from .temperature import at
+            pending = {pool.submit(run_case, at(model, (temperatures or {}).get(M.case_name(p))), p, f, log,
+                                   copper or None): i for i, (p, f) in enumerate(zip(points, folders))}
             try:
                 for future in as_completed(pending):
                     i = pending[future]
