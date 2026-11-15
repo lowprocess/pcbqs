@@ -446,7 +446,7 @@ def simulate(model, state, cycles, folder, a, reltol, log, label='', final=False
             if (folder / 'ngspice.log').exists():
                 shutil.copy2(folder / 'ngspice.log', folder / f"ngspice-failed-{k}.log")
             log(f"{label}ngspice did not converge; retrying " + ('with the other integration method' if k == 0 else 'from the DC start'))
-    (folder / 'transient.dat').unlink(missing_ok=True)              # reproducible from circuit.cir
+    (folder / 'transient.raw').unlink(missing_ok=True)              # reproducible from circuit.cir
     result['_measures'].update(sampled_measures(deck, result, period))
     if deck.ports:                                                  # the copper's currents, harmonic by harmonic, from
         from ..power_waveforms import save_port_spectrum            # ngspice's own steps (for the fields)

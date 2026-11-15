@@ -10,6 +10,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **A run's waveforms in binary (R-D2).** ngspice writes them as its binary raw file, read into numpy as it is, in
+  place of text (98 MB a wpthb run, 0.5 s of `loadtxt` each): the wpthb case 24.9 s to 21.4 s. The text had kept
+  about six digits, so a ripple sampled off a 24 V bus moves (0.1017 to 0.1012 V) as rounding no longer does. A
+  failed ngspice run's message gives its log's error lines.
 - **Regressions that run anywhere (R-C10).** The buck example's DC drop and PDN, its near field and the boost
   example on its own copper are stored answers too (tests/test_regression_boards.py), on the circuit examples'
   boards in the repository: CI checks real-board answers now, where the CM5 and wpthb cases skip. The edge-ring

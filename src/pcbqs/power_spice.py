@@ -478,7 +478,8 @@ class Circuit:
             *measures,
             *adaptive_export,
             'linearize ' + ' '.join(output_names),
-            'wrdata transient.dat ' + ' '.join(output_names),
+            'set filetype=binary',                                  # binary, read into numpy as it is (the text
+            'write transient.raw ' + ' '.join(output_names),        # wrdata wrote was 98 MB a wpthb run and 0.5 s
             'rusage all',
             'quit',
             '.endc',
@@ -515,13 +516,21 @@ class Circuit:
             child.stderr.close()
         solved = time.perf_counter()
         (out / 'ngspice.log').write_text(stdout + '\n' + stderr)
-        data = out / 'transient.dat'
+        data = out / 'transient.raw'
         if child.returncode or not data.is_file() or 'simulation(s) aborted' in stderr:
             said = [l.strip() for l in (stdout + '\n' + stderr).splitlines()          # why, in its own words
                     if any(w in l.lower() for w in ('error', 'timestep too small', 'singular', 'abort', 'fatal'))]
             raise RuntimeError('ngspice transient failed; see ' + str(out / 'ngspice.log')
                                + (': ' + ' | '.join(dict.fromkeys(said))[-600:] if said else ''))
-        table = np.loadtxt(data, skiprows=1)
+        from .power_waveforms import read_raw
+        try:
+            cols = list(read_raw(data).values())                      # time, then the vectors as asked (named
+            if len(cols) != len(output_names) + 1:                   # by their kind: i(out0), v(out1), out4)
+                raise ValueError(f'{len(cols) - 1} vectors for {len(output_names)}')
+            table = np.column_stack(cols)
+        except (KeyError, ValueError) as e:
+            raise RuntimeError(f'invalid transient data ({e})') from None
+        data.unlink(missing_ok=True)                                # (transient.npz has it)
         if (
             table.ndim != 2
             or table.shape[1] != len(labels) + 1
