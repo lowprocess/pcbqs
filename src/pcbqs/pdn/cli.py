@@ -63,6 +63,9 @@ OPTIONS = [
      "little); loads given --load-target keep theirs", G_PDN),
     ('ripple', 'float', 0.05, "the allowed ripple, a fraction of the voltage", G_PDN),
     ('step', 'float', 0.0, "the load step, A (0: half the loads' current)", G_PDN),
+    ('rise', 'float', 1e-9, "the load step's rise time, s: the droop in time at each load (droop.png, pdn.json's "
+     "droop)", G_PDN),
+    ('touchstone', 'bool', False, "also the loads' impedance matrix, self and transfer, as Touchstone (pdn.zNp)", G_PDN),
     ('no_pdn', 'bool', False, "the DC drop only", G_PDN),
 ]
 
@@ -241,6 +244,22 @@ def run(a):
                                          defaulted=bool((i['el'] or {}).get('defaulted')))
                                  for n, i in pdn.parts.items()},
                           vertices=pdn.nv)
+        from .droop import summary as droop_of                  # each load's step in time (R-E14), its
+        low = np.logspace(1, np.log10(a.fmin), 9)[:-1] if a.fmin > 20 else np.zeros(0)    # impedance down to 10 Hz:
+        Zl = pdn.sweep(low, observe=obs)[0] if len(low) else {r: np.zeros(0) for r in obs}    # its DC path and the
+        fd = np.r_[low, f]                                              # regulator's L, not a resonance's
+        out['pdn']['droop'] = {r: droop_of(fd, np.r_[Zl[r], Z[r]], step, a.rise) for r in obs}
+        if obs:
+            figs.append(droop_figure(out['pdn']['droop'], a.volts * a.ripple, a.out))
+            worst = max(obs, key=lambda r: abs(out['pdn']['droop'][r]['peak_V']))
+            d = out['pdn']['droop'][worst]
+            say(f"droop of a {step:g} A step rising in {a.rise * 1e9:g} ns: {d['peak_V'] * 1e3:.3g} mV at {worst}, "
+                f"{d['at_s'] * 1e6:.3g} us after it ({a.volts * a.ripple * 1e3:.3g} mV allowed)")
+        if a.touchstone and obs:                                # (R-E14: the port matrix for a circuit or PI tool)
+            zt = pdn.transfer(f, obs, obs)
+            name = os.path.join(a.out, f'pdn.z{len(obs)}p')
+            write_z(name, f, np.array([[zt[(m, k)] for k in obs] for m in obs]).transpose(2, 0, 1), obs)
+            out['pdn']['touchstone'] = os.path.basename(name)
         if spectra:
             out['pdn']['ripple'] = ripple(pdn, spectra, obs, a.volts * a.ripple)
             worst = max(out['pdn']['ripple']['loads'].items(), key=lambda kv: kv[1]['pp_V'], default=None)
@@ -266,6 +285,46 @@ def run(a):
         json.dump(out, fh, indent=1)
     say(f'wrote {os.path.join(a.out, "pdn.json")}')
     return out
+
+
+def write_z(path, f, Z, names):
+    """Touchstone v1 of the impedance matrices Z (nf, n, n) at f Hz: '# HZ Z RI R 1', its rows as Touchstone has
+    them (a 2-port 11 21 12 22, more ports row by row, four pairs a line)."""
+    n = Z.shape[1]
+    with open(path, 'w') as fh:
+        fh.write(f"! pcbqs.pdn: the rail's impedance between the loads' connections to it ({', '.join(names)})\n")
+        fh.write("# HZ Z RI R 1\n")
+        for i, fi in enumerate(f):
+            order = [(0, 0), (1, 0), (0, 1), (1, 1)] if n == 2 else [(r, c) for r in range(n) for c in range(n)]
+            vals = [f"{Z[i, r, c].real:.9g} {Z[i, r, c].imag:.9g}" for r, c in order]
+            if n <= 2:
+                fh.write(f"{fi:.9g} " + ' '.join(vals) + "\n")
+            else:
+                for r in range(n):
+                    row = vals[r * n:(r + 1) * n]
+                    for k in range(0, n, 4):
+                        fh.write((f"{fi:.9g} " if r == 0 and k == 0 else '    ') + ' '.join(row[k:k + 4]) + "\n")
+
+
+def droop_figure(droop, allowed, out):
+    """droop.png: each load's drop against time from the step, the allowed ripple marked."""
+    plt = _plt()
+    fig, ax = plt.subplots(figsize=(7, 3.8), constrained_layout=True)
+    for r, d in droop.items():
+        t = np.asarray(d['t_s'])
+        ax.plot(t[1:] * 1e6, np.asarray(d['v_V'])[1:] * 1e3, label=r, lw=1.3)
+    if allowed:
+        ax.axhline(allowed * 1e3, color='k', ls='--', lw=1, label='allowed')
+    ax.set_xscale('log')
+    any_ = next(iter(droop.values()))
+    ax.set(xlabel='time after the step, us', ylabel='drop, mV',
+           title=f"a {any_['step_A']:g} A step rising in {any_['rise_s'] * 1e9:g} ns")
+    ax.grid(alpha=0.3, which='both')
+    ax.legend(fontsize=8)
+    path = os.path.join(out, 'droop.png')
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+    return 'droop.png'
 
 
 def ripple(pdn, spectra, observe, allowed):

@@ -47,6 +47,12 @@ impedance seen by each load.
   the barrels) is in the impedance too (`mount_mohm` in pdn.json). A load on a plane
   island no source reaches gets no impedance, and the notes say so; a rail with no
   plane pair keeps its DC drop and says why it has no impedance.
+- **Droop in time**: the load step (`--step`, rising in `--rise`, 1 ns) at each load from its
+  impedance (`droop.png`, pdn.json's `droop`: the peak, when, and where it settles, the DC
+  path's drop). The mounting's L di/dt is the edge's spike, a resonance rings after it: the
+  wpthb VIN rail's 0.67 A step gives 146 mV at the edge, 295 mV at 16.5 µs (L3 against the
+  VHB ceramics, 11 kHz) and settles at 24 mV. `--touchstone` writes the loads' impedance
+  matrix, self and transfer, as `pdn.zNp` for a circuit or PI tool.
 - Small rails: lower `--plane-min` (mm²). Input filters: `--through L3 --dcr L3=0.03`
   keeps the inductor's L and DCR. Bulk polymers/electrolytics: `--cap CA1=47e-6,0.02,1e-9`.
 - **Loads kept with the design.** A part's `pdn.load` field (a symbol field in KiCad, which

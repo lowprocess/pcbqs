@@ -381,3 +381,38 @@ def test_one_factorisation_gives_the_loaded_and_the_bare_impedance():
     Z, Z0 = pdn.z(f), pdn.z(f, bare=True)
     for n in ('U1', 'U2'):
         assert np.allclose(loaded[n], Z[n], rtol=1e-6) and np.allclose(bare[n], Z0[n], rtol=1e-9)
+
+
+def test_a_load_steps_droop_against_its_closed_forms():
+    """R-E14: the drop of a ramp step on a series R + L (R t / tr + L / tr during the edge, R after) and a parallel
+    R C (R (1 - exp(-t / RC)) for a fast edge), from the impedance's samples alone."""
+    from pcbqs.pdn.droop import droop
+    f = np.logspace(1, 10, 500)
+    w = 2 * np.pi * f
+    R, L, tr = 0.01, 1e-9, 2e-9
+    t = np.array([0.5e-9, 1.9e-9, 3e-9, 1e-6])
+    _, v = droop(f, R + 1j * w * L, 1.0, tr, t=t)
+    assert v == pytest.approx([R * 0.25 + L / tr, R * 0.95 + L / tr, R, R], rel=1e-6)
+    R, C = 0.05, 100e-6
+    t = np.array([1e-6, 5e-6, 20e-6, 100e-6])
+    _, v = droop(f, R / (1 + 1j * w * R * C), 2.0, 1e-12, t=t)
+    assert v == pytest.approx(2 * R * (1 - np.exp(-t / (R * C))), rel=2e-3)
+
+
+def test_cli_writes_the_droop_and_the_port_matrix(tmp_path):
+    """R-E14: pdn.json's droop at each load (its peak, when, where it settles: the DC path's drop) and, with
+    --touchstone, pdn.zNp: the loads' impedance matrix, self and transfer, as Touchstone has it."""
+    import json
+    from pcbqs.pdn.cli import main
+    path = tmp_path / 'b_board.json'
+    path.write_text(json.dumps(_with_high_side(board())))
+    main([str(path), '--rail', 'P', '--volts', '3.3', '--load', 'U1=2', '--load', 'Q1=1@U1', '--dmax', '1', '--points',
+          '9', '--rise', '5e-9', '--touchstone', '--out', str(tmp_path / 'o')])
+    r = json.loads((tmp_path / 'o' / 'pdn.json').read_text())
+    d = r['pdn']['droop']['U1']
+    assert d['rise_s'] == 5e-9 and abs(d['peak_V']) >= abs(d['settled_V']) > 0 and (tmp_path / 'o' / 'droop.png').is_file()
+    rows = [l.split() for l in (tmp_path / 'o' / 'pdn.z2p').read_text().splitlines() if l and l[0] not in '!#']
+    assert r['pdn']['touchstone'] == 'pdn.z2p' and len(rows) == 9 and all(len(x) == 9 for x in rows)
+    z11 = complex(float(rows[0][1]), float(rows[0][2]))
+    assert abs(z11) == pytest.approx(r['pdn']['z']['U1']['mag'][0], rel=1e-6)
+    assert float(rows[0][3]) == pytest.approx(float(rows[0][5]))          # Z21 = Z12: reciprocal

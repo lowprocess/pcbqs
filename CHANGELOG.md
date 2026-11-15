@@ -10,6 +10,13 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Added
+- **The PDN's droop in time and its port matrix (R-E14, a first part).** Each load's drop for a load step rising
+  in `--rise` (1 ns), from its impedance alone (`pdn/droop.py`: the step response from Im Z / w by the sine
+  integral, exact for the samples taken as piecewise linear; the impedance solved down to 10 Hz for it, so its
+  end is the DC path and not a resonance): `droop.png` and pdn.json's `droop`. Series R + L and parallel R C
+  give their closed forms. `--touchstone` writes the loads' impedance matrix as `pdn.zNp`. Left of E14: vendor
+  decap models and MLCC DC-bias derating, a VRM beyond R + L, the near field's input capacitors from their own
+  fields, a rail with no planes.
 - **One factorisation for a long sweep (R-D13.2).** The dense magnetic solve with the copper's DC resistance (the
   near field's) takes one generalized eigendecomposition of its loops' R and L for every frequency, (R + sL)^-1 =
   G diag(1/(1 + s lam)) G^T, with its parts (the capacitors) by Woodbury, a solve of their count; where the sweep
