@@ -21,9 +21,10 @@ def waveforms(out, row, model, deck):
     if not probes:
         volts = [r + '.V' for r, k in deck.kinds.items() if k == 'capacitor']
         amps = [r + '.I' for r, k in deck.kinds.items() if k == 'inductor']
-    losses = {r: p['power_W'] for r, p in row['parts'].items() if p['type'] not in ('source', 'load')
-              and not p.get('coupled_with')}
-    losses.update({'+'.join(g['inductors']): g['power_W'] for g in row.get('coupled', [])})     # a transformer: its windings together
+    losses = {r: p['power_W'] + p.get('added_loss_W', 0.0) for r, p in row['parts'].items()
+              if p['type'] not in ('source', 'load') and not p.get('coupled_with')}
+    losses.update({'+'.join(g['inductors']): g['power_W'] + g.get('added_loss_W', 0.0)     # a transformer: its
+                   for g in row.get('coupled', [])})                                         # windings together
     if row.get('copper'):
         losses['copper'] = row['copper']['loss_W']
     losses = {r: w for r, w in losses.items() if w > 0}

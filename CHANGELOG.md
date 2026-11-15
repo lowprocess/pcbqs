@@ -9,6 +9,14 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+### Added
+- **An inductor's AC and core losses (R-E10).** Two fields of an inductor, worked out from the reported run's last
+  period (`pcbqs.circuit.windings`): `AC_R_ohm`, its resistance against frequency, gives each harmonic of its
+  current the resistance above its DCR; `core_loss`, a Steinmetz fit with the core's turns, area and volume, gives
+  the core's loss by the iGSE for the flux's own waveform. They are the part's (`AC_winding_loss_W`,
+  `core_loss_W`, `added_loss_W`) for the thermal model and the report, and in the case's loss and efficiency as
+  drawn on top of the run's. Checked against Steinmetz's sine, the iGSE's triangle and a buck's flat AC resistance.
+
 ### Changed
 - **A map for each case of a sweep (R-E11).** `thermal --case all` solves each case of a circuit run on its own
   (`<out>/<case>`), writes `thermal-cases.json` (each part's temperature, margin and loss at each case, each case's

@@ -41,7 +41,7 @@ model: `parameters.vin`, `drives.pwm.duty`, `R1.resistance_ohm`, `Q1.model.Ron_o
 |---|---|---|
 | `resistor` | a, b | `value` |
 | `capacitor` | a, b | `value`, `ESR_ohm`, `ESL_H`, `leakage_ohm`, `bias_factor` |
-| `inductor` | a, b | `value`, `DCR_ohm`; with `SRF_Hz` / `Cp_F` / `core_R_ohm`, a winding with self-capacitance and core loss (`pcbqs.wpt.fit_core_resistance` gives a `core_R_ohm` from a measured AC resistance at a frequency) |
+| `inductor` | a, b | `value`, `DCR_ohm`; with `SRF_Hz` / `Cp_F` / `core_R_ohm`, a winding with self-capacitance and core loss (`pcbqs.wpt.fit_core_resistance` gives a `core_R_ohm` from a measured AC resistance at a frequency); `AC_R_ohm` and `core_loss`: [losses after the run](#an-inductors-ac-and-core-losses) |
 | `diode` | anode, cathode | `model`: `Vf_V` at `If_A` (0.7 V at 1 A), `n`, `R_ohm`, `Cj_F`, `TT_s` |
 | `switch` | drain, source | `drive`, `invert`; `model`: `type` (`vdmos`, the default; `switch`, `ideal`, `mosfet`, `subcircuit`), `Ron_ohm`, `Cgs_F`, `Cgd_F`, `Cds_F` (a vdmos without them: 1 nF, 50 pF, 500 pF), `body_diode`, `diode_TT_s`, ... |
 | `source` | +, − | `dc_V`, or `wave` (`pulse`, `sine`, `pwl`), or `dc_A`; `R_ohm`, `L_H` in series |
@@ -100,8 +100,10 @@ and `waveforms.png`:
 - `parts`: for every part its `power_W`; a coupled winding also its own loss `loss_W` (its resistances': its
   `power_W` includes the power it passes on); a switch `gate_power_W` (its drive's, dissipated in its gate
   resistance); a switch and a diode: `avg_A`, `rms_A`, `peak_A`, `peak_V`; a capacitor:
-  `avg_V`, `ripple_V`, `rms_A`; an inductor: `avg_A`, `ripple_A`, `peak_A`, `rms_A`; a source and a load: `avg_V`,
+  `avg_V`, `ripple_V`, `rms_A`; an inductor: `avg_A`, `ripple_A`, `peak_A`, `rms_A`, and with `AC_R_ohm` or
+  `core_loss` its `AC_winding_loss_W`, `core_loss_W` and their sum `added_loss_W`; a source and a load: `avg_V`,
   `avg_A`
+- `added_loss_W`: the inductors' losses worked out after the run, in `loss_W` and `efficiency` too
 - `coupled`: each set of coupled inductors with the power the set loses (one winding alone passes power to the
   other, so its own `power_W` is not a loss)
 - `copper` (with `--copper`): `board`, `loss_W`, `fit_error`, `ports` (pad, its net's reference pad, `rms_A`)
@@ -118,6 +120,33 @@ and `waveforms.png`:
   the parts' powers, the loss and the efficiency
 - `periodic_error`, `energy_drift_relative`, `reltol`, `runs`, `periods`, `history` (every run of the search)
 - `notes`: anything the result should be read with, such as a voltage no circuit gives
+
+## An inductor's AC and core losses
+
+The circuit has an inductor's DC resistance, and a constant core resistor where `core_R_ohm` is given. Two fields
+add what the winding and the core lose to the current's ripple, worked out from the reported run's last period
+(`pcbqs.circuit.windings`):
+
+- `AC_R_ohm`: `[[f_Hz, R_ohm], ...]`, the winding's resistance against frequency (a datasheet's ACR curve, or a
+  measurement). Each harmonic of the winding's current loses (R(f) - `DCR_ohm`) times its mean square. Between the
+  points R is interpolated on log-log axes; below the first the excess over the DCR falls as f² (eddy and proximity
+  losses), above the last R grows as √f (skin effect).
+- `core_loss`: `{"k", "alpha", "beta", "turns", "Ae_m2", "Ve_m3"}`, the core material's Steinmetz fit
+  P = k f^alpha B^beta (W/m³, f in Hz, B the peak flux density in T) and the core's turns, effective area and
+  volume. `windings.core_k_si(k, alpha, beta)` converts a k given for mW/cm³, kHz and mT. The loss is the improved
+  generalised Steinmetz equation's (iGSE) for the flux's own waveform, the flux from the winding's voltage less its
+  resistance's drop. It takes one major loop a period and has no DC-bias or relaxation terms, so a ferrite under DC
+  bias loses more than it says. A transformer's core is one core: give `core_loss` on one of its windings.
+
+```json
+{"ref": "L1", "type": "inductor", "nodes": ["sw", "out"], "value": "22u", "DCR_ohm": 0.03,
+ "AC_R_ohm": [[100e3, 0.035], [1e6, 0.08]],
+ "core_loss": {"k": 6.0, "alpha": 1.4, "beta": 2.6, "turns": 12, "Ae_m2": 20e-6, "Ve_m3": 1.5e-6}}
+```
+
+These losses are the part's for the thermal model (on its footprint) and the report's loss bars, and they are in
+the case's `loss_W`. The efficiency counts them as drawn from the source on top of what the run drew: the run's
+currents are as they were without them, which holds while they are small against what the converter handles.
 
 ## What to give the parts
 

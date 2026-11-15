@@ -26,7 +26,8 @@ entering it, so its voltage times its current is the power it absorbs):
     resistor    value
     capacitor   value, ESR_ohm, ESL_H, leakage_ohm, bias_factor
     inductor    value, DCR_ohm, ESL_H; or, with SRF_Hz / Cp_F / core_R_ohm, a winding with its self-capacitance
-                and core loss
+                and core loss; AC_R_ohm ([[f_Hz, R_ohm], ...]) and core_loss ({k, alpha, beta, turns, Ae_m2,
+                Ve_m3}: Steinmetz, iGSE) add its AC resistance's and its core's loss after the run (windings.py)
     diode       nodes anode, cathode; model: Vf_V at If_A (0.7 V at 1 A), n, R_ohm, Cj_F, TT_s
     switch      nodes drain, source; drive (a drive's name), invert (its complement); model: as power_spice's
                 switches (type switch | ideal | mosfet | vdmos | subcircuit, Ron_ohm, ...)
@@ -349,6 +350,10 @@ def resolve(model, point=None):
                 t[key] = number(t[key], names, f"targets[{i}].{key}")
         t['range'] = [number(v, names, f"targets[{i}].range") for v in t['range']]
         _need(t['range'][0] < t['range'][1], f"targets[{i}]: range must be [low, high], low below high")
+    from . import windings                                          # an inductor's AC_R_ohm and core_loss
+    for p in m.get('parts', []):
+        if p.get('type') == 'inductor':
+            windings.check(p)
     return m
 
 

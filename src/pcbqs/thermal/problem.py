@@ -186,7 +186,8 @@ def losses_of(case, model):
 
     A coupled winding's V·I is the power it passes to the others as well as its loss: its own loss is its
     resistances' (loss_W, which the run measures). A switch's gate drive is dissipated in its gate resistance:
-    counted on the switch."""
+    counted on the switch. An inductor's losses worked out after the run (added_loss_W: circuit/windings.py) are
+    its too."""
     bound = (model.get('board') or {}).get('parts', {})
     kinds = {p['ref']: p.get('type') for p in model.get('parts', [])}
     parts = case.get('parts', {})
@@ -205,6 +206,7 @@ def losses_of(case, model):
                 left.append(f"{ref}: a coupled winding whose own loss the run did not measure (its V·I is the "  # on
                             "power it passes on too): run the circuit again")       # one footprint sums to its loss)
                 continue
+        w += float(st.get('added_loss_W', 0.0))                    # an inductor's AC and core losses (R-E10)
         if kinds.get(ref) in ('source', 'load'):
             left.append(f'{ref}: a {kinds[ref]}, not on the board')
         elif not names:

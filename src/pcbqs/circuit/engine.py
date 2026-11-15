@@ -483,8 +483,8 @@ def fingerprint(model, copper=None):
             h.update(Path(lib).expanduser().read_bytes())
     h.update(ngspice_version().encode())
     from .. import power_spice
-    from . import deck as D, supply
-    for module in (power_spice, D, M, supply, __import__(__name__, fromlist=['x'])):
+    from . import deck as D, supply, windings
+    for module in (power_spice, D, M, supply, windings, __import__(__name__, fromlist=['x'])):
         h.update(Path(module.__file__).read_bytes())
     return h.hexdigest()
 
@@ -638,6 +638,10 @@ def run_case(model, point, out, log=print, copper=None):
         f.unlink()
     (out / 'model.json').write_text(json.dumps(resolved, indent=1))
     notes += plausibility(stats)
+    from . import windings                                          # AC resistance and core loss (R-E10)
+    added = windings.losses(resolved, result, deck, deck.period)
+    if added:
+        windings.apply(stats, added, notes)
     ramps = [pt['ref'] for pt in resolved.get('parts', []) if pt.get('type') == 'switch'
              and (pt.get('model') or {}).get('type', 'vdmos') == 'switch'
              and not any((pt.get('model') or {}).get(k) for k in ('Cgd_F', 'Cgs_F', 'Qg_C', 'Qgd_C'))]
