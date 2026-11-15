@@ -1,5 +1,6 @@
 """The example circuits (pcbqs/circuit/examples), run with ngspice and checked against what each must give: its
 closed form where there is one, charge and power balance where there is not. One run of each for the module."""
+import json
 import math
 import shutil
 
@@ -11,6 +12,7 @@ from pcbqs.circuit import run
 
 pytestmark = pytest.mark.skipif(not shutil.which('ngspice'), reason='ngspice not installed')
 _results = {}
+_folders = {}                                                       # each example's run folder
 
 
 @pytest.fixture
@@ -18,9 +20,11 @@ def solved(tmp_path_factory):
     def solve(name):
         if name not in _results:
             model = M.template(name)
-            summary = run(model, tmp_path_factory.mktemp(name), jobs=3, log=lambda s: None)
+            folder = tmp_path_factory.mktemp(name)
+            summary = run(model, folder, jobs=3, log=lambda s: None)
             assert summary['complete'] and not summary['failed'], summary['failed']
             _results[name] = (M.validate(model), summary['cases'])
+            _folders[name] = folder
         return _results[name]
     return solve
 
@@ -225,3 +229,19 @@ def test_an_ngspice_timeout_fails_its_point_not_the_sweep(tmp_path):
     assert summary['failed'] and all('analysis.timeout_s' in f['error'] for f in res['failed'])
     ok = run(M.template('rc_filter'), tmp_path / 'ok', jobs=1, log=lambda s: None)
     assert ok['cases'][0]['ngspice'].lower().startswith(('ngspice', '** ngspice'))
+
+
+def test_every_case_of_a_sweep_gets_its_map(solved, tmp_path):
+    """thermal --case all (R-E11): the synchronous buck's three load points each a map of their own, a table of
+    each part at each, and the point with the most loss at the top, as the report and the Viewer read it."""
+    from pcbqs.thermal.__main__ import main as thermal
+    model, cases = solved('buck_synchronous')
+    out = tmp_path / 'th'
+    assert thermal(['--circuit', str(_folders['buck_synchronous']), '--case', 'all', '--out', str(out)]) == 0
+    table = json.loads((out / 'thermal-cases.json').read_text())
+    names = [c['name'] for c in cases]
+    assert [c['name'] for c in table['cases']] == names and all((out / n / 'thermal.json').is_file() for n in names)
+    worst = max(cases, key=lambda c: c['loss_W'])['name']
+    assert table['top'] == worst and json.loads((out / 'thermal.json').read_text())['case'] == worst
+    q1 = table['parts']['Q1']
+    assert set(q1) == set(names) and q1[worst]['part_C'] == max(v['part_C'] for v in q1.values())

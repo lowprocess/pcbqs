@@ -23,7 +23,8 @@ OPTIONS = [            # (key, kind, default, help, group): _cli's table, which 
     ('loss', 'list', [], "A footprint's loss, REF=W (repeatable); with a circuit run, these replace its figures", 'Heat'),
     ('circuit', 'str', '', "A circuit run's results folder (python -m pcbqs.circuit): its board and its parts' "
      'losses', 'Heat'),
-    ('case', 'str', '', "The circuit run's case, by name; empty: the one with the most loss", 'Heat'),
+    ('case', 'str', '', "The circuit run's case, by name; empty: the one with the most loss; all: a map for each "
+     "(in <out>/<case>) and a table of each part at each (thermal-cases.json)", 'Heat'),
     ('theta', 'list', [], "From a part's pads to the part itself, REF=K/W (repeatable); a footprint's field "
      "thermal.theta gives it too", 'Parts'),
     ('tmax', 'list', [], "The most a part may reach, REF=C (repeatable: its junction's limit); a footprint's field "
@@ -110,6 +111,8 @@ def main(argv=None):
         return 0
     if a.method not in ('grid', 'mesh', 'both'):
         ap.error(f"--method {a.method!r}: grid, mesh or both")
+    if a.circuit and a.case == 'all':                               # (R-E11: a sweep had one map, its worst point)
+        return every_case(a, argv)
     losses, left = _pairs(a.loss, '--loss', ap), []
     board_file, case_name, case = a.board, None, None
     if a.circuit:
@@ -199,6 +202,51 @@ def main(argv=None):
             summary[m]['viewer'] = shown
     (out / 'thermal.json').write_text(json.dumps(summary if len(res) > 1 else summary[methods[0]], indent=1))
     print(f"results in {out}")
+    return 0
+
+
+def every_case(a, argv):
+    """--case all: each case of the circuit run its own map (<out>/<case>), the one with the most loss also at the
+    top (what the report and the Viewer read, as before), and thermal-cases.json: each part's temperature, margin
+    and loss at each case, and each case's hottest copper."""
+    import shutil
+    folder = Path(a.circuit)
+    cases = json.loads((folder / 'circuit.json').read_text())['cases']
+    argv = list(sys.argv[1:] if argv is None else argv)
+    keep = []                                                       # the arguments but --case and --out
+    skip = False
+    for i, x in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if x in ('--case', '--out'):
+            skip = True
+            continue
+        if x.startswith(('--case=', '--out=')):
+            continue
+        keep.append(x)
+    out = Path(a.out)
+    table = dict(format=1, circuit=str(folder.resolve()), cases=[], parts={})
+    for c in cases:
+        sub = out / c['name']
+        main(keep + ['--case', c['name'], '--out', str(sub)])
+        r = json.loads((sub / 'thermal.json').read_text())
+        r = r if 'parts' in r else next(iter(v for v in r.values() if isinstance(v, dict) and 'parts' in v))
+        table['cases'].append(dict(name=c['name'], loss_W=c.get('loss_W'), hottest_C=r.get('hottest_C')))
+        for ref, q in r['parts'].items():
+            table['parts'].setdefault(ref, {})[c['name']] = {k: q.get(k) for k in ('part_C', 'power_W', 'margin_K')}
+    worst = max(cases, key=lambda c: c.get('loss_W', 0.0))['name']
+    for f in (out / worst).iterdir():                              # the worst case at the top, as before
+        dest = out / f.name
+        (shutil.copytree(f, dest, dirs_exist_ok=True) if f.is_dir() else shutil.copy2(f, dest))
+    table['top'] = worst
+    (out / 'thermal-cases.json').write_text(json.dumps(table, indent=1))
+    refs = sorted(table['parts'], key=lambda k: -max(v['part_C'] or 0 for v in table['parts'][k].values()))
+    print(f"{'part':8s} " + ' '.join(f"{c['name'][:14]:>14s}" for c in table['cases']))
+    for ref in refs:
+        print(f"{ref:8s} " + ' '.join(f"{(table['parts'][ref].get(c['name']) or {}).get('part_C') or float('nan'):14.1f}"
+                                      for c in table['cases']))
+    print(f"{len(cases)} cases; the top-level map is {worst}'s (the most loss); thermal-cases.json has the table")
     return 0
 
 

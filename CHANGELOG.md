@@ -10,6 +10,9 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **A map for each case of a sweep (R-E11).** `thermal --case all` solves each case of a circuit run on its own
+  (`<out>/<case>`), writes `thermal-cases.json` (each part's temperature, margin and loss at each case, each case's
+  hottest copper) and keeps the case with the most loss at the top, which the report and the Viewer read as before.
 - **A run's waveforms in binary (R-D2).** ngspice writes them as its binary raw file, read into numpy as it is, in
   place of text (98 MB a wpthb run, 0.5 s of `loadtxt` each): the wpthb case 24.9 s to 21.4 s. The text had kept
   about six digits, so a ripple sampled off a 24 V bus moves (0.1017 to 0.1012 V) as rounding no longer does. A
