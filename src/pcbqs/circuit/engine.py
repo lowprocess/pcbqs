@@ -203,7 +203,7 @@ def periodic_error(result, deck, period, ignore=()):
 
 def stored_energy(result, model, deck, period):
     """What each part stores at the end of each period, back over the half-run: {ref: [J], the last period's end
-    first}, with 'couplings' for the mutual energy of coupled inductors. A capacitor: C V^2 / 2 of its own
+    first}, with 'coupling:A+B' for the mutual energy of each coupling. A capacitor: C V^2 / 2 of its own
     voltage; an inductor and a source's series inductance: L I^2 / 2."""
     t = np.asarray(result['time_s'])
     n = int(np.floor((t[-1] - t[0]) / period + 1e-6))
@@ -222,12 +222,11 @@ def stored_energy(result, model, deck, period):
         elif kind == 'source' and p.get('L_H'):
             out[ref] = 0.5 * p['L_H'] * at(ref + '.I') ** 2
     value = {p['ref']: p['value'] for p in model['parts'] if p['type'] == 'inductor'}
-    mutual = 0.0 * ends
-    for c in model.get('couplings', []):
+    for c in model.get('couplings', []):                            # each coupling's mutual energy, its own entry
         a, b = c['inductors']
         if a in current and b in current:
-            mutual = mutual + c['k'] * np.sqrt(value[a] * value[b]) * current[a] * current[b]
-    out['couplings'] = mutual
+            key = f"coupling:{a}+{b}"
+            out[key] = out.get(key, 0.0 * ends) + c['k'] * np.sqrt(value[a] * value[b]) * current[a] * current[b]
     return out
 
 
@@ -248,13 +247,17 @@ def count_out_storage(stats, result, model, deck):
     for ref, w in kept.items():
         if ref in stats['parts'] and stats['parts'][ref]['type'] in ('capacitor', 'inductor'):
             stats['parts'][ref]['power_W'] -= w
+        elif ref.startswith('coupling:'):                           # the mutual energy's change, half on each of
+            for r in ref[len('coupling:'):].split('+'):              # its windings: the parts' powers add up to the
+                if r in stats['parts']:                             # loss (it had only come off the loss: a run not
+                    stats['parts'][r]['power_W'] -= w / 2           # quite settled, 29 mW apart on ngspice 45)
     total = sum(kept.values())
     stats['stored_energy_change_W'] = total
     stats['loss_W'] -= total
     supplied = stats['source_power_W'] + stats['gate_drive_power_W'] - total
     stats['efficiency'] = stats['load_power_W'] / supplied if supplied > 0 and stats['load_power_W'] > 0 else None
     for group in stats['coupled']:
-        group['power_W'] = sum(stats['parts'][r]['power_W'] for r in group['inductors']) - kept.get('couplings', 0.0)
+        group['power_W'] = sum(stats['parts'][r]['power_W'] for r in group['inductors'])
     return stats
 
 

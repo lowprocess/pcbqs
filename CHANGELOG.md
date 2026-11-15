@@ -52,6 +52,10 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
   drawn on top of the run's. Checked against Steinmetz's sine, the iGSE's triangle and a buck's flat AC resistance.
 
 ### Fixed
+- **A coupled winding's books.** The change of coupled windings' mutual energy over the reported period came off
+  the loss alone, not off the windings' powers as their own energies' did, so the parts added up short of the loss
+  on a run not quite settled (the flyback on CI's ngspice 45: 1.072 W of parts against 1.101 W of loss). Each
+  coupling's change now comes half off each of its windings (`stored_energy`'s `coupling:A+B`).
 - **The flyback example on ngspice 45 (CI's).** Its search never settled there: at reltol 1e-3 the windings'
   currents differed by 0.3-0.5 % from period to period however long it ran (lightly damped ringing at the
   diodes' turn-off, 0.11 % at reltol 1e-4), and the longest run then stopped on "timestep too small" at the

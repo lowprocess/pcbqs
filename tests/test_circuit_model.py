@@ -314,3 +314,21 @@ def test_paths_a_model_writes_without_having_them_and_libraries_beside_it(tmp_pa
     raw = json.loads((tmp_path / 'm.json').read_text())
     beside = M._beside(raw, tmp_path)
     assert next(p for p in beside['parts'] if p['ref'] == 'Q9')['model']['library'] == str((tmp_path / 'lib/q.lib').resolve())
+
+
+@pytest.mark.skipif(not __import__('shutil').which('ngspice'), reason='ngspice not installed')
+def test_the_books_add_up_while_coupled_windings_still_store_energy(tmp_path):
+    """A flyback 20 periods from its start, far from settled: the windings' mutual energy is still changing, and its
+    change comes off the windings' powers as their own energies' do, so the parts add up to the loss (it had come
+    off the loss alone: 29 mW apart on CI's ngspice 45)."""
+    m = M.validate(M.template('flyback'))
+    resolved = M.resolve(m)
+    a = E.settings(resolved)
+    result, deck, stats, _ = E.simulate(resolved, None, 20, tmp_path, a, a['search_reltol'], lambda s: None, '')
+    stored = E.stored_energy(result, resolved, deck, deck.period)
+    mutual = float(stored['coupling:LP+LS'][0] - stored['coupling:LP+LS'][1]) / deck.period
+    assert abs(mutual) > 1e-5                                       # (not settled: its energy moves)
+    lossy = sum(p['power_W'] for p in stats['parts'].values() if p['type'] not in ('source', 'load'))
+    assert stats['loss_W'] == pytest.approx(lossy + stats['gate_drive_power_W'], abs=3e-6 * stats['source_power_W'])   # (meas digits)
+    g, = stats['coupled']
+    assert g['power_W'] == pytest.approx(stats['parts']['LP']['power_W'] + stats['parts']['LS']['power_W'])
