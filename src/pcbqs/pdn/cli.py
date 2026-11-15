@@ -216,7 +216,7 @@ def run(a):
     t = time.time()
     dc = solve_rail(rail, a.volts, dmax=a.dmax, plating=a.plating, log=say)
     t_dc = time.time() - t
-    out = dict(format=1, rail=a.rail, nets=sorted(rail.nets), ground=list(ground), volts=a.volts, assumed_loads=assumed,
+    out = dict(format=1, board=os.path.abspath(a.board), rail=a.rail, nets=sorted(rail.nets), ground=list(ground), volts=a.volts, assumed_loads=assumed,
                settings={k: getattr(a, k) for k, *_ in OPTIONS},
                tree=[dict(ref=s.part.ref, kind=s.kind, R=s.R, L=s.L, a=s.a, b=s.b, defaulted=s.defaulted) for s in rail.series],
                source=[p.ref for p in rail.source_parts],
