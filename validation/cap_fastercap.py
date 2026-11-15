@@ -104,9 +104,11 @@ def pcbqs_c(c, dmax, **mesh):
 
 
 def _quads_of(poly, z):
-    """Coarse panels of a polygon at height z: Triangle's constrained triangulation, no extra points."""
-    import triangle as tr
+    """Coarse panels of a polygon at height z: its constrained triangulation, refined to a 25 degree minimum angle
+    (FasterCap struggles with slivers; pcbqs's core: CDT)."""
+    import shapely
     from common import polygons
+    from pcbqs import _core
     out = []
     for p in polygons(poly):
         rings = [np.asarray(p.exterior.coords)[:-1]] + [np.asarray(h.coords)[:-1] for h in p.interiors]
@@ -116,11 +118,10 @@ def _quads_of(poly, z):
             n = len(r)
             segs += [(off + k, off + (k + 1) % n) for k in range(n)]
             off += n
-        A = dict(vertices=verts, segments=np.array(segs))
-        if p.interiors:
-            A['holes'] = np.array([list(h.representative_point().coords)[0] for h in map(type(p), p.interiors)])
-        T_ = tr.triangulate(A, 'pq25Q')                 # a minimum angle: FasterCap struggles with slivers
-        out += [[(*T_['vertices'][i], z) for i in tri] for tri in T_['triangles']]
+        V, T = _core.cdt_triangulate(verts, np.array(segs, np.int32), 1e-12, 25.0)
+        c = V[T].mean(1)
+        T = T[shapely.contains_xy(p, c[:, 0], c[:, 1])]            # the holes' triangles out
+        out += [[(*V[i], z) for i in tri] for tri in T]
     return out
 
 

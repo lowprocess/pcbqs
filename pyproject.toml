@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = {text = "GPL-3.0-or-later"}
 authors = [{ name = "Claude" }, { name = "lowprocess" }]
 dependencies = [
-    "numpy>=1.24", "scipy>=1.10", "shapely>=2.0", "triangle>=20230923",
+    "numpy>=1.24", "scipy>=1.10", "shapely>=2.0",
     "matplotlib>=3.7", "threadpoolctl>=3.1", "pillow>=9",
     "emsdev @ https://github.com/lowprocess/emsdev/archive/refs/tags/v0.3.1.zip",
 ]
@@ -41,7 +41,7 @@ version = {attr = "pcbqs.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "data/*.toml", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb",
+pcbqs = ["core/*.cpp", "core/*.hpp", "core/CDT/*", "data/*.json", "data/*.toml", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb",
          "circuit/examples/*.toml", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]

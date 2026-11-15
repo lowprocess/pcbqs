@@ -12,6 +12,22 @@ Last run 2026-11-09. Reference tools: Elmer 26.2, Palace 0.18.1, FastHenry 3.0.1
 | Board temperature (`thermal`) | layered sheets: copper + laminate per layer, dielectric and barrels between, films on faces and edges (grid and mesh) | Elmer 26.2 heat equation through kicad2ems-fem: 3D copper, barrels, anisotropic laminate (wedges) | `thermal_elmer.py` |
 | Plane-pair impedance (`pdn` PDN) | 2D cavity (`pdn.cavity.PlanePair`) | Palace driven FEM: dielectric between PEC planes, open sides, lumped ports; analytic modal sum | `pdn_palace.py` |
 
+## The mesher: CDT in place of Triangle (2026-11-15)
+
+pcbqs triangulates with CDT (its core) since 2026-11-15; the results above are Triangle's meshes. CDT keeps each
+triangle near its area limit, where Triangle's refinement left them at about half of it, so at one `dmax` CDT's mesh
+is coarser where refinement fills it, and as dense where the outlines and edge rings set it. The FastHenry cases at
+1 MHz (`mqs_palace.pcbqs_loop`, the ladder's step below its finest; FastHenry's numbers as above):
+
+| Case | Triangle | CDT |
+|---|---|---|
+| Strip loop, dmax 0.25: L / R | 38.16 nH (−1.4%) / 31.44 mΩ (−4.1%), 6,172 triangles | 38.21 nH (−1.3%) / 31.25 mΩ (−4.7%), 5,796 |
+| Trace over plane, dmax 0.5: L / R | 12.23 nH (+0.1%) / 15.16 mΩ (−4.0%), 12,574 triangles | 12.27 nH (+0.5%) / 14.83 mΩ (−6.1%), 13,194 |
+
+The real boards' answers (`tests/data/regression_boards.json`) moved by 0.01–0.4% (PDN drops and impedances), 1.7–3.2%
+(the circuits' copper loss) and 1–3% (near-field R, L and |H|); on the buck's converter loop both meshers hold still
+from the default `dmax` to 0.25 mm, 3% apart (R 1.62 / 1.57 mΩ, L 1.73 / 1.77 nH).
+
 ## Results (finest meshes)
 
 | Case | pcbqs | Reference | Difference |

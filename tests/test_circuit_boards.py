@@ -192,7 +192,7 @@ def test_a_model_and_a_board_that_do_not_fit_say_where():
 
 @pytest.fixture(scope='module')
 def boost_copper(tmp_path_factory):
-    pytest.importorskip('triangle')
+    pytest.importorskip('pcbqs._core')                         # (its mesher)
     out = tmp_path_factory.mktemp('copper')
     said = []
     model = M.template('boost')

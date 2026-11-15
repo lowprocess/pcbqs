@@ -87,7 +87,7 @@ def buck_near_field(out):
 
 
 def boost_circuit(out):
-    pytest.importorskip('triangle')
+    pytest.importorskip('pcbqs._core')                         # (its mesher)
     from pcbqs.circuit import model as M
     from pcbqs.circuit.engine import run
     c, = run(M.template('boost'), Path(out), log=lambda *a: None, copper=True)['cases']

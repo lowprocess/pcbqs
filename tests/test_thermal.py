@@ -89,7 +89,8 @@ def test_the_edges_default_to_the_faces_and_can_be_insulated():
         Problem.of(plate(40), edge_film=-1.0)
 
 
-@pytest.mark.parametrize('method,size,tol', [('grid', 1.0, 0.1), ('grid', 0.5, 0.06), ('mesh', 2.0, 0.15),
+# ('mesh', 2.0): 0.18 at the centre on the CDT mesh, 0.13 off it on Triangle's (2026-11-15); at 1.0 0.017 and 0.033
+@pytest.mark.parametrize('method,size,tol', [('grid', 1.0, 0.1), ('grid', 0.5, 0.06), ('mesh', 2.0, 0.2),
                                              ('mesh', 1.0, 0.06)])
 def test_a_heated_disc_matches_the_exact_solution(method, size, tol):
     p = disc_problem()

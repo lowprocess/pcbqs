@@ -61,7 +61,8 @@ def test_band_follows_a_rotated_part():
 
 def test_mqs_loop_inductance_rises_when_parts_no_longer_short_their_pads():
     """A 10 x 4 mm loop of 1 mm trace closed by an 0805-sized part: the less of each pad the contact covers, the
-    more copper carries the current and the higher the loop reads."""
+    more copper carries the current and the higher the loop reads. Pad and termination differ by less than the
+    mesh resolves (0.1 %: their order flips between meshes, Triangle's at dmax 0.1 too); the edge reads 8 % more."""
     from pcbqs.mqs import MQS
     from shapely.ops import unary_union
     tr = unary_union([box(0, 0, 10, 1), box(9, 0, 10, 4), box(0, 3, 10, 4), box(0, 0, 1, 1.55),
@@ -79,4 +80,5 @@ def test_mqs_loop_inductance_rises_when_parts_no_longer_short_their_pads():
                 conductor_loss='dc', thickness_sheets=1, log=lambda *a: None)
         q.source('p', 'a', 'b', part_h=0.0)
         L[mode] = np.asarray(q.solve(np.array([1e6])).zc['p'])[0].imag / (2 * np.pi * 1e6)
-    assert L['pad'] < L['termination'] < L['edge']
+    assert L['termination'] == pytest.approx(L['pad'], rel=2e-3)
+    assert max(L['pad'], L['termination']) * 1.05 < L['edge']

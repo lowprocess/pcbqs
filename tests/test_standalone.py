@@ -11,8 +11,13 @@ from test_mqs import trace_board
 from test_mqs_cli import board
 
 
+# the pre-split pipeline's impedances on this board (Triangle's mesh, 2026-11-07): the CDT mesh within 0.05 %
+TRIANGLE_ERA_Z = np.array([0.0269162, 0.0281909 + 0.0084952j, 0.0288185 + 0.015794j])
+
+
 def test_copper_snapshot_parity():
-    # Parity with the reference pipeline on its unsimplified mesh.
+    # Parity with the frozen run on its unsimplified CDT mesh (fixtures/copper-reference.npz, 2026-11-15), and the
+    # physics with the pre-split reference pipeline's (Triangle's mesh)
     q=MQS(trace_board(),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,log=lambda *_:None,ideal_terminals=False,
           drop_lone_pads=False,pad_sides=None,via_sides=None)
     q.source('p','s','g',part_h=0);r=CopperPorts(q).extract([0,1e5,2e5])
@@ -23,6 +28,7 @@ def test_copper_snapshot_parity():
         # indefinite factorization, and at DC one branch's current differs by 1.7e-12)
         np.testing.assert_allclose(r.currents,expected['currents'],rtol=1e-10,atol=1e-11)
         np.testing.assert_allclose(q.h_field(r.drive(np.ones((3,1))),1,np.array([[.015,.010,.002]])),expected['H'],rtol=1e-10)
+    np.testing.assert_allclose(np.ravel(r.impedance),TRIANGLE_ERA_Z,rtol=1e-3)
 
 
 def test_json_fields_without_optional_packages(tmp_path):
@@ -68,7 +74,7 @@ def test_automatic_fallback_without_native_core(tmp_path):
 from shapely.geometry import box
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self,fullname,*args):
-        if fullname=='pcbqs._core' or fullname.split('.')[0] in ('mom25d','kicad2ems'):
+        if fullname.split('.')[0] in ('mom25d','kicad2ems'):
             raise ImportError('unavailable: '+fullname)
 sys.meta_path.insert(0,Block())
 from pcbqs.mqs import MQS
@@ -79,4 +85,7 @@ r=CopperPorts(q).extract([0,1e5,2e5])
 with np.load(sys.argv[2]) as ref:np.testing.assert_allclose(r.impedance,ref['impedance'],rtol=1e-8,atol=1e-13)
 assert q.fill_info['magnetic']['backend']=='threaded'
 '''
-    subprocess.run([sys.executable,'-c',code,str(file),str(Path(__file__).parent/'fixtures/copper-reference.npz')],check=True,capture_output=True,text=True)
+    # PCBQS_NO_CORE: the kernels on NumPy's threads. The mesher has no fallback (the core triangulates: CDT)
+    import os
+    subprocess.run([sys.executable,'-c',code,str(file),str(Path(__file__).parent/'fixtures/copper-reference.npz')],check=True,capture_output=True,text=True,
+                   env=dict(os.environ,PCBQS_NO_CORE='1'))

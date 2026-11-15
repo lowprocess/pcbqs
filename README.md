@@ -28,12 +28,11 @@ page. The circuit examples are configs beside their models
 Install ngspice separately for operational circuits. Component models and
 parasitics are explicit assumptions; footprints do not imply calibrated models.
 
-On Python versions without a sufficiently recent Triangle wheel (including
-Python 3.14), use the kicad2ems installer: its QS option builds the pinned mesher
-with the floating-point flags required by Triangle's exact predicates.
-
-The optional CPU backend is built with `pip install '.[core]'` followed by
-`python -m pcbqs.core.build`. NumPy/threaded fallbacks remain available. CuPy GPU
+The compiled core is needed: it meshes (the constrained Delaunay triangulation of
+[CDT](https://github.com/artem-ogre/CDT), vendored in `src/pcbqs/core/CDT`) and holds the
+CPU kernels. Build it with `pip install '.[core]'` followed by `python -m pcbqs.core.build`
+(a C++17 compiler; the kicad2ems installer does this). The kernels keep their NumPy/threaded
+fallbacks (`PCBQS_NO_CORE`); the mesher has none. CuPy GPU
 fill is optional: select a matching CUDA/ROCm extra and `--fill-backend cupy`.
 Execution controls use `PCBQS_FILL_BACKEND`, `PCBQS_FILL_THREADS`,
 `PCBQS_OMP_THREADS`, `PCBQS_NO_CORE` and `PCBQS_ARCH`; general OpenMP settings
@@ -67,9 +66,7 @@ solvers remain in `mom25d`.
 
 ## Licence
 
-GPL-3.0-or-later (see [LICENSE](LICENSE)). The mesher is the `triangle` package
-(LGPL-3.0, by Dzhelil Rufat), which compiles in Jonathan Shewchuk's Triangle. It
-is installed as a separate package; none of its code is in this repository.
-Triangle keeps its own terms, which are not the GPL's: it "may not be sold or
-included in commercial products without a license" from its author
-([Triangle's page](https://www.cs.cmu.edu/~quake/triangle.html)).
+GPL-3.0-or-later (see [LICENSE](LICENSE)). The mesher's triangulation is CDT 2.0.1 by
+Artem Amirkhanov, vendored unmodified in `src/pcbqs/core/CDT` under its MPL-2.0 (its
+`predicates.h` BSD-3-Clause, `portable_nth_element.hpp` Apache-2.0 with LLVM exceptions;
+`src/pcbqs/core/CDT/README.md`), all compatible with the GPL.

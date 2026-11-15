@@ -9,6 +9,19 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 
 ## Unreleased
 
+### Changed
+- **The mesher triangulates with CDT, not Triangle (2026-11-15).** `geo.mesh_polygons` keeps its outlines, rings
+  and limits; the triangulation is CDT 2.0.1's (MPL-2.0, vendored in `core/CDT`, `core/cdt_mesh.hpp`:
+  `_core.cdt_triangulate`) and the points inside the copper are placed by `_numerics/cdtmesh.py` (rounds of
+  circumcentres to each area limit; the minimum angle, 25 for DC and thermal, by CDT's refinement). The `triangle`
+  package is gone, and with it Triangle's non-free terms and its missing wheels (none for Python 3.14). The compiled
+  core is now needed: the kernels keep their NumPy twins (`PCBQS_NO_CORE`), the mesher has none. CDT leaves each
+  triangle near its limit where Triangle's refinement left about half of it, so meshes are a little coarser where
+  refinement fills them: the real boards' answers moved by 0.01–0.4 % (PDN), 1–3 % (near field R, L, |H|) and
+  1.7–3.2 % (circuits' copper loss); against FastHenry the strip loop reads as before and the trace over a plane
+  1 % higher L, 2 % lower R (`validation/README.md`). The copper parity fixture is the CDT mesh's now (within
+  0.05 % of the pre-split pipeline's impedances).
+
 ### Added
 - **The PDN's droop in time and its port matrix (R-E14, a first part).** Each load's drop for a load step rising
   in `--rise` (1 ns), from its impedance alone (`pdn/droop.py`: the step response from Im Z / w by the sine

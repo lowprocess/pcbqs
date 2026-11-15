@@ -37,7 +37,8 @@ def test_vias_join_layers_and_carry_the_current():
     r = dc.solve(b, 'P', dict(x=2, y=5, r=1, layer='F.Cu', V=1.0), [dict(name='L', x=18, y=5, r=1, layer='B.Cu', I=2.0)],
                  dmax=0.5, log=lambda *a: None)
     assert sum(abs(v['segments'][0][2]) for v in r.vias) == pytest.approx(2.0, rel=1e-6)
-    assert r.loss == pytest.approx(2.0 * (1.0 - r.loads['L']['V']), rel=1e-6)
+    # (to the solve's rounding: the terminals' 1e6 S ties put 4e8 on the diagonal, and KCL then holds to ~1e-7 A)
+    assert r.loss == pytest.approx(2.0 * (1.0 - r.loads['L']['V']), rel=1e-4)
     # one barrel: rho dz / area, 1.6 mm of 25 um plating on a 0.3 mm hole ~ 1.3 mOhm
     g = dc._barrel_g(0.15, 1.6, 0.025, 5.8e7)
     assert 1 / g == pytest.approx(1.6e-3 / (5.8e7 * np.pi * (0.15e-3 ** 2 - 0.125e-3 ** 2)))
