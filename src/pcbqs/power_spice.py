@@ -520,8 +520,9 @@ class Circuit:
         if child.returncode or not data.is_file() or 'simulation(s) aborted' in stderr:
             said = [l.strip() for l in (stdout + '\n' + stderr).splitlines()          # why, in its own words
                     if any(w in l.lower() for w in ('error', 'timestep too small', 'singular', 'abort', 'fatal'))]
-            raise RuntimeError('ngspice transient failed; see ' + str(out / 'ngspice.log')
-                               + (': ' + ' | '.join(dict.fromkeys(said))[-600:] if said else ''))
+            said = sorted(dict.fromkeys(said), key=lambda l: 'measure' in l)   # the cause before the measures
+            raise RuntimeError('ngspice transient failed; see ' + str(out / 'ngspice.log')    # it left undone
+                               + (': ' + ' | '.join(said)[:600] if said else ''))
         from .power_waveforms import read_raw
         try:
             cols = list(read_raw(data).values())                      # time, then the vectors as asked (named
