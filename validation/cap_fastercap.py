@@ -105,7 +105,7 @@ def pcbqs_c(c, dmax, **mesh):
 
 def _quads_of(poly, z):
     """Coarse panels of a polygon at height z: its constrained triangulation, refined to a 25 degree minimum angle
-    (FasterCap struggles with slivers; pcbqs's core: CDT)."""
+    (FasterCap struggles with slivers; pcbqs's core: mesh2d)."""
     import shapely
     from common import polygons
     from pcbqs import _core

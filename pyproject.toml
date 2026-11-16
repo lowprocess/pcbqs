@@ -41,7 +41,7 @@ version = {attr = "pcbqs.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcbqs = ["core/*.cpp", "core/*.hpp", "core/CDT/*", "data/*.json", "data/*.toml", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb",
+pcbqs = ["core/*.cpp", "core/*.hpp", "data/*.json", "data/*.toml", "circuit/examples/*.json", "circuit/examples/*.kicad_pcb",
          "circuit/examples/*.toml", "PROVENANCE.json"]
 
 [tool.pytest.ini_options]

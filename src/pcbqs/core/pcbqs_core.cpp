@@ -21,7 +21,7 @@ template <class T> using arr = py::array_t<T, py::array::c_style | py::array::fo
 #include "dense_kernels.hpp"
 #include "cdt_mesh.hpp"
 PYBIND11_MODULE(_core, m) {
-    m.def("cdt_triangulate", &cdt_triangulate, "the meshers' constrained Delaunay triangulation (CDT): (vertices, triangles)",
+    m.def("cdt_triangulate", &cdt_triangulate, "the meshers' constrained Delaunay triangulation (mesh2d): (vertices, triangles)",
           py::arg("V"), py::arg("E"), py::arg("min_dist") = 0.0, py::arg("min_angle") = 0.0, py::arg("max_steiner") = 0);
     m.def("static_pairs", &static_pairs);
     m.def("static_fill", &static_fill);

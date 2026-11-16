@@ -109,15 +109,8 @@
       "origin": "Pre-split source snapshot and independent full-wave reference, 2026-11-07"
     },
     "copper-reference.npz": {
-      "sha256": "c372c76fd9cc09531fed0799491d4287a2c4997f31eda5cfd77fabbf66fb5182",
-      "origin": "pcbqs on its mesh (CDT, hexagonal seed), 2026-11-15 (the Triangle-era reference of 2026-11-07, from the pre-split pipeline: impedances within 1 % of it, test_standalone)"
-    }
-  },
-  "vendored": {
-    "core/CDT": {
-      "origin": "github.com/artem-ogre/CDT release 2.0.1 (commit 53eff28), CDT/include unmodified",
-      "sha256_of_tarball": "dbdf0ea5713d7690e6ba3dc4b183ba20c4b42df1377147f6f185eb6347b1b61b",
-      "license": "MPL-2.0 (predicates.h BSD-3-Clause, portable_nth_element.hpp Apache-2.0 WITH LLVM-exception)"
+      "sha256": "3fb4f2584ebb84579ae3f165e9d252972eb9265160fb18ba110759707c84a429",
+      "origin": "pcbqs on its mesh (mesh2d, hexagonal seed), 2026-11-15 (CDT's of the same day within 1.2e-5; the Triangle-era reference of 2026-11-07, from the pre-split pipeline: impedances within 1 % of it, test_standalone)"
     }
   }
 }

@@ -16,7 +16,7 @@ TRIANGLE_ERA_Z = np.array([0.0269162, 0.0281909 + 0.0084952j, 0.0288185 + 0.0157
 
 
 def test_copper_snapshot_parity():
-    # Parity with the frozen run on its unsimplified CDT mesh (fixtures/copper-reference.npz, 2026-11-15), and the
+    # Parity with the frozen run on its unsimplified mesh2d mesh (fixtures/copper-reference.npz, 2026-11-15), and the
     # physics with the pre-split reference pipeline's (Triangle's mesh)
     q=MQS(trace_board(),'N',terminals={'s':[('F.Cu',box(2,9.6,2.6,10.4))],'g':[('F.Cu',box(2,7.7,2.6,8.5))]},dmax=2,log=lambda *_:None,ideal_terminals=False,
           drop_lone_pads=False,pad_sides=None,via_sides=None)
@@ -85,7 +85,7 @@ r=CopperPorts(q).extract([0,1e5,2e5])
 with np.load(sys.argv[2]) as ref:np.testing.assert_allclose(r.impedance,ref['impedance'],rtol=1e-8,atol=1e-13)
 assert q.fill_info['magnetic']['backend']=='threaded'
 '''
-    # PCBQS_NO_CORE: the kernels on NumPy's threads. The mesher has no fallback (the core triangulates: CDT)
+    # PCBQS_NO_CORE: the kernels on NumPy's threads. The mesher has no fallback (the core triangulates: mesh2d)
     import os
     subprocess.run([sys.executable,'-c',code,str(file),str(Path(__file__).parent/'fixtures/copper-reference.npz')],check=True,capture_output=True,text=True,
                    env=dict(os.environ,PCBQS_NO_CORE='1'))

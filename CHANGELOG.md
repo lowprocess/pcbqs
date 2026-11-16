@@ -10,6 +10,17 @@ are findings of [docs/power-tools-review.md](docs/power-tools-review.md).
 ## Unreleased
 
 ### Changed
+- **The mesher's triangulation is its own: no library (2026-11-15).** `core/mesh2d.hpp` (the same file as mom25d's)
+  replaces the vendored CDT 2.0.1 under `_core.cdt_triangulate`, its interface unchanged: exact predicates (a
+  floating-point filter and Shewchuk's expansion arithmetic), points in Hilbert order located by a walk, Lawson's
+  flips, segments by Sloan's flips (split where they cross or where a point is on one), the outer region by a
+  flood from the bounding triangle, and Ruppert's refinement for `quality=` (encroached segments split, on
+  concentric shells about input points). Nothing is vendored now (PROVENANCE.json's `vendored` is gone). The meshes
+  are CDT's but for ties and the refinement's order: the buck boards' answers within the regressions' 0.1 %, the
+  copper fixture regenerated (CDT's impedances within 1.2e-5), the 2 mm heated disc 0.20 K off at its centre (0.18).
+  `geo.mesh_polygons` also takes `align=` (the edge rings' points opposite the outline's: rectangles in the edge
+  strips) and `via_rings=` (rings of trapezoids about the vias: the via spreading into a plate 2.1 % off a fine
+  pad's for 2.8 % at dmax 0.5 mm, the same at 0.25), both off by default.
 - **The mesher's interior is equilateral cells (2026-11-15).** `_numerics/cdtmesh.py` (mom25d's file) seeds the points
   inside the copper on a hexagonal lattice at the local cell size and smooths them (ODT), in place of rounds of
   circumcentres alone: fewer triangles for the same limits (the FastHenry plane case 9,826 for 13,194, reading the
